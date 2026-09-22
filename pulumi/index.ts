@@ -1,0 +1,248 @@
+import * as pulumi from "@pulumi/pulumi";
+import * as random from "@pulumi/random";
+import * as openstack from "@pulumi/openstack";
+import * as selectel from "@pulumi/selectel";
+import * as aws from "@pulumi/aws";
+
+const cfg = new pulumi.Config();
+const selectelCfg = new pulumi.Config("selectel");
+
+// Номер аккаунта Selectel: берём из selectel:domainName, infra:domainName — только для переопределения
+const domainName = cfg.get("domainName") ?? selectelCfg.require("domainName");
+const pool = cfg.require("pool");                  // пул VPS, например ru-9
+const zone = cfg.require("zone");                  // например ru-9a
+const volumeType = cfg.require("volumeType");      // например fast.ru-9a
+const imageName = cfg.require("imageName");
+const sshPublicKey = cfg.require("sshPublicKey");
+
+// Имя уровня аккаунта (проект, keypair). Аккаунт общий на курс,
+// поэтому переопределяется через infra:name. Логические имена "study" не менять — это replace.
+const name = cfg.get("name") ?? "pulumi-study";
+
+// Объектное хранилище: пул (например ru-1) задаёт endpoint s3.<pool>.storage.selcloud.ru
+// и region подписи. Имя бакета глобально уникально в рамках аккаунта.
+const s3Pool = cfg.require("s3Pool");
+const s3BucketName = cfg.require("s3Bucket");
+const s3EndpointUrl = `https://s3.${s3Pool}.storage.selcloud.ru`;
+
+const project = new selectel.VpcProjectV2("study", { name });
+
+const password = new random.RandomPassword("serviceuser", {
+  length: 24,
+  upper: true,
+  lower: true,
+  numeric: true,
+  minUpper: 1,
+  minLower: 1,
+  minNumeric: 1,
+  minSpecial: 1,
+  overrideSpecial: "!#$%&*+-.:;<=>?@^_{|}~",
+});
+
+// Имя сервисного пользователя проекта отдельно от infra:name (проект/keypair),
+// оно видно в панели IAM и используется как логин OpenStack.
+const serviceUser = new selectel.IamServiceuserV1("study", {
+  name: cfg.get("serviceUserName") ?? "cellestialSystemUser",
+  password: password.result,
+  roles: [{ roleName: "member", scope: "project", projectId: project.id }],
+});
+
+// S3-ключи сервисного пользователя проекта: их же отдаём в @pulumi/aws и в выходы стека
+const s3Credentials = new selectel.IamS3CredentialsV1("study", {
+  userId: serviceUser.id,
+  projectId: project.id,
+});
+
+const keypair = new selectel.VpcKeypairV2("study", {
+  name,
+  publicKey: sshPublicKey,
+  userId: serviceUser.id,
+});
+
+const os = new openstack.Provider("selectel-project", {
+  authUrl: "https://cloud.api.selcloud.ru/identity/v3",
+  domainName,
+  tenantId: project.id,
+  userName: serviceUser.name,
+  password: password.result,
+  region: pool,
+});
+
+const withOs = { provider: os };
+
+const external = openstack.networking.getNetworkOutput({ external: true }, withOs);
+
+const network = new openstack.networking.Network("private", {
+  name: "private-network",
+  adminStateUp: true,
+}, withOs);
+
+const subnet = new openstack.networking.Subnet("private", {
+  name: "private-subnet",
+  networkId: network.id,
+  cidr: "192.168.199.0/24",
+}, withOs);
+
+const router = new openstack.networking.Router("router", {
+  name: "router",
+  externalNetworkId: external.id,
+}, withOs);
+
+const routerInterface = new openstack.networking.RouterInterface("router", {
+  routerId: router.id,
+  subnetId: subnet.id,
+}, withOs);
+
+const image = openstack.images.getImageOutput({
+  name: imageName,
+  mostRecent: true,
+  visibility: "public",
+}, withOs);
+
+// Флейворы ищем по имени внутри созданного проекта: id в панели не показывается,
+// а публичные флейворы общие на аккаунт. infra:*FlavorId — явное переопределение.
+const gatewayFlavorId = cfg.get("gatewayFlavorId")
+  ?? openstack.compute.getFlavorOutput({ name: cfg.require("gatewayFlavorName") }, withOs).id;
+const backendFlavorId = cfg.get("backendFlavorId")
+  ?? openstack.compute.getFlavorOutput({ name: cfg.require("backendFlavorName") }, withOs).id;
+
+const gatewayPort = new openstack.networking.Port("gateway", {
+  name: "gateway-port",
+  networkId: network.id,
+  fixedIps: [{ subnetId: subnet.id }],
+}, withOs);
+
+const backendPort = new openstack.networking.Port("backend", {
+  name: "backend-port",
+  networkId: network.id,
+  fixedIps: [{ subnetId: subnet.id }],
+}, withOs);
+
+const gatewayVolume = new openstack.blockstorage.Volume("gateway", {
+  name: "boot-volume-gateway",
+  size: 10,
+  imageId: image.id,
+  volumeType,
+  availabilityZone: zone,
+  enableOnlineResize: true,
+}, { ...withOs, ignoreChanges: ["imageId"] });
+
+const backendVolume = new openstack.blockstorage.Volume("backend", {
+  name: "boot-volume-backend",
+  size: cfg.getNumber("backendVolumeSize") ?? 10,
+  imageId: image.id,
+  volumeType,
+  availabilityZone: zone,
+  enableOnlineResize: true,
+}, { ...withOs, ignoreChanges: ["imageId"] });
+
+// VPS 1: шлюз — публичный IP, Caddy, jump-хост для Ansible к VPS 2
+const serverGateway = new openstack.compute.Instance("gateway", {
+  name: "pulumi-server-gateway",
+  flavorId: gatewayFlavorId,
+  keyPair: keypair.name,
+  availabilityZone: zone,
+  networks: [{ port: gatewayPort.id }],
+  blockDevices: [{
+    sourceType: "volume",
+    destinationType: "volume",
+    uuid: gatewayVolume.id,
+    bootIndex: 0,
+    deleteOnTermination: false,
+  }],
+  // По metadata.role dynamic inventory Ansible собирает группы gateway/backend
+  metadata: { role: "gateway", env: "study" },
+  vendorOptions: { ignoreResizeConfirmation: true },
+}, { ...withOs, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
+
+// VPS 2: только в приватной сети, без floating IP
+const serverBackend = new openstack.compute.Instance("backend", {
+  name: "pulumi-server-backend",
+  flavorId: backendFlavorId,
+  keyPair: keypair.name,
+  availabilityZone: zone,
+  networks: [{ port: backendPort.id }],
+  blockDevices: [{
+    sourceType: "volume",
+    destinationType: "volume",
+    uuid: backendVolume.id,
+    bootIndex: 0,
+    deleteOnTermination: false,
+  }],
+  metadata: { role: "backend", env: "study" },
+  vendorOptions: { ignoreResizeConfirmation: true },
+}, { ...withOs, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
+
+const floatingIp = new openstack.networking.FloatingIp("gateway", {
+  pool: "external-network",
+}, withOs);
+
+// Без dependsOn привязка стартует раньше подключения подсети к роутеру:
+// Neutron отвечает ExternalGatewayForFloatingIPNotFound
+new openstack.networking.FloatingIpAssociate("gateway", {
+  portId: gatewayPort.id,
+  floatingIp: floatingIp.address,
+}, { ...withOs, dependsOn: [routerInterface] });
+
+const s3 = new aws.Provider("selectel-s3", {
+  region: s3Pool,
+  accessKey: s3Credentials.accessKey,
+  secretKey: s3Credentials.secretKey,
+  endpoints: [{ s3: s3EndpointUrl }],
+  s3UsePathStyle: true,
+  // Selectel — не AWS: не гоняем проверки учётки/региона/аккаунта
+  skipCredentialsValidation: true,
+  skipRegionValidation: true,
+  skipRequestingAccountId: true,
+});
+
+// forceDestroy: true — pulumi destroy удаляет бакет вместе с объектами
+const bucket = new aws.s3.Bucket("releases", {
+  bucket: s3BucketName,
+  forceDestroy: true,
+}, { provider: s3 });
+
+// Публичное чтение объектов (под будущий CDN)
+new aws.s3.BucketPolicy("public-read", {
+  bucket: bucket.id,
+  policy: bucket.arn.apply((arn) => JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [{
+      Effect: "Allow",
+      Principal: "*",
+      Action: "s3:GetObject",
+      Resource: `${arn}/*`,
+    }],
+  })),
+}, { provider: s3 });
+
+// A-запись домена → publicIp VPS 1 в зоне Selectel DNS (зона может лежать в другом проекте)
+const appDomain = cfg.get("domain");
+if (appDomain) {
+  const dnsZone = cfg.require("dnsZone");            // с точкой на конце: cellestial.ru.
+  const dnsProjectId = cfg.require("dnsProjectId");  // проект, где лежит зона
+  const fqdn = appDomain.endsWith(".") ? appDomain : `${appDomain}.`;
+
+  const zoneRef = selectel.getDomainsZoneV2Output({ name: dnsZone, projectId: dnsProjectId });
+
+  new selectel.DomainsRrsetV2("app", {
+    zoneId: zoneRef.id,
+    projectId: dnsProjectId,
+    name: fqdn,
+    type: "A",
+    ttl: 300,
+    records: [{ content: floatingIp.address }],
+  });
+}
+
+export const projectId = project.id;
+export const publicIp = floatingIp.address;
+export const privateIp = backendPort.allFixedIps.apply((ips) => ips[0]);
+export const gatewayName = serverGateway.name;
+export const backendName = serverBackend.name;
+export const sshUser = cfg.get("sshUser") ?? "root";
+export const domain = appDomain ?? null;
+export const s3Endpoint = s3EndpointUrl;
+export const s3Bucket = bucket.bucket;
+export const s3AccessKey = s3Credentials.accessKey;
+export const s3SecretKey = pulumi.secret(s3Credentials.secretKey);

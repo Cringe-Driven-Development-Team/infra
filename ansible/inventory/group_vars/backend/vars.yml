@@ -1,0 +1,8 @@
+# VPS 2: без публичного IP — вход только из приватной сети
+firewall_rules:
+  - { name: SSH from private network, port: "22", proto: tcp, src: "{{ private_network_cidr }}" }
+
+# Ansible попадает на VPS 2 через VPS 1 как jump-хост. jump_user=root только на время
+# bootstrap.yml (на шлюзе пользователя deploy ещё нет), далее — deploy.
+ansible_ssh_common_args: >-
+  -o ProxyJump={{ jump_user | default('deploy') }}@{{ hostvars[groups['gateway'][0]]['ansible_host'] }}

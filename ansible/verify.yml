@@ -1,0 +1,54 @@
+---
+- name: "Проверки с управляющей машины"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: HTTPS на домене отвечает 200
+      ansible.builtin.uri:
+        url: "https://{{ app_domain }}/"
+        status_code: 200
+        return_content: true
+      register: https_ok
+      until: https_ok is succeeded
+      retries: 5
+      delay: 5
+
+    - name: Проверить содержимое ответа
+      ansible.builtin.assert:
+        that: https_ok.content | trim == 'ok'
+        fail_msg: "Домен {{ app_domain }} отвечает не тем, чем должен"
+
+    - name: Выдать информацию о сертификате
+      ansible.builtin.shell: >-
+        echo | openssl s_client -connect {{ app_domain }}:443 -servername {{ app_domain }} 2>/dev/null
+        | grep -E '^(issuer|subject)='
+      register: cert_info
+      changed_when: false
+
+    - name: Сертификат выдан Let's Encrypt
+      ansible.builtin.assert:
+        that: cert_info.stdout is search("Encrypt|ISRG")
+        fail_msg: "Сертификат не от Let's Encrypt: {{ cert_info.stdout }}"
+
+    - name: VPS 2 снаружи недоступна (приватный IP не маршрутизируется)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[groups['backend'][0]]['ansible_host'] }}"
+        port: 22
+        timeout: 3
+      ignore_errors: true
+      register: backend_outside
+
+    - name: Убедиться, что подключение снаружи не прошло
+      ansible.builtin.assert:
+        that: backend_outside is failed
+        fail_msg: "VPS 2 unexpectedly reachable from outside"
+
+- name: "Проверки с VPS 1"
+  hosts: gateway
+  gather_facts: false
+  tasks:
+    - name: Приватный IP VPS 2 доступен из внутренней сети (порт 22)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[groups['backend'][0]]['ansible_host'] }}"
+        port: 22
+        timeout: 10

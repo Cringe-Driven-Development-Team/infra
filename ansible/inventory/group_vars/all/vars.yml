@@ -1,0 +1,17 @@
+deploy_user: deploy
+
+# Ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_study -N ""
+# Его публичная часть уходит в Pulumi как infra:sshPublicKey (keypair обоих серверов).
+deploy_key_path: "{{ lookup('env', 'HOME') }}/.ssh/selectel_study"
+ansible_user: "{{ deploy_user }}"
+ansible_ssh_private_key_file: "{{ deploy_key_path }}"
+
+# Домен VPS 1 (A-запись управляет Pulumi: infra:domain)
+app_domain: cellestial.ru
+
+# Приватная сеть из pulumi/index.ts (cidr подсети private-subnet)
+private_network_cidr: 192.168.199.0/24
+
+# Пользователи в группе docker (эквивалент root на хосте)
+docker_users:
+  - "{{ deploy_user }}"
