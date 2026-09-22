@@ -1,0 +1,22 @@
+---
+- name: Drop-in конфигурации SSH
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    mode: "0644"
+    content: |
+      # Managed by Ansible
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication yes
+      MaxAuthTries 4
+      X11Forwarding no
+      # ProxyJump на VPS 2 работает через forwarding на шлюзе
+      AllowTcpForwarding yes
+  notify: Restart sshd
+
+- name: SSH-сервис включён
+  ansible.builtin.service:
+    name: ssh
+    state: started
+    enabled: true

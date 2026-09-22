@@ -1,0 +1,21 @@
+---
+- name: Создать пользователя {{ deploy_user }} в группе sudo
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    shell: /bin/bash
+    groups: sudo
+    append: true
+    create_home: true
+
+- name: Положить публичный ключ стенда в authorized_keys
+  ansible.builtin.authorized_key:
+    user: "{{ deploy_user }}"
+    key: "{{ lookup('file', deploy_key_path ~ '.pub') }}"
+    state: present
+
+- name: Sudo без пароля
+  ansible.builtin.copy:
+    content: "{{ deploy_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    dest: "/etc/sudoers.d/{{ deploy_user }}"
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s

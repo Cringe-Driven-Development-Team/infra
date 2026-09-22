@@ -1,0 +1,4 @@
+---
+collections:
+  - name: openstack.cloud   # dynamic inventory
+  - name: community.general # модуль ufw

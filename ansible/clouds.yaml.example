@@ -1,0 +1,15 @@
+# Скопировать в clouds.yaml (файл в .gitignore). Используется dynamic inventory (inventory/openstack.yml).
+# Пользователь — сервисный пользователь аккаунта Selectel, тот же selectel:username в Pulumi
+# (роль member на аккаунт покрывает все проекты). project_id — выход стека: pulumi stack output projectId.
+clouds:
+  selectel:
+    auth:
+      auth_url: https://cloud.api.selcloud.ru/identity/v3
+      username: "<account-service-user>"
+      password: "<password>"
+      user_domain_name: "<selectel-account-id>"
+      project_domain_name: "<selectel-account-id>"
+      project_id: "<pulumi stack output projectId>"
+    region_name: ru-9
+    interface: public
+    identity_api_version: 3
