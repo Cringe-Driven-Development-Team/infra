@@ -9,3 +9,4 @@
   Caddy с Let's Encrypt на VPS 1. См. `ansible/README.md`.
 
 Порядок: `pulumi up` → `ansible-playbook bootstrap.yml` → `site.yml` → `verify.yml`.
+Пошаговая инструкция со всеми командами и значениями «что вводить руками» — [RUNBOOK.md](RUNBOOK.md).
