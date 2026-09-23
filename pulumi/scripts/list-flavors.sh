@@ -9,7 +9,13 @@ STACK="${1:-$(pulumi stack --show-name)}"
 DOMAIN="$(pulumi config get selectel:domainName -s "$STACK")"
 USERNAME="$(pulumi config get selectel:username -s "$STACK")"
 PASSWORD="$(pulumi config get selectel:password -s "$STACK")"
-PROJECT_ID="$(pulumi stack output projectId -s "$STACK")"
+# После неудачного up outputs пустые — берём id проекта прямо из стейта
+PROJECT_ID="$(pulumi stack output projectId -s "$STACK" 2>/dev/null || true)"
+if [[ -z "$PROJECT_ID" ]]; then
+  PROJECT_ID="$(pulumi stack export -s "$STACK" \
+    | python3 -c 'import json,sys; print(next((r["id"] for r in json.load(sys.stdin)["deployment"]["resources"] if r["type"].endswith("VpcProjectV2")), ""))')"
+fi
+[[ -n "$PROJECT_ID" ]] || { echo "Не нашёл projectId ни в outputs, ни в стейте" >&2; exit 1; }
 REGION="$(pulumi config get infra:pool -s "$STACK")"
 AUTH_URL="https://cloud.api.selcloud.ru/identity/v3"
 
