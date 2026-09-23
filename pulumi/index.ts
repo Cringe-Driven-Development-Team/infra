@@ -249,19 +249,23 @@ const bucket = new aws.s3.Bucket("releases", {
   forceDestroy: true,
 }, { provider: s3 });
 
-// Публичное чтение объектов (под будущий CDN)
-new aws.s3.BucketPolicy("public-read", {
-  bucket: bucket.id,
-  policy: bucket.arn.apply((arn) => JSON.stringify({
-    Version: "2012-10-17",
-    Statement: [{
-      Effect: "Allow",
-      Principal: "*",
-      Action: "s3:GetObject",
-      Resource: `${arn}/*`,
-    }],
-  })),
-}, { provider: s3 });
+// Публичное чтение объектов (под будущий CDN).
+// Выключено по умолчанию: управление политиками требует роли s3.admin в проекте-владельце
+// бакета, иначе провайдер падает на GetBucketPolicy с AccessDenied после записи.
+if (cfg.getBoolean("s3PublicRead") ?? false) {
+  new aws.s3.BucketPolicy("public-read", {
+    bucket: bucket.id,
+    policy: bucket.arn.apply((arn) => JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{
+        Effect: "Allow",
+        Principal: "*",
+        Action: "s3:GetObject",
+        Resource: `${arn}/*`,
+      }],
+    })),
+  }, { provider: s3 });
+}
 
 // A-запись домена → publicIp VPS 1 в зоне Selectel DNS (зона может лежать в другом проекте)
 const appDomain = cfg.get("domain");
