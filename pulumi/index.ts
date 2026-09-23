@@ -44,15 +44,18 @@ const password = new random.RandomPassword("serviceuser", {
 const serviceUser = new selectel.IamServiceuserV1("study", {
   name: cfg.get("serviceUserName") ?? "cellestialSystemUser",
   password: password.result,
-  // s3.user (object_storage_user) обязателен, иначе S3 API отвечает InvalidAccessKeyId
+  // s3.admin — управление бакетами в проекте. s3.user даёт доступ только к тем
+  // бакетам, которые разрешает bucket policy, и создать бакет им нельзя.
   roles: [
     { roleName: "member", scope: "project", projectId: project.id },
-    { roleName: "s3.user", scope: "project", projectId: project.id },
+    { roleName: "s3.admin", scope: "project", projectId: project.id },
   ],
 });
 
 // S3-ключи сервисного пользователя проекта: их же отдаём в @pulumi/aws и в выходы стека
 const s3Credentials = new selectel.IamS3CredentialsV1("study", {
+  // name обязателен в API; без него ключ создаётся безымянным
+  name: `${name}-s3`,
   userId: serviceUser.id,
   projectId: project.id,
 });
