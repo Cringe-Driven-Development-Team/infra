@@ -11,5 +11,6 @@ ansible/clouds.yaml
 *.retry
 
 # Misc
+secrets.txt
 .DS_Store
 __pycache__/

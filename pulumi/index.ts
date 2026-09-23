@@ -44,7 +44,11 @@ const password = new random.RandomPassword("serviceuser", {
 const serviceUser = new selectel.IamServiceuserV1("study", {
   name: cfg.get("serviceUserName") ?? "cellestialSystemUser",
   password: password.result,
-  roles: [{ roleName: "member", scope: "project", projectId: project.id }],
+  // s3.user (object_storage_user) обязателен, иначе S3 API отвечает InvalidAccessKeyId
+  roles: [
+    { roleName: "member", scope: "project", projectId: project.id },
+    { roleName: "s3.user", scope: "project", projectId: project.id },
+  ],
 });
 
 // S3-ключи сервисного пользователя проекта: их же отдаём в @pulumi/aws и в выходы стека
@@ -99,12 +103,29 @@ const image = openstack.images.getImageOutput({
   visibility: "public",
 }, withOs);
 
-// Флейворы ищем по имени внутри созданного проекта: id в панели не показывается,
-// а публичные флейворы общие на аккаунт. infra:*FlavorId — явное переопределение.
-const gatewayFlavorId = cfg.get("gatewayFlavorId")
-  ?? openstack.compute.getFlavorOutput({ name: cfg.require("gatewayFlavorName") }, withOs).id;
-const backendFlavorId = cfg.get("backendFlavorId")
-  ?? openstack.compute.getFlavorOutput({ name: cfg.require("backendFlavorName") }, withOs).id;
+// Флейворы: id в панели не показывается, а имена ("SL1.2-4096") есть не во всех пулах —
+// getFlavor по несуществующему имени падает с "Your query returned no results".
+// Порядок: infra:<role>FlavorId → infra:<role>FlavorName → поиск по vcpus/ram(/disk).
+// Список доступных имён: ./scripts/list-flavors.sh
+function flavorId(role: string): pulumi.Input<string> {
+  const id = cfg.get(`${role}FlavorId`);
+  if (id) {
+    return id;
+  }
+  const flavorName = cfg.get(`${role}FlavorName`);
+  if (flavorName) {
+    return openstack.compute.getFlavorOutput({ name: flavorName }, withOs).id;
+  }
+  const disk = cfg.getNumber(`${role}Disk`);
+  return openstack.compute.getFlavorOutput({
+    vcpus: cfg.requireNumber(`${role}Vcpus`),
+    ram: cfg.requireNumber(`${role}Ram`),
+    ...(disk ? { disk } : {}),
+  }, withOs).id;
+}
+
+const gatewayFlavorId = flavorId("gateway");
+const backendFlavorId = flavorId("backend");
 
 const gatewayPort = new openstack.networking.Port("gateway", {
   name: "gateway-port",
@@ -244,5 +265,7 @@ export const sshUser = cfg.get("sshUser") ?? "root";
 export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;
 export const s3Bucket = bucket.bucket;
+export const serviceUserName = serviceUser.name;
+export const serviceUserPassword = pulumi.secret(password.result);
 export const s3AccessKey = s3Credentials.accessKey;
 export const s3SecretKey = pulumi.secret(s3Credentials.secretKey);
