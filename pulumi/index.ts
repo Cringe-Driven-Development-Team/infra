@@ -205,9 +205,21 @@ new openstack.networking.FloatingIpAssociate("gateway", {
   floatingIp: floatingIp.address,
 }, { ...withOs, dependsOn: [routerInterface] });
 
+// Свежие S3-ключи доходят до эндпоинта не мгновенно: без паузы CreateBucket
+// отвечает 403 InvalidAccessKeyId. Задержка применяется только когда ключи
+// создаются в этом же прогоне (на существующем стеке apply отрабатывает сразу).
+const s3KeyDelaySeconds = cfg.getNumber("s3KeyDelaySeconds") ?? 30;
+const s3AccessKeyReady = pulumi.all([s3Credentials.accessKey, s3Credentials.urn])
+  .apply(async ([key]) => {
+    if (!pulumi.runtime.isDryRun()) {
+      await new Promise((resolve) => setTimeout(resolve, s3KeyDelaySeconds * 1000));
+    }
+    return key;
+  });
+
 const s3 = new aws.Provider("selectel-s3", {
   region: s3Pool,
-  accessKey: s3Credentials.accessKey,
+  accessKey: s3AccessKeyReady,
   secretKey: s3Credentials.secretKey,
   endpoints: [{ s3: s3EndpointUrl }],
   s3UsePathStyle: true,
