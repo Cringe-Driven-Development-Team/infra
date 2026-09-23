@@ -208,22 +208,28 @@ new openstack.networking.FloatingIpAssociate("gateway", {
   floatingIp: floatingIp.address,
 }, { ...withOs, dependsOn: [routerInterface] });
 
-// Свежие S3-ключи доходят до эндпоинта не мгновенно: без паузы CreateBucket
-// отвечает 403 InvalidAccessKeyId. Задержка применяется только когда ключи
-// создаются в этом же прогоне (на существующем стеке apply отрабатывает сразу).
+// Ключи для бакета. Пока S3-эндпоинт не принимает ключи, выпущенные через IAM
+// для сервисного пользователя проекта, берём те же, которыми ходит backend Pulumi.
+// Приоритет: infra:s3AccessKey/infra:s3SecretKey → AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY
+// из окружения → ключи из IamS3CredentialsV1.
+const s3AccessKeyOverride = cfg.get("s3AccessKey") ?? process.env.AWS_ACCESS_KEY_ID;
+const s3SecretKeyOverride = cfg.getSecret("s3SecretKey") ?? (
+  process.env.AWS_SECRET_ACCESS_KEY
+    ? pulumi.secret(process.env.AWS_SECRET_ACCESS_KEY)
+    : undefined
+);
+const useOwnS3Credentials = !(s3AccessKeyOverride && s3SecretKeyOverride);
+
+// Свежие ключи IamS3CredentialsV1 доходят до эндпоинта не мгновенно: без паузы
+// CreateBucket отвечает 403 InvalidAccessKeyId. Для готовых ключей пауза не нужна.
 const s3KeyDelaySeconds = cfg.getNumber("s3KeyDelaySeconds") ?? 30;
 const s3AccessKeyReady = pulumi.all([s3Credentials.accessKey, s3Credentials.urn])
   .apply(async ([key]) => {
-    if (!pulumi.runtime.isDryRun()) {
+    if (useOwnS3Credentials && !pulumi.runtime.isDryRun()) {
       await new Promise((resolve) => setTimeout(resolve, s3KeyDelaySeconds * 1000));
     }
     return key;
   });
-
-// Запасной путь: ключи, выпущенные руками в панели (те же, что у backend'а Pulumi).
-// Нужны, пока IAM-ключи сервисного пользователя не принимаются S3-эндпоинтом.
-const s3AccessKeyOverride = cfg.get("s3AccessKey");
-const s3SecretKeyOverride = cfg.get("s3SecretKey");
 
 const s3 = new aws.Provider("selectel-s3", {
   region: cfg.get("s3Region") ?? s3Pool,
