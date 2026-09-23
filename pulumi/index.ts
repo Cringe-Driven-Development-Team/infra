@@ -220,10 +220,15 @@ const s3AccessKeyReady = pulumi.all([s3Credentials.accessKey, s3Credentials.urn]
     return key;
   });
 
+// Запасной путь: ключи, выпущенные руками в панели (те же, что у backend'а Pulumi).
+// Нужны, пока IAM-ключи сервисного пользователя не принимаются S3-эндпоинтом.
+const s3AccessKeyOverride = cfg.get("s3AccessKey");
+const s3SecretKeyOverride = cfg.get("s3SecretKey");
+
 const s3 = new aws.Provider("selectel-s3", {
-  region: s3Pool,
-  accessKey: s3AccessKeyReady,
-  secretKey: s3Credentials.secretKey,
+  region: cfg.get("s3Region") ?? s3Pool,
+  accessKey: s3AccessKeyOverride ?? s3AccessKeyReady,
+  secretKey: s3SecretKeyOverride ?? s3Credentials.secretKey,
   endpoints: [{ s3: s3EndpointUrl }],
   s3UsePathStyle: true,
   // Selectel — не AWS: не гоняем проверки учётки/региона/аккаунта
