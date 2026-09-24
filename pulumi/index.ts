@@ -3,6 +3,7 @@ import * as random from "@pulumi/random";
 import * as openstack from "@pulumi/openstack";
 import * as selectel from "@pulumi/selectel";
 import * as aws from "@pulumi/aws";
+import { execFile } from "child_process";
 
 const cfg = new pulumi.Config();
 const selectelCfg = new pulumi.Config("selectel");
@@ -216,15 +217,64 @@ new openstack.networking.FloatingIpAssociate("gateway", {
 // документации Selectel по Terraform.
 // ---------------------------------------------------------------------------
 
-// Свежий ключ доходит до S3-шлюза не мгновенно: без паузы CreateBucket
-// отвечает 403 InvalidAccessKeyId. На preview не ждём.
-const s3KeyDelaySeconds = cfg.getNumber("s3KeyDelaySeconds") ?? 60;
-const s3AccessKeyReady = pulumi.all([s3Credentials.accessKey, s3Credentials.urn])
-  .apply(async ([key]) => {
-    if (!pulumi.runtime.isDryRun()) {
-      await new Promise((resolve) => setTimeout(resolve, s3KeyDelaySeconds * 1000));
+// Ключ, выданный через IAM, S3-шлюз признаёт не сразу: до этого CreateBucket
+// отвечает 403 InvalidAccessKeyId. Вместо фиксированной паузы опрашиваем S3
+// этим же ключом (ListBuckets, подпись SigV4 делает curl — он ходит через
+// системное доверие macOS, как и сам Pulumi) и ждём, пока ключ примут.
+// Секрет передаётся curl'у через stdin, не через аргументы.
+function probeS3(accessKey: string, secretKey: string): Promise<{ code: number; body: string }> {
+  return new Promise((resolve) => {
+    const child = execFile("curl", [
+      "-sS", "-o", "-", "-w", "\n%{http_code}",
+      "--max-time", "20",
+      "--aws-sigv4", `aws:amz:${s3Pool}:s3`,
+      "-K", "-",
+      `${s3EndpointUrl}/`,
+    ], (err, stdout, stderr) => {
+      const lines = String(stdout ?? "").trimEnd().split("\n");
+      const code = Number(lines.pop());
+      if (err || !Number.isFinite(code) || code === 0) {
+        // curl не запустился, сеть, TLS — ответа от S3 нет
+        resolve({ code: -1, body: String(stderr || err?.message || "нет ответа").trim() });
+        return;
+      }
+      resolve({ code, body: lines.join("\n") });
+    });
+    child.stdin?.end(`user = "${accessKey}:${secretKey}"\n`);
+  });
+}
+
+const s3KeyReadyTimeoutSeconds = cfg.getNumber("s3KeyReadyTimeoutSeconds") ?? 900;
+const s3AccessKeyReady = pulumi.all([s3Credentials.accessKey, s3Credentials.secretKey])
+  .apply(async ([accessKey, secretKey]) => {
+    if (pulumi.runtime.isDryRun()) {
+      return accessKey;
     }
-    return key;
+    const deadline = Date.now() + s3KeyReadyTimeoutSeconds * 1000;
+    let last = { code: 0, body: "" };
+    for (let attempt = 1; Date.now() < deadline; attempt++) {
+      last = await probeS3(accessKey, secretKey);
+      if (last.code === 200) {
+        pulumi.log.info(`S3-ключ принят шлюзом (попытка ${attempt})`);
+        return accessKey;
+      }
+      if (last.code === -1) {
+        // curl не запустился или сеть/TLS — не блокируем, пусть провайдер покажет ошибку сам
+        pulumi.log.warn(`Проверка S3-ключа пропущена: ${last.body}`);
+        return accessKey;
+      }
+      if (!last.body.includes("InvalidAccessKeyId")) {
+        pulumi.log.warn(`S3 ответил ${last.code}, а не InvalidAccessKeyId — продолжаю: ${last.body.slice(0, 300)}`);
+        return accessKey;
+      }
+      pulumi.log.info(`S3-ключ ещё не принят (попытка ${attempt}, HTTP ${last.code}), жду 15 с`);
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+    }
+    throw new Error(
+      `S3-шлюз ${s3EndpointUrl} так и не принял ключ за ${s3KeyReadyTimeoutSeconds} с ` +
+      `(последний ответ HTTP ${last.code}: ${last.body.slice(0, 300)}). ` +
+      `Ключ выдан в IAM, но в S3 не появился — это на стороне Selectel.`,
+    );
   });
 
 const s3 = new aws.Provider("selectel-s3-product", {
