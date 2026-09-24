@@ -44,18 +44,18 @@ const password = new random.RandomPassword("serviceuser", {
 const serviceUser = new selectel.IamServiceuserV1("study", {
   name: cfg.get("serviceUserName") ?? "cellestialSystemUser",
   password: password.result,
-  // s3.admin — управление бакетами в проекте. s3.user даёт доступ только к тем
-  // бакетам, которые разрешает bucket policy, и создать бакет им нельзя.
+  // member на проект: OpenStack + полный доступ к S3 проекта (создание бакетов,
+  // политики, объекты). s3.user/s3.bucket.user без bucket policy ничего не могут.
   roles: [
     { roleName: "member", scope: "project", projectId: project.id },
-    { roleName: "s3.admin", scope: "project", projectId: project.id },
   ],
 });
 
-// S3-ключи сервисного пользователя проекта: их же отдаём в @pulumi/aws и в выходы стека
-const s3Credentials = new selectel.IamS3CredentialsV1("study", {
-  // name обязателен в API; без него ключ создаётся безымянным
-  name: `${name}-s3`,
+// S3-ключ сервисного пользователя, выданный на проект продукта.
+// В Selectel ключ привязан к паре «пользователь + проект», а не к бакету:
+// все бакеты проекта доступны этим ключом в рамках ролей пользователя.
+const s3Credentials = new selectel.IamS3CredentialsV1("product-s3", {
+  name: `${name}-releases`,
   userId: serviceUser.id,
   projectId: project.id,
 });
@@ -208,52 +208,48 @@ new openstack.networking.FloatingIpAssociate("gateway", {
   floatingIp: floatingIp.address,
 }, { ...withOs, dependsOn: [routerInterface] });
 
-// Ключи для бакета. Пока S3-эндпоинт не принимает ключи, выпущенные через IAM
-// для сервисного пользователя проекта, берём те же, которыми ходит backend Pulumi.
-// Приоритет: infra:s3AccessKey/infra:s3SecretKey → AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY
-// из окружения → ключи из IamS3CredentialsV1.
-const s3AccessKeyOverride = cfg.get("s3AccessKey") ?? process.env.AWS_ACCESS_KEY_ID;
-const s3SecretKeyOverride = cfg.getSecret("s3SecretKey") ?? (
-  process.env.AWS_SECRET_ACCESS_KEY
-    ? pulumi.secret(process.env.AWS_SECRET_ACCESS_KEY)
-    : undefined
-);
-const useOwnS3Credentials = !(s3AccessKeyOverride && s3SecretKeyOverride);
+// ---------------------------------------------------------------------------
+// S3 в проекте продукта. Отдельного ресурса «включить S3 в проекте» нет:
+// хранилище проекта в пуле появляется с первым бакетом, созданным через
+// эндпоинт этого пула ключом, выданным на этот проект.
+// Провайдер Selectel бакеты не создаёт — только S3 API (@pulumi/aws), как в
+// документации Selectel по Terraform.
+// ---------------------------------------------------------------------------
 
-// Свежие ключи IamS3CredentialsV1 доходят до эндпоинта не мгновенно: без паузы
-// CreateBucket отвечает 403 InvalidAccessKeyId. Для готовых ключей пауза не нужна.
-const s3KeyDelaySeconds = cfg.getNumber("s3KeyDelaySeconds") ?? 30;
+// Свежий ключ доходит до S3-шлюза не мгновенно: без паузы CreateBucket
+// отвечает 403 InvalidAccessKeyId. На preview не ждём.
+const s3KeyDelaySeconds = cfg.getNumber("s3KeyDelaySeconds") ?? 60;
 const s3AccessKeyReady = pulumi.all([s3Credentials.accessKey, s3Credentials.urn])
   .apply(async ([key]) => {
-    if (useOwnS3Credentials && !pulumi.runtime.isDryRun()) {
+    if (!pulumi.runtime.isDryRun()) {
       await new Promise((resolve) => setTimeout(resolve, s3KeyDelaySeconds * 1000));
     }
     return key;
   });
 
-const s3 = new aws.Provider("selectel-s3", {
-  region: cfg.get("s3Region") ?? s3Pool,
-  accessKey: s3AccessKeyOverride ?? s3AccessKeyReady,
-  secretKey: s3SecretKeyOverride ?? s3Credentials.secretKey,
-  endpoints: [{ s3: s3EndpointUrl }],
+const s3 = new aws.Provider("selectel-s3-product", {
+  region: s3Pool,                          // регион подписи = пул
+  accessKey: s3AccessKeyReady,
+  secretKey: s3Credentials.secretKey,
+  endpoints: [{ s3: s3EndpointUrl }],      // https://s3.<пул>.storage.selcloud.ru
   s3UsePathStyle: true,
-  // Selectel — не AWS: не гоняем проверки учётки/региона/аккаунта
+  // Selectel — не AWS: те же skip_*, что в документации Selectel для Terraform
   skipCredentialsValidation: true,
   skipRegionValidation: true,
   skipRequestingAccountId: true,
+  skipMetadataApiCheck: true,
 });
 
 // forceDestroy: true — pulumi destroy удаляет бакет вместе с объектами
-const bucket = new aws.s3.Bucket("releases", {
+const bucket = new aws.s3.Bucket("product-releases", {
   bucket: s3BucketName,
   forceDestroy: true,
 }, { provider: s3 });
 
-// Публичное чтение объектов (под будущий CDN).
-// Выключено по умолчанию: управление политиками требует роли s3.admin в проекте-владельце
-// бакета, иначе провайдер падает на GetBucketPolicy с AccessDenied после записи.
+// Публичное чтение объектов (под будущий CDN). Роль member на проект разрешает
+// управлять политиками; включается infra:s3PublicRead=true.
 if (cfg.getBoolean("s3PublicRead") ?? false) {
-  new aws.s3.BucketPolicy("public-read", {
+  new aws.s3.BucketPolicy("product-public-read", {
     bucket: bucket.id,
     policy: bucket.arn.apply((arn) => JSON.stringify({
       Version: "2012-10-17",
