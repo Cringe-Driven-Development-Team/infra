@@ -51,8 +51,9 @@ echo "endpoint: $ENDPOINT"
 echo "ключ из стейта: ${AK:0:6}… (access ${#AK} символов, secret ${#SK})"
 
 probe() {  # probe <метод> <регион подписи> <путь>
+  : > "$BODY"
   printf 'user = "%s:%s"\n' "$AK" "$SK" | curl -sS -X "$1" -o "$BODY" -w 'HTTP %{http_code}\n' \
-    --aws-sigv4 "aws:amz:$2:s3" -K - "$ENDPOINT/$3" || true
+    --aws-sigv4 "aws:amz:$2:s3" -K - $([ "$1" = HEAD ] && echo -I) "$ENDPOINT/$3" || true
   head -c 400 "$BODY"; echo
 }
 
