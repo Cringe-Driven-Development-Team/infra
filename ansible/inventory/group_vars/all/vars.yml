@@ -1,8 +1,8 @@
 deploy_user: deploy
 
-# Ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_study -N ""
+# Ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
 # Его публичная часть уходит в Pulumi как infra:sshPublicKey (keypair обоих серверов).
-deploy_key_path: "{{ lookup('env', 'HOME') }}/.ssh/selectel_study"
+deploy_key_path: "{{ lookup('env', 'HOME') }}/.ssh/selectel_release"
 ansible_user: "{{ deploy_user }}"
 ansible_ssh_private_key_file: "{{ deploy_key_path }}"
 

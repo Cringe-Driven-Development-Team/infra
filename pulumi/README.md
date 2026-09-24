@@ -53,7 +53,7 @@ pulumi config set infra:volumeType       fast.ru-9a
 pulumi config set infra:gatewayFlavorName SL1.2-4096
 pulumi config set infra:backendFlavorName SL2.2-8192
 pulumi config set infra:imageName        "Ubuntu 24.04 LTS 64-bit"
-pulumi config set infra:sshPublicKey     "$(cat ~/.ssh/selectel_study.pub)"
+pulumi config set infra:sshPublicKey     "$(cat ~/.ssh/selectel_release.pub)"
 
 # DNS: A-запись domain → publicIp VPS 1
 pulumi config set infra:domain       cellestial.ru
@@ -108,4 +108,4 @@ curl -I https://<s3-pool>.storage.selcloud.ru/<bucket>/hello.txt   # 200 без 
 | Ошибка создания бакета провайдером aws | Проверить `infra:s3Pool`: endpoint `s3.<pool>.storage.selcloud.ru` должен существовать |
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
-Логические имена ресурсов (`"study"`, `"gateway"`, `"backend"`, `"releases"`) не меняйте: это пересоздание ресурсов.
+Логические имена ресурсов (`"release"`, `"gateway"`, `"backend"`, `"product-releases"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`.

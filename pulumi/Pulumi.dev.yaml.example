@@ -11,7 +11,7 @@ config:
   selectel:authRegion: ru-9
 
   # Имя проекта / keypair (уникально в общем аккаунте)
-  infra:name: pulumi-study
+  infra:name: pulumi-release
   # Имя сервисного пользователя проекта (уникально в аккаунте)
   infra:serviceUserName: cellestialSystemUser
 
@@ -23,8 +23,8 @@ config:
   infra:backendFlavorName: SL2.2-8192
   # infra:backendVolumeSize: 20
   infra:imageName: Ubuntu 24.04 LTS 64-bit
-  # Отдельный ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_study -N ""
-  infra:sshPublicKey: "<contents of ~/.ssh/selectel_study.pub>"
+  # Отдельный ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
+  infra:sshPublicKey: "<contents of ~/.ssh/selectel_release.pub>"
   # infra:sshUser: root
 
   # DNS: A-запись domain → publicIp VPS 1 (зона Selectel DNS купленного домена)
