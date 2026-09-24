@@ -17,8 +17,9 @@ const imageName = cfg.require("imageName");
 const sshPublicKey = cfg.require("sshPublicKey");
 
 // Имя уровня аккаунта (проект, keypair). Аккаунт общий на курс,
-// поэтому переопределяется через infra:name. Логические имена "study" не менять — это replace.
-const name = cfg.get("name") ?? "pulumi-study";
+// поэтому переопределяется через infra:name. Логические имена были "study" — aliases
+// сохраняют связь со стейтом, чтобы переименование не пересоздавало ресурсы.
+const name = cfg.get("name") ?? "pulumi-release";
 
 // Объектное хранилище: пул (например ru-1) задаёт endpoint s3.<pool>.storage.selcloud.ru
 // и region подписи. Имя бакета глобально уникально в рамках аккаунта.
@@ -26,7 +27,9 @@ const s3Pool = cfg.require("s3Pool");
 const s3BucketName = cfg.require("s3Bucket");
 const s3EndpointUrl = `https://s3.${s3Pool}.storage.selcloud.ru`;
 
-const project = new selectel.VpcProjectV2("study", { name });
+const renamedFromStudy = { aliases: [{ name: "study" }] };
+
+const project = new selectel.VpcProjectV2("release", { name }, renamedFromStudy);
 
 const password = new random.RandomPassword("serviceuser", {
   length: 24,
@@ -42,7 +45,7 @@ const password = new random.RandomPassword("serviceuser", {
 
 // Имя сервисного пользователя проекта отдельно от infra:name (проект/keypair),
 // оно видно в панели IAM и используется как логин OpenStack.
-const serviceUser = new selectel.IamServiceuserV1("study", {
+const serviceUser = new selectel.IamServiceuserV1("release", {
   name: cfg.get("serviceUserName") ?? "cellestialSystemUser",
   password: password.result,
   // member на проект: OpenStack + полный доступ к S3 проекта (создание бакетов,
@@ -50,7 +53,7 @@ const serviceUser = new selectel.IamServiceuserV1("study", {
   roles: [
     { roleName: "member", scope: "project", projectId: project.id },
   ],
-});
+}, renamedFromStudy);
 
 // S3-ключ сервисного пользователя, выданный на проект продукта.
 // В Selectel ключ привязан к паре «пользователь + проект», а не к бакету:
@@ -61,11 +64,11 @@ const s3Credentials = new selectel.IamS3CredentialsV1("product-s3", {
   projectId: project.id,
 });
 
-const keypair = new selectel.VpcKeypairV2("study", {
+const keypair = new selectel.VpcKeypairV2("release", {
   name,
   publicKey: sshPublicKey,
   userId: serviceUser.id,
-});
+}, renamedFromStudy);
 
 const os = new openstack.Provider("selectel-project", {
   authUrl: "https://cloud.api.selcloud.ru/identity/v3",
@@ -176,7 +179,7 @@ const serverGateway = new openstack.compute.Instance("gateway", {
     deleteOnTermination: false,
   }],
   // По metadata.role dynamic inventory Ansible собирает группы gateway/backend
-  metadata: { role: "gateway", env: "study" },
+  metadata: { role: "gateway", env: "release" },
   vendorOptions: { ignoreResizeConfirmation: true },
 }, { ...withOs, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
 
@@ -194,7 +197,7 @@ const serverBackend = new openstack.compute.Instance("backend", {
     bootIndex: 0,
     deleteOnTermination: false,
   }],
-  metadata: { role: "backend", env: "study" },
+  metadata: { role: "backend", env: "release" },
   vendorOptions: { ignoreResizeConfirmation: true },
 }, { ...withOs, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
 
@@ -233,7 +236,7 @@ function runCurl(args: string[], stdin: string): Promise<{ ok: boolean; stdout: 
 // Панель делает это сама при первом бакете; через API — как в официальных
 // примерах Selectel (selectel-infra-examples, modules/s3/s3-bucket):
 // POST https://api.<пул>.storage.selcloud.ru/v2/hello/init с Keystone-токеном,
-// скоупленным на проект. 204 — проинициализирован, 400 — уже был.
+// скоупленным на проект. 2xx — проинициализирован, 400 — уже был.
 async function initProjectS3(user: string, userPassword: string, projectId: string): Promise<void> {
   const authBody = JSON.stringify({
     auth: {
@@ -267,8 +270,9 @@ async function initProjectS3(user: string, userPassword: string, projectId: stri
   ], `header = "X-Auth-Token: ${token}"\n`);
   const lines = init.stdout.trimEnd().split("\n");
   const code = Number(lines.pop());
-  if (code === 204) {
-    pulumi.log.info(`S3 в проекте проинициализирован (${initUrl})`);
+  if (code >= 200 && code < 300) {
+    // 201 — на свежем проекте, 204 — в примерах Selectel
+    pulumi.log.info(`S3 в проекте проинициализирован (${initUrl}, HTTP ${code})`);
   } else if (code === 400) {
     pulumi.log.info("S3 в проекте уже был проинициализирован");
   } else {

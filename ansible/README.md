@@ -15,7 +15,7 @@ ansible-galaxy collection install -r requirements.yml   # openstack.cloud, commu
 
 1. `cp clouds.yaml.example clouds.yaml` — сервисный пользователь **аккаунта** Selectel
    (тот же, что `selectel:username` в Pulumi) и `project_id` из `pulumi stack output projectId`.
-2. Ключ стенда `~/.ssh/selectel_study` (+ `.pub`) — он же `infra:sshPublicKey` в Pulumi.
+2. Ключ стенда `~/.ssh/selectel_release` (+ `.pub`) — он же `infra:sshPublicKey` в Pulumi.
 3. Inventory динамический (`inventory/openstack.yml`): группы `gateway` и `backend` собираются
    по `metadata.role`, `ansible_host` — floating IP у VPS 1 и приватный IP у VPS 2.
 

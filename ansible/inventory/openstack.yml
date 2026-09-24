@@ -14,6 +14,6 @@ expand_hostvars: false
 legacy_groups: false
 strict: true
 groups:
-  # metadata задаётся в pulumi/index.ts: { role: "gateway" | "backend", env: "study" }
+  # metadata задаётся в pulumi/index.ts: { role: "gateway" | "backend", env: "release" }
   gateway: (openstack.metadata | default({})).get('role') == 'gateway'
   backend: (openstack.metadata | default({})).get('role') == 'backend'
