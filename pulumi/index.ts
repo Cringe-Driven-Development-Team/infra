@@ -217,6 +217,65 @@ new openstack.networking.FloatingIpAssociate("gateway", {
 // документации Selectel по Terraform.
 // ---------------------------------------------------------------------------
 
+// curl вместо fetch: он ходит через системное доверие macOS (цепочка сертификатов
+// Selectel есть там, но не в бандле Node). Секреты — только через stdin.
+function runCurl(args: string[], stdin: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = execFile("curl", args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({ ok: !err, stdout: String(stdout ?? ""), stderr: String(stderr || err?.message || "").trim() });
+    });
+    child.stdin?.end(stdin);
+  });
+}
+
+// Инициализация S3 в проекте. Пока её нет, S3-шлюз не знает проект и отвечает
+// InvalidAccessKeyId на любой его ключ — и выданный через IAM, и из панели.
+// Панель делает это сама при первом бакете; через API — как в официальных
+// примерах Selectel (selectel-infra-examples, modules/s3/s3-bucket):
+// POST https://api.<пул>.storage.selcloud.ru/v2/hello/init с Keystone-токеном,
+// скоупленным на проект. 204 — проинициализирован, 400 — уже был.
+async function initProjectS3(user: string, userPassword: string, projectId: string): Promise<void> {
+  const authBody = JSON.stringify({
+    auth: {
+      identity: {
+        methods: ["password"],
+        password: { user: { name: user, domain: { name: domainName }, password: userPassword } },
+      },
+      scope: { project: { id: projectId } },
+    },
+  });
+  const auth = await runCurl([
+    "-sS", "--max-time", "30", "-D", "-", "-o", "/dev/null",
+    "-H", "Content-Type: application/json",
+    "--data-binary", "@-",
+    "https://cloud.api.selcloud.ru/identity/v3/auth/tokens",
+  ], authBody);
+  const token = auth.stdout.split(/\r?\n/)
+    .find((line) => line.toLowerCase().startsWith("x-subject-token:"))
+    ?.split(":")[1]?.trim();
+  if (!token) {
+    throw new Error(`Не удалось получить токен проекта для инициализации S3: ${auth.stderr || auth.stdout.split(/\r?\n/)[0]}`);
+  }
+
+  const initUrl = cfg.get("s3InitUrl") ?? `https://api.${s3Pool}.storage.selcloud.ru/v2/hello/init`;
+  const init = await runCurl([
+    "-sS", "--max-time", "30", "-X", "POST", "-o", "-", "-w", "\n%{http_code}",
+    "-H", "Content-Type: application/json",
+    "-H", "Accept: application/json",
+    "-K", "-",
+    initUrl,
+  ], `header = "X-Auth-Token: ${token}"\n`);
+  const lines = init.stdout.trimEnd().split("\n");
+  const code = Number(lines.pop());
+  if (code === 204) {
+    pulumi.log.info(`S3 в проекте проинициализирован (${initUrl})`);
+  } else if (code === 400) {
+    pulumi.log.info("S3 в проекте уже был проинициализирован");
+  } else {
+    throw new Error(`Инициализация S3 (${initUrl}) ответила ${code || "без ответа"}: ${(lines.join("\n") || init.stderr).slice(0, 300)}`);
+  }
+}
+
 // Ключ, выданный через IAM, S3-шлюз признаёт не сразу: до этого CreateBucket
 // отвечает 403 InvalidAccessKeyId. Вместо фиксированной паузы опрашиваем S3
 // этим же ключом (ListBuckets, подпись SigV4 делает curl — он ходит через
@@ -245,11 +304,13 @@ function probeS3(accessKey: string, secretKey: string): Promise<{ code: number; 
 }
 
 const s3KeyReadyTimeoutSeconds = cfg.getNumber("s3KeyReadyTimeoutSeconds") ?? 900;
-const s3AccessKeyReady = pulumi.all([s3Credentials.accessKey, s3Credentials.secretKey])
-  .apply(async ([accessKey, secretKey]) => {
+const s3AccessKeyReady = pulumi.all([
+  s3Credentials.accessKey, s3Credentials.secretKey, serviceUser.name, password.result, project.id,
+]).apply(async ([accessKey, secretKey, userName, userPassword, projectId]) => {
     if (pulumi.runtime.isDryRun()) {
       return accessKey;
     }
+    await initProjectS3(userName, userPassword, projectId);
     const deadline = Date.now() + s3KeyReadyTimeoutSeconds * 1000;
     let last = { code: 0, body: "" };
     for (let attempt = 1; Date.now() < deadline; attempt++) {
