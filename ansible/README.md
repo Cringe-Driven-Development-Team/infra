@@ -1,7 +1,7 @@
 # Ansible: настройка двух VPS из Pulumi
 
 Инфраструктура: **VPS 1 (gateway)** — публичный IP, Caddy на домене с Let's Encrypt, jump-хост;
-**VPS 2 (backend)** — без публичного IP, доступна только из приватной сети через ProxyJump.
+**VPS 2 (backend)** — без публичного IP, доступна только из приватной сети через VPS 1 (ProxyCommand).
 
 ## Установка
 
@@ -31,9 +31,11 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 
 ## Доступ к VPS 2
 
-`group_vars/backend/vars.yml` подставляет `ProxyJump` на адрес VPS 1 из inventory
-(`hostvars[groups['gateway'][0]]`). Во время bootstrap прыгаем под `root` (`jump_user=root`
-в плейбуке), после `ssh_hardening` root-логин запрещён и прыгаем под `deploy`.
+`group_vars/backend/vars.yml` подставляет `ProxyCommand` через VPS 1 из inventory
+(`hostvars[groups['gateway'][0]]`). Именно `ProxyCommand`, а не `ProxyJump`: опции командной
+строки на хоп через `-J` не действуют, а хопу нужен ключ стенда и `IdentitiesOnly=yes`.
+Во время bootstrap прыгаем под `root` (`jump_user=root` в плейбуке), после `ssh_hardening`
+root-логин запрещён и прыгаем под `deploy`.
 
 ## Что настраивается
 
@@ -52,4 +54,4 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 - с VPS 1 доступен порт 22 приватного IP VPS 2;
 - приватный IP VPS 2 недоступен снаружи.
 
-CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi).
+CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi при `infra:s3PublicRead=true`).

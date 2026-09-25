@@ -1,8 +1,8 @@
 # Pulumi: две VPS + S3 + DNS в Selectel
 
 Создаёт: проект, сервисного пользователя проекта (+ S3-ключи), keypair, приватную сеть с роутером,
-VPS 1 (floating IP, роль gateway), VPS 2 (только приватная сеть, роль backend), S3-бакет с публичным
-чтением через @pulumi/aws, A-запись домена на VPS 1.
+VPS 1 (floating IP, роль gateway), VPS 2 (только приватная сеть, роль backend), S3-бакет через @pulumi/aws
+(публичное чтение — при `infra:s3PublicRead=true`), A-запись домена на VPS 1.
 
 ## Установка
 
@@ -81,11 +81,27 @@ A-запись домена находится под управлением Pul
 
 ## Проверка S3 (из DoD)
 
+Публичное чтение объектов включается `pulumi config set infra:s3PublicRead true` (по умолчанию выключено).
+
 ```bash
-export AWS_ACCESS_KEY_ID=$(pulumi stack output s3AccessKey)
-export AWS_SECRET_ACCESS_KEY=$(pulumi stack output s3SecretKey)
-aws --endpoint-url $(pulumi stack output s3Endpoint) s3 cp ./hello.txt s3://$(pulumi stack output s3Bucket)/
-curl -I https://<s3-pool>.storage.selcloud.ru/<bucket>/hello.txt   # 200 без авторизации
+# Ключи продукта читаем в локальные переменные и отдаём только команде aws:
+# AWS_* в окружении — это ключи backend'а стейта (п.2), перетирать их нельзя,
+# иначе следующие pulumi stack output не прочитают стейт.
+S3_ENDPOINT=$(pulumi stack output s3Endpoint)
+S3_BUCKET=$(pulumi stack output s3Bucket)
+S3_AK=$(pulumi stack output s3AccessKey)
+S3_SK=$(pulumi stack output s3SecretKey --show-secrets)    # без --show-secrets будет "[secret]"
+
+echo hello > /tmp/hello.txt
+# awscli не доверяет цепочке сертификатов Selectel из коробки — нужен их корневой сертификат,
+# см. https://docs.selectel.ru/en/s3/tools/aws-cli (ca_bundle / AWS_CA_BUNDLE)
+AWS_ACCESS_KEY_ID="$S3_AK" AWS_SECRET_ACCESS_KEY="$S3_SK" \
+  aws --endpoint-url "$S3_ENDPOINT" --region "$(pulumi config get infra:s3Pool)" \
+  s3 cp /tmp/hello.txt "s3://$S3_BUCKET/"
+
+# публичный URL объекта = <s3Endpoint>/<s3Bucket>/<key>; без авторизации отвечает 200,
+# только если включено infra:s3PublicRead (п.3)
+curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 ```
 
 `pulumi destroy` удаляет бакет вместе с объектами (`forceDestroy: true`).

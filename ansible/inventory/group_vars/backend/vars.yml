@@ -4,5 +4,11 @@ firewall_rules:
 
 # Ansible попадает на VPS 2 через VPS 1 как jump-хост. jump_user=root только на время
 # bootstrap.yml (на шлюзе пользователя deploy ещё нет), далее — deploy.
+# ProxyCommand, а не ProxyJump: опции командной строки (-o IdentityFile, StrictHostKeyChecking)
+# на хоп через -J не действуют (man ssh), и до шлюза ssh пошёл бы с ключами по умолчанию.
 ansible_ssh_common_args: >-
-  -o ProxyJump={{ jump_user | default('deploy') }}@{{ hostvars[groups['gateway'][0]]['ansible_host'] }}
+  -o ProxyCommand="ssh -W %h:%p -q
+  -i {{ deploy_key_path }}
+  -o IdentitiesOnly=yes
+  -o StrictHostKeyChecking=accept-new
+  {{ jump_user | default(deploy_user) }}@{{ hostvars[groups['gateway'][0]]['ansible_host'] }}"

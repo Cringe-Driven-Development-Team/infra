@@ -4,8 +4,10 @@
 - name: "Bootstrap: python3 на чистых хостах"
   hosts: all
   gather_facts: false
-  remote_user: root
+  # ansible_user, а не remote_user: ansible_user из group_vars/all (deploy) —
+  # переменная подключения и перекрывает ключевое слово remote_user плейбука.
   vars:
+    ansible_user: root
     jump_user: root
   tasks:
     - name: Поставить python3, если его нет
@@ -16,8 +18,10 @@
 
 - name: "Bootstrap: пользователь deploy"
   hosts: all
-  remote_user: root
+  # ansible_user, а не remote_user: ansible_user из group_vars/all (deploy) —
+  # переменная подключения и перекрывает ключевое слово remote_user плейбука.
   vars:
+    ansible_user: root
     jump_user: root
   roles:
     - users

@@ -72,6 +72,7 @@ pulumi config set infra:dnsProjectId '<project id из п.1.2>'
 
 pulumi config set infra:s3Pool   ru-7
 pulumi config set infra:s3Bucket '<имя бакета релизов, глобально уникальное>'
+pulumi config set infra:s3PublicRead true   # публичное чтение объектов (политика бакета), нужно для DoD
 ```
 
 ## 4. Pulumi: создать инфраструктуру
@@ -104,14 +105,31 @@ curl -I https://cellestial.ru/                                  # 200
 echo | openssl s_client -connect cellestial.ru:443 -servername cellestial.ru 2>/dev/null | grep issuer
 
 cd ../pulumi
-export AWS_ACCESS_KEY_ID=$(pulumi stack output s3AccessKey)
-export AWS_SECRET_ACCESS_KEY=$(pulumi stack output s3SecretKey)
-echo hello > /tmp/hello.txt
-aws --endpoint-url $(pulumi stack output s3Endpoint) s3 cp /tmp/hello.txt s3://$(pulumi stack output s3Bucket)/
-# публичный URL объекта = <s3Endpoint>/<s3Bucket>/<key>, авторизация не нужна
-curl -I "$(pulumi stack output s3Endpoint)/$(pulumi stack output s3Bucket)/hello.txt"   # 200
+# Ключи продукта читаем в локальные переменные и отдаём только команде aws:
+# AWS_* в окружении — это ключи backend'а стейта (п.2), перетирать их нельзя,
+# иначе следующие pulumi stack output не прочитают стейт.
+S3_ENDPOINT=$(pulumi stack output s3Endpoint)
+S3_BUCKET=$(pulumi stack output s3Bucket)
+S3_AK=$(pulumi stack output s3AccessKey)
+S3_SK=$(pulumi stack output s3SecretKey --show-secrets)    # без --show-secrets будет "[secret]"
 
-ssh -J deploy@$(pulumi stack output publicIp) 192.168.199.<backend> 'hostname'   # VPS2 доступна только изнутри
+echo hello > /tmp/hello.txt
+# awscli не доверяет цепочке сертификатов Selectel из коробки — нужен их корневой сертификат,
+# см. https://docs.selectel.ru/en/s3/tools/aws-cli (ca_bundle / AWS_CA_BUNDLE)
+AWS_ACCESS_KEY_ID="$S3_AK" AWS_SECRET_ACCESS_KEY="$S3_SK" \
+  aws --endpoint-url "$S3_ENDPOINT" --region "$(pulumi config get infra:s3Pool)" \
+  s3 cp /tmp/hello.txt "s3://$S3_BUCKET/"
+
+# публичный URL объекта = <s3Endpoint>/<s3Bucket>/<key>; без авторизации отвечает 200,
+# только если включено infra:s3PublicRead (п.3)
+curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
+
+# VPS 2 доступна только через VPS 1. Ключ и IdentitiesOnly передаём и хопу:
+# опции командной строки на хоп через -J не действуют.
+KEY=~/.ssh/selectel_release
+ssh -i $KEY -o IdentitiesOnly=yes \
+  -o ProxyCommand="ssh -W %h:%p -i $KEY -o IdentitiesOnly=yes deploy@$(pulumi stack output publicIp)" \
+  deploy@$(pulumi stack output privateIp) 'hostname'
 ```
 
 CDN (static.site.ru в схеме) — настраивается вручную в панели Selectel и связывается с бакетом;
@@ -132,5 +150,7 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 | `409 already_exists` | Имя занято в общем аккаунте → сменить `infra:name` / `infra:serviceUserName` / `infra:s3Bucket` |
 | `Your query returned no results` на зоне | `infra:dnsZone`/`infra:dnsProjectId` не совпадают с реальностью |
 | `ExternalGatewayForFloatingIPNotFound` | Уже обработан (`dependsOn`), повторить `pulumi up` |
-| VPS 2 не пингуется из Ansible | `bootstrap.yml` запускался раньше, чем VPS 1 приняла `deploy`-ключ; пропустить заново с `jump_user` через `-e jump_user=root` |
+| VPS 2 не пингуется из Ansible | До `bootstrap.yml` на шлюзе нет `deploy`, хоп под `root` идёт только в `bootstrap.yml`. Если bootstrap прервался на VPS 2: `ansible-playbook bootstrap.yml --limit backend` |
+| `Host key verification failed` на хопе до VPS 1 | Стек пересоздан с тем же floating IP, а host key новый: `ssh-keygen -R <publicIp>` |
+| `Too many authentication failures` | ssh перебрал ключи агента раньше ключа стенда (`MaxAuthTries 4`). В `ansible.cfg` уже `IdentitiesOnly=yes`; при ручном ssh добавлять `-o IdentitiesOnly=yes` |
 | Caddy не получает сертификат | A-запись ещё не указала на `publicIp` — `dig cellestial.ru`, подождать TTL 300s |

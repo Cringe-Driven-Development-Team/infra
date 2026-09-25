@@ -3,8 +3,8 @@
 Стенд в Selectel: две VPS + объектное хранилище S3 + DNS.
 
 - `pulumi/` — инфраструктура как код: проект, сервисный пользователь (+S3-ключи), сети,
-  VPS 1 (gateway, публичный IP), VPS 2 (backend, только приватная сеть), S3-бакет с публичным
-  чтением, A-запись домена. См. `pulumi/README.md`.
+  VPS 1 (gateway, публичный IP), VPS 2 (backend, только приватная сеть), S3-бакет
+  (публичное чтение — при `infra:s3PublicRead=true`), A-запись домена. См. `pulumi/README.md`.
 - `ansible/` — настройка серверов: пользователь, SSH-hardening, firewall, Docker + Compose,
   Caddy с Let's Encrypt на VPS 1. См. `ansible/README.md`.
 

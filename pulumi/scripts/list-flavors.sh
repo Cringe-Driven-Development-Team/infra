@@ -20,9 +20,21 @@ REGION="$(pulumi config get infra:pool -s "$STACK")"
 AUTH_URL="https://cloud.api.selcloud.ru/identity/v3"
 
 RESP="$(mktemp)"
-TOKEN="$(curl -sS -D - -o "$RESP" -H 'Content-Type: application/json' \
-  -d "{\"auth\":{\"identity\":{\"methods\":[\"password\"],\"password\":{\"user\":{\"name\":\"$USERNAME\",\"domain\":{\"name\":\"$DOMAIN\"},\"password\":\"$PASSWORD\"}}},\"scope\":{\"project\":{\"id\":\"$PROJECT_ID\"}}}}" \
-  "$AUTH_URL/auth/tokens" | awk -F': ' 'tolower($1)=="x-subject-token"{print $2}' | tr -d '\r')"
+# Тело собирает python: корректное JSON-экранирование пароля с " и \.
+# Пароль передаётся через окружение python и stdin curl, а не аргументами — его не видно в ps.
+AUTH_BODY="$(SEL_PASSWORD="$PASSWORD" python3 - "$USERNAME" "$DOMAIN" "$PROJECT_ID" <<'PY'
+import json, os, sys
+user, domain, project = sys.argv[1:4]
+print(json.dumps({"auth": {
+    "identity": {"methods": ["password"], "password": {"user": {
+        "name": user, "domain": {"name": domain}, "password": os.environ["SEL_PASSWORD"]}}},
+    "scope": {"project": {"id": project}},
+}}))
+PY
+)"
+TOKEN="$(printf '%s' "$AUTH_BODY" | curl -sS -D - -o "$RESP" -H 'Content-Type: application/json' \
+  --data-binary @- "$AUTH_URL/auth/tokens" \
+  | awk -F': ' 'tolower($1)=="x-subject-token"{print $2}' | tr -d '\r')"
 
 if [[ -z "$TOKEN" ]]; then
   echo "Не получен токен. Ответ Keystone:" >&2
