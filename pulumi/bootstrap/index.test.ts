@@ -4,7 +4,6 @@ import * as pulumi from "@pulumi/pulumi";
 const created = new Map<string, { type: string; inputs: Record<string, any> }>();
 
 pulumi.runtime.setAllConfig({
-  "infra-bootstrap:projectId": "p-123",
   "infra-bootstrap:s3Pool": "ru-7",
   "infra-bootstrap:bucketName": "cdd-infra-state",
 });
@@ -40,6 +39,12 @@ beforeAll(async () => {
 });
 
 describe("bootstrap-стек", () => {
+  test("проект infra-state создаётся стеком", () => {
+    const project = created.get("infra-state")!;
+    expect(project.type).toContain("VpcProjectV2");
+    expect(project.inputs.name).toBe("infra-state");
+  });
+
   test("пользователь стейта: одна роль member на проект infra-state", async () => {
     const user = created.get("state-user")!;
     expect(user.inputs.name).toBe("infra-state-s3");

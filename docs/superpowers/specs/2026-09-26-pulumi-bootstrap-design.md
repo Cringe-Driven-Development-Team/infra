@@ -39,9 +39,8 @@ pulumi/bootstrap/
 
 ## Ресурсы
 
-1. `selectel.VpcProjectV2("state")` — существующий проект `infra-state`
-   (`800b74820d5440a3a00b6b961eccabf7`), импортируется через опцию `import` при первом `up`;
-   `protect: true`.
+1. `selectel.VpcProjectV2("infra-state")` — проект `infra-state` создаётся стеком (созданный
+   ранее в панели проект удалён 2026-09-26 до первого `up`); `protect: true`.
 2. `random.RandomPassword` + `selectel.IamServiceuserV1("state")` — пользователь `infra-state-s3`,
    одна роль: `member`, scope `project`, `projectId` = проект `infra-state`. В проекте нет ничего,
    кроме бакета стейта.
@@ -56,7 +55,7 @@ pulumi/bootstrap/
 Выходы: `stateBucket`, `stateEndpoint`, `stateRegion`, `stateAccessKey`, `stateSecretKey`
 (secret), `backendUrl` (строка для `pulumi login` с префиксом `main/`).
 
-Конфиг (`infra-bootstrap:*`): `projectId`, `s3Pool` (`ru-7`), `bucketName`,
+Конфиг (`infra-bootstrap:*`): `s3Pool` (`ru-7`), `bucketName`,
 `s3KeyReadyTimeoutSeconds` (по умолчанию 600).
 
 ## Учётные данные и секреты
@@ -72,7 +71,7 @@ pulumi/bootstrap/
 ## Первый запуск и перенос стейта
 
 1. `pulumi login file://~/.pulumi-bootstrap-local`, `pulumi stack init main`, `pulumi preview` —
-   показать план пользователю (ожидается 1 импорт и создание остальных ресурсов).
+   показать план пользователю (ожидается только создание ресурсов).
 2. После подтверждения пользователя — `pulumi up`.
 3. Перенос стейта bootstrap в бакет: `pulumi stack export > main.json`;
    `pulumi login "s3://<bucket>/bootstrap?region=<pool>&endpoint=s3.<pool>.storage.selcloud.ru&s3ForcePathStyle=true"`

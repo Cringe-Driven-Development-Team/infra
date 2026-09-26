@@ -5,14 +5,13 @@ import * as selectel from "@pulumi/selectel";
 import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./selectel-s3";
 
 const cfg = new pulumi.Config();
-const projectId = cfg.require("projectId");
 const pool = cfg.require("s3Pool");
 const bucketName = cfg.require("bucketName");
 const keyReadyTimeout = cfg.getNumber("s3KeyReadyTimeoutSeconds") ?? 600;
 const endpoint = `https://s3.${pool}.storage.selcloud.ru`;
 
-// Проект infra-state создан в панели; при первом up импортируется, дальше управляется стеком.
-const project = new selectel.VpcProjectV2("infra-state", { name: "infra-state" }, { import: projectId, protect: true });
+// Отдельный проект только под стейт: рядом нет чужих ресурсов, его не снесут при уборке.
+const project = new selectel.VpcProjectV2("infra-state", { name: "infra-state" }, { protect: true });
 
 const password = new random.RandomPassword("state-user-password", {
   length: 24,

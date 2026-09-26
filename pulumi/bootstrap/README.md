@@ -1,6 +1,6 @@
 # Bootstrap: бакет стейта Pulumi
 
-Отдельный стек (`infra-bootstrap`, стек `main`) создаёт в проекте Selectel `infra-state` бакет, в
+Отдельный стек (`infra-bootstrap`, стек `main`) создаёт проект Selectel `infra-state` и в нём бакет, в
 котором хранятся стейты всех Pulumi-стеков инфраструктуры, и сервисного пользователя с доступом
 только к этому проекту. Зачем отдельно — бакет стейта нельзя создать в стеке, чей стейт в нём
 лежит (задача #5, спека `docs/superpowers/specs/2026-09-26-pulumi-bootstrap-design.md`).
@@ -80,10 +80,9 @@ rm /tmp/cellestial-dev.json
 
 ## Первый запуск (уже выполнен, для справки)
 
-1. `pulumi login file://~/.pulumi-bootstrap-local`, `pulumi stack init main`,
-   `pulumi config set infra-bootstrap:projectId 800b74820d5440a3a00b6b961eccabf7`,
-   `pulumi config set infra-bootstrap:s3Pool ru-7`, `pulumi config set infra-bootstrap:bucketName cdd-infra-state`.
-2. `pulumi preview` → `pulumi up` (импорт проекта `infra-state`, пользователь, ключ, бакет,
+1. `mkdir -p ~/.pulumi-bootstrap-local && pulumi login file://~/.pulumi-bootstrap-local`,
+   `pulumi stack init main --secrets-provider passphrase`, `pulumi config set infra-bootstrap:s3Pool ru-7`, `pulumi config set infra-bootstrap:bucketName cdd-infra-state`.
+2. `pulumi preview` → `pulumi up` (проект `infra-state`, пользователь, ключ, бакет,
    версионирование).
 3. Перенос стейта в бакет: `pulumi stack export --show-secrets --file bootstrap-state-export.json` (файл в `.gitignore`), ключи стейта в
    `AWS_*`, `pulumi login "s3://cdd-infra-state/bootstrap?…"`, `pulumi stack init main`,
