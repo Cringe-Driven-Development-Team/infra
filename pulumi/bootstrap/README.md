@@ -46,6 +46,10 @@ pulumi stack select main
 pulumi preview
 ```
 
+После `source env.sh` работает и `openstack` CLI (`uv tool install python-openstackclient`) — без
+`clouds.yaml`, в проекте `infra-state` (другой — `SELECTEL_PROJECT=<имя>` в `selectel.env`):
+`openstack flavor list`, `openstack image list --public`.
+
 `pulumi login` глобален: перед работой с основным стеком войдите в его префикс (ниже).
 
 Каждый `pulumi up` (не `preview`) инициализирует S3 в проекте и проверяет ключ `infra-state-s3`

@@ -4,9 +4,10 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Переменные, которые выставляет env.sh, не должны приходить из вызывающей оболочки.
-unset SELECTEL_ENV SELECTEL_USERNAME SELECTEL_PASSWORD SELECTEL_DOMAIN_NAME PULUMI_CONFIG_PASSPHRASE \
+unset SELECTEL_ENV SELECTEL_PROJECT SELECTEL_USERNAME SELECTEL_PASSWORD SELECTEL_DOMAIN_NAME PULUMI_CONFIG_PASSPHRASE \
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE \
-  OS_USERNAME OS_PASSWORD OS_DOMAIN_NAME OS_AUTH_URL OS_REGION_NAME
+  OS_USERNAME OS_PASSWORD OS_DOMAIN_NAME OS_AUTH_URL OS_REGION_NAME \
+  OS_USER_DOMAIN_NAME OS_PROJECT_DOMAIN_NAME OS_IDENTITY_API_VERSION OS_PROJECT_NAME
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 FAILS=0
@@ -76,6 +77,15 @@ test_exports_personal_state_key() {
 test_crlf_file() {
   sed 's/$/\r/' "$TMP/ok.env" > "$TMP/crlf.env"
   [ "$(show bash "$TMP/crlf.env" 2>/dev/null)" = "$expected" ] || fail "CRLF-файл: значения с \\r"
+}
+
+test_openstack_cli_variables() {
+  local out
+  out=$(SELECTEL_ENV=$TMP/ok.env bash -c '. "$0"; printf "%s|%s|%s|%s" "$OS_USER_DOMAIN_NAME" "$OS_PROJECT_DOMAIN_NAME" "$OS_IDENTITY_API_VERSION" "$OS_PROJECT_NAME"' "$HERE/env.sh" 2>/dev/null)
+  [ "$out" = "631994|631994|3|infra-state" ] || fail "переменные openstack CLI: '$out'"
+  { cat "$TMP/ok.env"; echo 'SELECTEL_PROJECT=other'; } > "$TMP/proj.env"
+  out=$(SELECTEL_ENV=$TMP/proj.env bash -c '. "$0"; printf "%s" "$OS_PROJECT_NAME"' "$HERE/env.sh" 2>/dev/null)
+  [ "$out" = "other" ] || fail "SELECTEL_PROJECT не переопределяет проект: '$out'"
 }
 
 for t in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
