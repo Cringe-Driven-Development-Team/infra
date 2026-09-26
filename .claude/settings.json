@@ -1,12 +1,13 @@
 {
   "enabledPlugins": {
-    "ansible-good-practices@claude-ansible-skills": true
+    "pulumi@cdd": true,
+    "ansible@cdd": true
   },
   "extraKnownMarketplaces": {
-    "claude-ansible-skills": {
+    "cdd": {
       "source": {
         "source": "github",
-        "repo": "leogallego/claude-ansible-skills"
+        "repo": "Cringe-Driven-Development-Team/claude-plugins"
       }
     }
   }
