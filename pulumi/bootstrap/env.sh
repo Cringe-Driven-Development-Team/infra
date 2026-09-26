@@ -1,6 +1,7 @@
 # Учётные данные Selectel для bootstrap-стека. Использование: source pulumi/bootstrap/env.sh
 # Файл ~/.config/selectel.env (права 600, путь переопределяется SELECTEL_ENV) содержит строки
-# KEY=value: SELECTEL_USERNAME, SELECTEL_PASSWORD, SELECTEL_DOMAIN_NAME, PULUMI_CONFIG_PASSPHRASE.
+# KEY=value: SELECTEL_USERNAME, SELECTEL_PASSWORD, SELECTEL_DOMAIN_NAME, PULUMI_CONFIG_PASSPHRASE и
+# личный S3-ключ стейта AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (выпускает bun state-key.ts).
 # Файл разбирается построчно, а не через source: значения со спецсимволами передаются как есть.
 # POSIX sh — работает в bash, zsh и dash.
 _sel_file=${SELECTEL_ENV:-$HOME/.config/selectel.env}
@@ -11,7 +12,8 @@ if [ ! -r "$_sel_file" ]; then
 fi
 while IFS= read -r _sel_line || [ -n "$_sel_line" ]; do
   case "$_sel_line" in
-    SELECTEL_USERNAME=* | SELECTEL_PASSWORD=* | SELECTEL_DOMAIN_NAME=* | PULUMI_CONFIG_PASSPHRASE=*)
+    SELECTEL_USERNAME=* | SELECTEL_PASSWORD=* | SELECTEL_DOMAIN_NAME=* | PULUMI_CONFIG_PASSPHRASE=* | \
+    AWS_ACCESS_KEY_ID=* | AWS_SECRET_ACCESS_KEY=*)
       export "${_sel_line%%=*}=${_sel_line#*=}" ;;
   esac
 done < "$_sel_file"

@@ -50,15 +50,15 @@ export function credentialsFromEnv(env: Record<string, string | undefined>): Cre
   };
 }
 
-// Keystone-токен, скоупленный на проект: нужен для инициализации S3 в этом проекте.
-async function projectToken(http: Http, c: Credentials, projectId: string): Promise<string> {
+// Keystone-токен сервисного пользователя: на проект (инициализация S3) или на аккаунт (IAM, VPC API).
+async function keystoneToken(http: Http, c: Credentials, scope: object, what: string): Promise<string> {
   const body = JSON.stringify({
     auth: {
       identity: {
         methods: ["password"],
         password: { user: { name: c.username, domain: { name: c.domain }, password: c.password } },
       },
-      scope: { project: { id: projectId } },
+      scope,
     },
   });
   const res = await http(
@@ -71,9 +71,61 @@ async function projectToken(http: Http, c: Credentials, projectId: string): Prom
     ?.slice("x-subject-token:".length)
     .trim();
   if (res.status !== 201 || !token) {
-    throw new Error(`Не удалось получить токен проекта ${projectId}: HTTP ${res.status || "без ответа"}`);
+    throw new Error(`Не удалось получить токен ${what}: HTTP ${res.status || "без ответа"}`);
   }
   return token;
+}
+
+const projectToken = (http: Http, c: Credentials, projectId: string) =>
+  keystoneToken(http, c, { project: { id: projectId } }, `проекта ${projectId}`);
+
+export const accountToken = (http: Http, c: Credentials) =>
+  keystoneToken(http, c, { domain: { name: c.domain } }, `аккаунта ${c.domain}`);
+
+// GET к API Selectel с токеном в stdin; тело — JSON.
+async function apiGet(http: Http, token: string, url: string): Promise<any> {
+  const res = await http(["-H", "Accept: application/json", "-K", "-", url], `header = "X-Auth-Token: ${token}"\n`);
+  if (res.status !== 200) {
+    throw new Error(`${url} ответил ${res.status || "без ответа"}: ${res.body.slice(0, 300)}`);
+  }
+  return JSON.parse(res.body);
+}
+
+export async function findProjectId(http: Http, token: string, name: string): Promise<string> {
+  const { projects = [] } = await apiGet(http, token, "https://api.selectel.ru/vpc/resell/v2/projects");
+  const found = projects.find((p: { name: string }) => p.name === name);
+  if (!found) {
+    throw new Error(`Проект ${name} не найден; есть: ${projects.map((p: { name: string }) => p.name).join(", ") || "—"}`);
+  }
+  return found.id;
+}
+
+export async function findServiceUserId(http: Http, token: string, name: string): Promise<string> {
+  const { users = [] } = await apiGet(http, token, "https://api.selectel.ru/iam/v1/service_users");
+  const found = users.find((u: { name: string }) => u.name === name);
+  if (!found) {
+    throw new Error(`Сервисный пользователь ${name} не найден`);
+  }
+  return found.id;
+}
+
+// Новый S3-ключ пользователя на проект. Секрет Selectel показывает только в ответе на создание.
+export async function createS3Key(
+  http: Http, token: string, userId: string, projectId: string, name: string,
+): Promise<{ accessKey: string; secretKey: string }> {
+  const url = `https://api.selectel.ru/iam/v1/service_users/${userId}/credentials`;
+  const res = await http(
+    ["-X", "POST", "-H", "Content-Type: application/json", "--data-raw", JSON.stringify({ name, project_id: projectId }), "-K", "-", url],
+    `header = "X-Auth-Token: ${token}"\n`,
+  );
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`Выпуск S3-ключа ответил ${res.status || "без ответа"}: ${res.body.slice(0, 300)}`);
+  }
+  const { access_key: accessKey, secret_key: secretKey } = JSON.parse(res.body);
+  if (!accessKey || !secretKey) {
+    throw new Error("Выпуск S3-ключа: в ответе нет access_key/secret_key");
+  }
+  return { accessKey, secretKey };
 }
 
 // Инициализация S3 в проекте: пока её нет, S3 не знает проект и отвечает InvalidAccessKeyId на

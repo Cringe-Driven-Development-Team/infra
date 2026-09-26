@@ -62,6 +62,13 @@ test_isolates_personal_aws_config() {
   [ "$out" = "/dev/null|/dev/null" ] || fail "личный ~/.aws не изолирован: '$out'"
 }
 
+test_exports_personal_state_key() {
+  { cat "$TMP/ok.env"; echo 'AWS_ACCESS_KEY_ID=ak32'; echo 'AWS_SECRET_ACCESS_KEY=sk$32'; } > "$TMP/key.env"
+  local out
+  out=$(SELECTEL_ENV=$TMP/key.env bash -c '. "$0"; printf "%s|%s" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"' "$HERE/env.sh" 2>/dev/null)
+  [ "$out" = 'ak32|sk$32' ] || fail "ключ стейта не экспортирован: '$out'"
+}
+
 for t in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
   echo "$t"
   "$t"

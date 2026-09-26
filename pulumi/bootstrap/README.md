@@ -1,61 +1,63 @@
 # Bootstrap: бакет стейта Pulumi
 
-Отдельный стек (`infra-bootstrap`, стек `main`) создаёт проект Selectel `infra-state` и в нём бакет, в
-котором хранятся стейты всех Pulumi-стеков инфраструктуры, и сервисного пользователя с доступом
-только к этому проекту. Зачем отдельно — бакет стейта нельзя создать в стеке, чей стейт в нём
-лежит (задача #5, спека `docs/superpowers/specs/2026-09-26-pulumi-bootstrap-design.md`).
+Отдельный стек (`infra-bootstrap`, стек `main`) создаёт проект Selectel `infra-state` и в нём бакет
+`cdd-infra-state`, где хранятся стейты всех Pulumi-стеков инфраструктуры. Зачем отдельно — бакет
+стейта нельзя создать в стеке, чей стейт в нём лежит (задача #5, спека
+`docs/superpowers/specs/2026-09-26-pulumi-bootstrap-design.md`).
 
 | Префикс в бакете | Стейт |
 |---|---|
 | `bootstrap/` | этот стек |
 | `main/` | основной стек (`pulumi/`) |
 
-## Что нужно
+Доступ к стейту у каждого свой: личный S3-ключ на проект `infra-state`, выпущенный своим
+сервисным пользователем. Общих ключей, которые надо передавать из рук в руки, нет.
 
-- Pulumi CLI, bun, Node.js, curl.
-- Сервисный пользователь **аккаунта** Selectel с ролями `member` (аккаунт) и `iam.admin` — свой у
-  каждого (IAM → Сервисные пользователи).
-- Файл `~/.config/selectel.env` с правами 600 — одной строкой в отдельном терминале, пароль и
-  passphrase вводятся скрыто:
+## Один раз на человека
 
-  ```sh
-  install -m600 /dev/null ~/.config/selectel.env && read -rsp 'Selectel password: ' p && echo && read -rsp 'Pulumi passphrase: ' pp && echo && printf 'SELECTEL_USERNAME=<ваш-пользователь>\nSELECTEL_PASSWORD=%s\nSELECTEL_DOMAIN_NAME=631994\nPULUMI_CONFIG_PASSPHRASE=%s\n' "$p" "$pp" > ~/.config/selectel.env && unset p pp
-  ```
+1. Pulumi CLI, bun, Node.js, curl.
+2. Свой сервисный пользователь **аккаунта** Selectel с ролями `member` (аккаунт) и `iam.admin`
+   (IAM → Сервисные пользователи; пароль показывается один раз — сразу в менеджер паролей).
+3. Файл `~/.config/selectel.env` (права 600) — одной строкой в отдельном терминале, пароль и
+   passphrase вводятся скрыто. Passphrase стеков — в менеджере паролей команды.
 
-  Passphrase стека `main` — в менеджере паролей команды.
+   ```sh
+   install -m600 /dev/null ~/.config/selectel.env && read -rsp 'Selectel password: ' p && echo && read -rsp 'Pulumi passphrase: ' pp && echo && printf 'SELECTEL_USERNAME=<ваш-пользователь>\nSELECTEL_PASSWORD=%s\nSELECTEL_DOMAIN_NAME=631994\nPULUMI_CONFIG_PASSPHRASE=%s\n' "$p" "$pp" > ~/.config/selectel.env && unset p pp
+   ```
+
+4. Личный S3-ключ стейта — скрипт выпускает его вашему сервисному пользователю на проект
+   `infra-state` и дописывает `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` в `selectel.env`:
+
+   ```sh
+   cd pulumi/bootstrap && pulumi install && source env.sh && bun state-key.ts
+   ```
+
+   Ключ в `selectel.env` уже есть — скрипт откажется; новый — `bun state-key.ts --force` (старый
+   удалите в IAM → ваш пользователь → Доступ → S3-ключи). Ушёл человек — удаляют его сервисного
+   пользователя, вместе с ним пропадает и доступ к стейту.
 
 ## Каждый запуск
 
 ```sh
 cd pulumi/bootstrap
-source env.sh                        # OS_* для Selectel, PULUMI_CONFIG_PASSPHRASE; личный ~/.aws отключён
-pulumi install                       # один раз на клоне: SDK selectel в sdks/, зависимости через bun
-export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…   # ключи стейта (см. «Ключи стейта»)
+source env.sh     # OS_* для Selectel, passphrase, личный ключ стейта; личный ~/.aws отключён
 pulumi login "s3://cdd-infra-state/bootstrap?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi stack select main
 pulumi preview
 ```
 
+`pulumi login` глобален: перед работой с основным стеком войдите в его префикс (ниже).
 Тесты: `bun run test`.
 
-## Ключи стейта
-
-Выходы стека `stateAccessKey` и `stateSecretKey` — ключи S3 для стейтов:
-
-```sh
-pulumi stack output stateAccessKey
-pulumi stack output stateSecretKey --show-secrets
-```
-
-Получить их можно только имея доступ к стейту, поэтому первый раз их передаёт тот, у кого они уже
-есть (менеджер паролей команды).
+Выходы `stateAccessKey`/`stateSecretKey` — ключи пользователя `infra-state-s3` для автоматизации
+(CI); людям они не нужны.
 
 ## Основной стек
 
 ```sh
+source pulumi/bootstrap/env.sh
 cd pulumi
-export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…
-pulumi login "$(pulumi -C bootstrap stack output backendUrl)"   # s3://cdd-infra-state/main?…
+pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 ```
 
 ### Переезд стека pulumi-cellestial из devops-pulumi-state
@@ -66,9 +68,9 @@ pulumi login "$(pulumi -C bootstrap stack output backendUrl)"   # s3://cdd-infra
 cd pulumi
 # старый бакет — прежние ключи и login
 pulumi stack select dev
-pulumi stack export --show-secrets --file /tmp/cellestial-dev.json   # с секретами в открытом виде — не коммитить
-# новый бакет
-export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…     # ключи стейта из bootstrap
+pulumi stack export --show-secrets --file /tmp/cellestial-dev.json   # секреты в открытом виде — не коммитить
+# новый бакет — личный ключ стейта
+source bootstrap/env.sh
 pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi stack init dev --secrets-provider passphrase     # та же passphrase, что у старого стека
 pulumi stack import --file /tmp/cellestial-dev.json
@@ -78,13 +80,15 @@ rm /tmp/cellestial-dev.json
 
 После этого `devops-pulumi-state` можно удалить.
 
-## Первый запуск (уже выполнен, для справки)
+## Первый запуск (выполнен 2026-09-26, для справки)
 
 1. `mkdir -p ~/.pulumi-bootstrap-local && pulumi login file://~/.pulumi-bootstrap-local`,
-   `pulumi stack init main --secrets-provider passphrase`, `pulumi config set infra-bootstrap:s3Pool ru-7`, `pulumi config set infra-bootstrap:bucketName cdd-infra-state`.
-2. `pulumi preview` → `pulumi up` (проект `infra-state`, пользователь, ключ, бакет,
-   версионирование).
-3. Перенос стейта в бакет: `pulumi stack export --show-secrets --file bootstrap-state-export.json` (файл в `.gitignore`), ключи стейта в
-   `AWS_*`, `pulumi login "s3://cdd-infra-state/bootstrap?…"`, `pulumi stack init main`,
+   `pulumi stack init main --secrets-provider passphrase`,
+   `pulumi config set infra-bootstrap:s3Pool ru-7`, `pulumi config set infra-bootstrap:bucketName cdd-infra-state`.
+2. `pulumi preview` → `pulumi up` (проект `infra-state`, пользователь, ключ, бакет, версионирование).
+3. `bun state-key.ts` — личный ключ стейта (проект `infra-state` уже существует).
+4. Перенос стейта в бакет: `pulumi stack export --show-secrets --file bootstrap-state-export.json`
+   (файл в `.gitignore`), `source env.sh`, `pulumi login "s3://cdd-infra-state/bootstrap?…"`,
+   `pulumi stack init main --secrets-provider passphrase`,
    `pulumi stack import --file bootstrap-state-export.json`, `pulumi preview` (без изменений),
    удалить файл экспорта и `~/.pulumi-bootstrap-local`.
