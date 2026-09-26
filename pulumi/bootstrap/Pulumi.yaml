@@ -1,0 +1,13 @@
+name: infra-bootstrap
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+    packagemanager: bun
+description: Бакет стейта Pulumi в проекте Selectel infra-state (#5)
+packages:
+  selectel:
+    source: terraform-provider
+    parameters:
+      - selectel/selectel
+      - 8.3.1
