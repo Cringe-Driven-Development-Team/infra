@@ -2,7 +2,7 @@
 # Файл ~/.config/selectel.env (права 600, путь переопределяется SELECTEL_ENV) содержит строки
 # KEY=value: SELECTEL_USERNAME, SELECTEL_PASSWORD, SELECTEL_DOMAIN_NAME, PULUMI_CONFIG_PASSPHRASE и
 # личный S3-ключ стейта AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (выпускает bun state-key.ts),
-# необязательно SELECTEL_PROJECT — проект для openstack CLI (по умолчанию infra-shared).
+# необязательно SELECTEL_PROJECT — проект openstack CLI по имени (по умолчанию проект стейта по id).
 # Файл разбирается построчно, а не через source: значения со спецсимволами передаются как есть.
 # POSIX sh — работает в bash, zsh и dash.
 _sel_file=${SELECTEL_ENV:-$HOME/.config/selectel.env}
@@ -12,6 +12,10 @@ if [ ! -r "$_sel_file" ]; then
   unset _sel_file _sel_cr
   return 1
 fi
+# Повторный source отражает только текущий файл: ключ, убранный из файла, не остаётся в оболочке
+# (иначе, например, удалённый SELECTEL_PROJECT=prod молча держал бы openstack CLI на проде).
+unset SELECTEL_USERNAME SELECTEL_PASSWORD SELECTEL_DOMAIN_NAME PULUMI_CONFIG_PASSPHRASE \
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY SELECTEL_PROJECT
 while IFS= read -r _sel_line || [ -n "$_sel_line" ]; do
   _sel_line=${_sel_line%"$_sel_cr"}   # файл, сохранённый в Windows (CRLF)
   case "$_sel_line" in
@@ -26,11 +30,19 @@ export OS_DOMAIN_NAME="${SELECTEL_DOMAIN_NAME:-}"
 export OS_AUTH_URL=https://cloud.api.selcloud.ru/identity/v3/
 export OS_REGION_NAME=ru-7
 # openstack CLI (флейворы, образы, сети — см. скилл selectel-ops): домены = номер аккаунта,
-# проект по умолчанию infra-shared, другой — SELECTEL_PROJECT в selectel.env.
 export OS_USER_DOMAIN_NAME="${SELECTEL_DOMAIN_NAME:-}"
 export OS_PROJECT_DOMAIN_NAME="${SELECTEL_DOMAIN_NAME:-}"
 export OS_IDENTITY_API_VERSION=3
-export OS_PROJECT_NAME="${SELECTEL_PROJECT:-infra-shared}"
+# Проект стейта — по id: имя проекта меняется при переименовании, id — нет
+# (= pulumi stack output stateProjectId bootstrap-стека). SELECTEL_PROJECT=<имя> в selectel.env —
+# другой проект по имени (например прод, id которого меняется при пересоздании).
+if [ -n "${SELECTEL_PROJECT:-}" ]; then
+  unset OS_PROJECT_ID
+  export OS_PROJECT_NAME="$SELECTEL_PROJECT"
+else
+  unset OS_PROJECT_NAME
+  export OS_PROJECT_ID=36b609e10bfc4ebfa5caae77d2c3a948
+fi
 # Личный ~/.aws не участвует: регион, endpoint и ключи стейта задаются явно, а чужой профиль
 # (ca_bundle с ~, старые ключи) ломает AWS-провайдер Pulumi и pulumi login s3://.
 export AWS_CONFIG_FILE=/dev/null

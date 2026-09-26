@@ -7,7 +7,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 unset SELECTEL_ENV SELECTEL_PROJECT SELECTEL_USERNAME SELECTEL_PASSWORD SELECTEL_DOMAIN_NAME PULUMI_CONFIG_PASSPHRASE \
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE \
   OS_USERNAME OS_PASSWORD OS_DOMAIN_NAME OS_AUTH_URL OS_REGION_NAME \
-  OS_USER_DOMAIN_NAME OS_PROJECT_DOMAIN_NAME OS_IDENTITY_API_VERSION OS_PROJECT_NAME
+  OS_USER_DOMAIN_NAME OS_PROJECT_DOMAIN_NAME OS_IDENTITY_API_VERSION OS_PROJECT_NAME OS_PROJECT_ID
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 FAILS=0
@@ -81,11 +81,19 @@ test_crlf_file() {
 
 test_openstack_cli_variables() {
   local out
-  out=$(SELECTEL_ENV=$TMP/ok.env bash -c '. "$0"; printf "%s|%s|%s|%s" "$OS_USER_DOMAIN_NAME" "$OS_PROJECT_DOMAIN_NAME" "$OS_IDENTITY_API_VERSION" "$OS_PROJECT_NAME"' "$HERE/env.sh" 2>/dev/null)
-  [ "$out" = "631994|631994|3|infra-shared" ] || fail "переменные openstack CLI: '$out'"
+  out=$(SELECTEL_ENV=$TMP/ok.env bash -c '. "$0"; printf "%s|%s|%s|%s|%s" "$OS_USER_DOMAIN_NAME" "$OS_PROJECT_DOMAIN_NAME" "$OS_IDENTITY_API_VERSION" "$OS_PROJECT_ID" "${OS_PROJECT_NAME:-}"' "$HERE/env.sh" 2>/dev/null)
+  [ "$out" = "631994|631994|3|36b609e10bfc4ebfa5caae77d2c3a948|" ] || fail "по умолчанию — id проекта стейта, без имени: '$out'"
   { cat "$TMP/ok.env"; echo 'SELECTEL_PROJECT=other'; } > "$TMP/proj.env"
-  out=$(SELECTEL_ENV=$TMP/proj.env bash -c '. "$0"; printf "%s" "$OS_PROJECT_NAME"' "$HERE/env.sh" 2>/dev/null)
-  [ "$out" = "other" ] || fail "SELECTEL_PROJECT не переопределяет проект: '$out'"
+  out=$(SELECTEL_ENV=$TMP/proj.env bash -c '. "$0"; printf "%s|%s" "$OS_PROJECT_NAME" "${OS_PROJECT_ID:-}"' "$HERE/env.sh" 2>/dev/null)
+  [ "$out" = "other|" ] || fail "SELECTEL_PROJECT: проект по имени и без id: '$out'"
+}
+
+test_resource_drops_removed_keys() {
+  { cat "$TMP/ok.env"; echo 'SELECTEL_PROJECT=prod'; echo 'AWS_ACCESS_KEY_ID=old'; } > "$TMP/re.env"
+  local out
+  out=$(bash -c 'SELECTEL_ENV=$1; . "$0"; cp "$2" "$1"; . "$0"; printf "%s|%s|%s" "${OS_PROJECT_NAME:-}" "${OS_PROJECT_ID:-}" "${AWS_ACCESS_KEY_ID:-}"' \
+    "$HERE/env.sh" "$TMP/re.env" "$TMP/ok.env" 2>/dev/null)
+  [ "$out" = "|36b609e10bfc4ebfa5caae77d2c3a948|" ] || fail "повторный source тянет удалённые из файла ключи: '$out'"
 }
 
 for t in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
