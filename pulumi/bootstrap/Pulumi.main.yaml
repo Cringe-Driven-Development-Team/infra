@@ -2,3 +2,4 @@ encryptionsalt: v1:yAkDG36AP6U=:v1:Tk3PoGlzO1BCaCMR:Q95OiW3IxfEHL74Mnp1wv/Sid7Gy
 config:
   infra-bootstrap:s3Pool: ru-7
   infra-bootstrap:bucketName: cdd-infra-state
+  infra-bootstrap:dnsZone: cellestial.ru.

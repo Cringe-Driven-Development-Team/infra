@@ -7,6 +7,7 @@ Object.assign(process.env, { OS_USERNAME: "u", OS_PASSWORD: "p", OS_DOMAIN_NAME:
 pulumi.runtime.setAllConfig({
   "infra-bootstrap:s3Pool": "ru-7",
   "infra-bootstrap:bucketName": "cdd-infra-state",
+  "infra-bootstrap:dnsZone": "cellestial.ru.",
 });
 pulumi.runtime.setMocks(
   {
@@ -40,10 +41,19 @@ beforeAll(async () => {
 });
 
 describe("bootstrap-стек", () => {
-  test("проект infra-state создаётся стеком", () => {
+  test("общий проект infra-shared (логическое имя прежнее — без пересоздания)", () => {
     const project = created.get("infra-state")!;
     expect(project.type).toContain("VpcProjectV2");
-    expect(project.inputs.name).toBe("infra-state");
+    expect(project.inputs.name).toBe("infra-shared");
+  });
+
+  test("DNS-зона домена живёт в общем проекте", async () => {
+    const zone = created.get("dns-zone")!;
+    expect(zone.type).toContain("DomainsZoneV2");
+    expect(zone.inputs.name).toBe("cellestial.ru.");
+    expect(zone.inputs.projectId).toBe(await value(stack.stateProjectId));
+    expect(await value(stack.dnsZone)).toBe("cellestial.ru.");
+    expect(await value(stack.dnsProjectId)).toBe(await value(stack.stateProjectId));
   });
 
   test("пользователь стейта: одна роль member на проект infra-state", async () => {

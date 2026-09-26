@@ -7,13 +7,20 @@ import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./selecte
 const cfg = new pulumi.Config();
 const pool = cfg.require("s3Pool");
 const bucketName = cfg.require("bucketName");
+const dnsZoneName = cfg.require("dnsZone"); // с точкой на конце: cellestial.ru.
 const keyReadyTimeout = cfg.getNumber("s3KeyReadyTimeoutSeconds") ?? 600;
 const endpoint = `https://s3.${pool}.storage.selcloud.ru`;
 // Сразу, до провайдеров: без env.sh — подсказка, а не 401 от Keystone или ошибка конфигурации провайдера.
 const selectelCredentials = credentialsFromEnv(process.env);
 
-// Отдельный проект только под стейт: рядом нет чужих ресурсов, его не снесут при уборке.
-const project = new selectel.VpcProjectV2("infra-state", { name: "infra-state" }, { protect: true });
+// Общий долгоживущий проект: стейт Pulumi и DNS-зона домена. Прод живёт отдельно — его проект
+// создаёт и удаляет основной стек. Логическое имя "infra-state" осталось от прежнего имени проекта:
+// смена логического имени пересоздала бы проект.
+const project = new selectel.VpcProjectV2("infra-state", { name: "infra-shared" }, { protect: true });
+
+// Зона домена: NS Selectel общие для всех проектов, поэтому делегирование у регистратора не меняется.
+// Записи прода (A на gateway) создаёт основной стек в этой зоне по infra:dnsProjectId.
+const zone = new selectel.DomainsZoneV2("dns-zone", { name: dnsZoneName, projectId: project.id }, { protect: true });
 
 const password = new random.RandomPassword("state-user-password", {
   length: 24,
@@ -24,7 +31,7 @@ const password = new random.RandomPassword("state-user-password", {
   overrideSpecial: "!#$%&*+-.:;<=>?@^_{|}~",
 });
 
-// Доступ к стейту: роль member только на проект infra-state, где нет ничего, кроме бакета стейта.
+// Доступ к стейту для автоматизации: роль member только на общий проект (стейт и DNS-зона).
 const user = new selectel.IamServiceuserV1("state-user", {
   name: "infra-state-s3",
   password: password.result,
@@ -73,6 +80,9 @@ const versioning = new aws.s3.BucketVersioning(
 );
 
 export const stateProjectId = project.id;
+export const dnsZone = zone.name;
+// infra:dnsProjectId основного стека
+export const dnsProjectId = zone.projectId;
 export const stateBucket = bucket.bucket;
 export const stateEndpoint = endpoint;
 export const stateRegion = pool;

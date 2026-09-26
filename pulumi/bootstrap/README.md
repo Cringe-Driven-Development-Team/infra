@@ -1,7 +1,8 @@
 # Bootstrap: бакет стейта Pulumi
 
-Отдельный стек (`infra-bootstrap`, стек `main`) создаёт проект Selectel `infra-state` и в нём бакет
-`cdd-infra-state`, где хранятся стейты всех Pulumi-стеков инфраструктуры. Зачем отдельно — бакет
+Отдельный стек (`infra-bootstrap`, стек `main`) создаёт долгоживущий проект Selectel `infra-shared`:
+бакет `cdd-infra-state` со стейтами всех Pulumi-стеков и DNS-зону домена `cellestial.ru.`. Прод
+(`pulumi-cellestial`) — отдельный проект, его создаёт и удаляет основной стек. Зачем отдельно — бакет
 стейта нельзя создать в стеке, чей стейт в нём лежит (задача #5, спека
 `docs/superpowers/specs/2026-09-26-pulumi-bootstrap-design.md`).
 
@@ -10,7 +11,7 @@
 | `bootstrap/` | этот стек |
 | `main/` | основной стек (`pulumi/`) |
 
-Доступ к стейту у каждого свой: личный S3-ключ на проект `infra-state`, выпущенный своим
+Доступ к стейту у каждого свой: личный S3-ключ на проект `infra-shared`, выпущенный своим
 сервисным пользователем. Общих ключей, которые надо передавать из рук в руки, нет.
 
 ## Один раз на человека
@@ -26,7 +27,7 @@
    ```
 
 4. Личный S3-ключ стейта — скрипт выпускает его вашему сервисному пользователю на проект
-   `infra-state` и дописывает `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` в `selectel.env`:
+   `infra-shared` и дописывает `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` в `selectel.env`:
 
    ```sh
    cd pulumi/bootstrap && pulumi install && source env.sh && bun state-key.ts
@@ -47,7 +48,7 @@ pulumi preview
 ```
 
 После `source env.sh` работает и `openstack` CLI (`uv tool install python-openstackclient`) — без
-`clouds.yaml`, в проекте `infra-state` (другой — `SELECTEL_PROJECT=<имя>` в `selectel.env`):
+`clouds.yaml`, в проекте `infra-shared` (другой — `SELECTEL_PROJECT=<имя>` в `selectel.env`):
 `openstack flavor list`, `openstack image list --public`.
 
 `pulumi login` глобален: перед работой с основным стеком войдите в его префикс (ниже).
@@ -61,6 +62,11 @@ pulumi preview
 (CI); людям они не нужны.
 
 ## Основной стек
+
+DNS-записи прода основной стек создаёт в зоне из этого стека:
+`pulumi config set infra:dnsProjectId "$(pulumi -C bootstrap stack output dnsProjectId)"` (выполнять,
+пока залогинен в префикс `bootstrap/`), `infra:dnsZone` — `cellestial.ru.`.
+
 
 ```sh
 source pulumi/bootstrap/env.sh
@@ -93,8 +99,8 @@ rm /tmp/cellestial-dev.json
 1. `mkdir -p ~/.pulumi-bootstrap-local && pulumi login file://~/.pulumi-bootstrap-local`,
    `pulumi stack init main --secrets-provider passphrase`,
    `pulumi config set infra-bootstrap:s3Pool ru-7`, `pulumi config set infra-bootstrap:bucketName cdd-infra-state`.
-2. `pulumi preview` → `pulumi up` (проект `infra-state`, пользователь, ключ, бакет, версионирование).
-3. `bun state-key.ts` — личный ключ стейта (проект `infra-state` уже существует).
+2. `pulumi preview` → `pulumi up` (проект `infra-shared`, пользователь, ключ, бакет, версионирование).
+3. `bun state-key.ts` — личный ключ стейта (проект `infra-shared` уже существует).
 4. Перенос стейта в бакет: `pulumi stack export --show-secrets --file bootstrap-state-export.json`
    (файл в `.gitignore`), `source env.sh`, `pulumi login "s3://cdd-infra-state/bootstrap?…"`,
    `pulumi stack init main --secrets-provider passphrase`,

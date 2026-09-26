@@ -1,4 +1,4 @@
-// Личный S3-ключ на проект infra-state: bun state-key.ts [--force]
+// Личный S3-ключ на проект infra-shared: bun state-key.ts [--force]
 // Выпускает ключ текущему сервисному пользователю (OS_USERNAME из env.sh) и дописывает
 // AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY в ~/.config/selectel.env (или SELECTEL_ENV).
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "fs";
@@ -6,7 +6,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { accountToken, createS3Key, credentialsFromEnv, curl, findProjectId, findServiceUserId, waitForS3Key } from "./selectel-s3";
 
-const STATE_PROJECT = "infra-state";
+const STATE_PROJECT = "infra-shared";
 const POOL = "ru-7";
 
 // Заменяет или добавляет строки KEY=value, остальные строки файла сохраняет.

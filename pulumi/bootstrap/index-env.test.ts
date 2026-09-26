@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 test("без env.sh программа стека падает с подсказкой source env.sh", () => {
   const script = `
     const pulumi = require("@pulumi/pulumi");
-    pulumi.runtime.setAllConfig({ "infra-bootstrap:s3Pool": "ru-7", "infra-bootstrap:bucketName": "b" });
+    pulumi.runtime.setAllConfig({ "infra-bootstrap:s3Pool": "ru-7", "infra-bootstrap:bucketName": "b", "infra-bootstrap:dnsZone": "z." });
     pulumi.runtime.setMocks({ newResource: (a) => ({ id: a.name + "-id", state: a.inputs }), call: (a) => a.inputs },
       "infra-bootstrap", "main", true);
     require("./index");
