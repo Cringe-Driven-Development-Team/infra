@@ -5,12 +5,14 @@
 # Файл разбирается построчно, а не через source: значения со спецсимволами передаются как есть.
 # POSIX sh — работает в bash, zsh и dash.
 _sel_file=${SELECTEL_ENV:-$HOME/.config/selectel.env}
+_sel_cr=$(printf '\r')
 if [ ! -r "$_sel_file" ]; then
   echo "env.sh: нет файла $_sel_file (см. pulumi/bootstrap/README.md)" >&2
-  unset _sel_file
+  unset _sel_file _sel_cr
   return 1
 fi
 while IFS= read -r _sel_line || [ -n "$_sel_line" ]; do
+  _sel_line=${_sel_line%"$_sel_cr"}   # файл, сохранённый в Windows (CRLF)
   case "$_sel_line" in
     SELECTEL_USERNAME=* | SELECTEL_PASSWORD=* | SELECTEL_DOMAIN_NAME=* | PULUMI_CONFIG_PASSPHRASE=* | \
     AWS_ACCESS_KEY_ID=* | AWS_SECRET_ACCESS_KEY=*)
@@ -29,4 +31,4 @@ export AWS_SHARED_CREDENTIALS_FILE=/dev/null
 if [ -z "${PULUMI_CONFIG_PASSPHRASE:-}" ]; then
   echo "env.sh: в $_sel_file нет PULUMI_CONFIG_PASSPHRASE — pulumi спросит passphrase" >&2
 fi
-unset _sel_file _sel_line
+unset _sel_file _sel_line _sel_cr

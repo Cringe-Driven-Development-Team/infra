@@ -73,6 +73,11 @@ test_exports_personal_state_key() {
   [ "$out" = 'ak32|sk$32' ] || fail "ключ стейта не экспортирован: '$out'"
 }
 
+test_crlf_file() {
+  sed 's/$/\r/' "$TMP/ok.env" > "$TMP/crlf.env"
+  [ "$(show bash "$TMP/crlf.env" 2>/dev/null)" = "$expected" ] || fail "CRLF-файл: значения с \\r"
+}
+
 for t in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
   echo "$t"
   "$t"

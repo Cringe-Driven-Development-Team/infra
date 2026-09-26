@@ -10,6 +10,9 @@ describe("upsertEnv", () => {
     expect(upsertEnv("AWS_ACCESS_KEY_ID=old\nX=1\nAWS_SECRET_ACCESS_KEY=old", { AWS_ACCESS_KEY_ID: "AK", AWS_SECRET_ACCESS_KEY: "SK" }))
       .toBe("X=1\nAWS_ACCESS_KEY_ID=AK\nAWS_SECRET_ACCESS_KEY=SK\n");
   });
+  test("CRLF-файл: переводит в LF, не оставляя \\r в значениях", () => {
+    expect(upsertEnv("X=1\r\nAWS_ACCESS_KEY_ID=old\r\n", { AWS_ACCESS_KEY_ID: "AK" })).toBe("X=1\nAWS_ACCESS_KEY_ID=AK\n");
+  });
   test("пустой файл", () => {
     expect(upsertEnv("", { A: "1" })).toBe("A=1\n");
   });

@@ -11,7 +11,7 @@ const POOL = "ru-7";
 
 // Заменяет или добавляет строки KEY=value, остальные строки файла сохраняет.
 export function upsertEnv(content: string, values: Record<string, string>): string {
-  const keep = content.split("\n").filter((line) => line !== "" && !Object.hasOwn(values, line.split("=")[0]));
+  const keep = content.split(/\r?\n/).filter((line) => line !== "" && !Object.hasOwn(values, line.split("=")[0]));
   const added = Object.entries(values).map(([k, v]) => `${k}=${v}`);
   return [...keep, ...added].join("\n") + "\n";
 }
