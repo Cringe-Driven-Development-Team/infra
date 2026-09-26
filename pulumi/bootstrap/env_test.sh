@@ -82,7 +82,7 @@ test_crlf_file() {
 test_openstack_cli_variables() {
   local out
   out=$(SELECTEL_ENV=$TMP/ok.env bash -c '. "$0"; printf "%s|%s|%s|%s" "$OS_USER_DOMAIN_NAME" "$OS_PROJECT_DOMAIN_NAME" "$OS_IDENTITY_API_VERSION" "$OS_PROJECT_NAME"' "$HERE/env.sh" 2>/dev/null)
-  [ "$out" = "631994|631994|3|infra-state" ] || fail "переменные openstack CLI: '$out'"
+  [ "$out" = "631994|631994|3|infra-shared" ] || fail "переменные openstack CLI: '$out'"
   { cat "$TMP/ok.env"; echo 'SELECTEL_PROJECT=other'; } > "$TMP/proj.env"
   out=$(SELECTEL_ENV=$TMP/proj.env bash -c '. "$0"; printf "%s" "$OS_PROJECT_NAME"' "$HERE/env.sh" 2>/dev/null)
   [ "$out" = "other" ] || fail "SELECTEL_PROJECT не переопределяет проект: '$out'"
