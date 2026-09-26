@@ -7,11 +7,28 @@
     append: true
     create_home: true
 
-- name: Положить публичный ключ стенда в authorized_keys
-  ansible.builtin.authorized_key:
+- name: Найти публичные ключи команды в репозитории
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/files/authorized_keys"
+    patterns: "*.pub"
+  delegate_to: localhost
+  become: false
+  register: team_key_files
+
+- name: Прочитать ключи
+  ansible.builtin.set_fact:
+    team_authorized_keys: "{{ team_authorized_keys | default([]) + [lookup('file', item.path)] }}"
+  loop: "{{ team_key_files.files }}"
+  loop_control: { label: "{{ item.path | basename }}" }
+
+# Один вызов со всеми ключами: цикл с exclusive перезаписал бы предыдущие итерации.
+# exclusive — ушедшие участники теряют доступ при следующем прогоне.
+- name: Положить публичные ключи команды в authorized_keys
+  ansible.posix.authorized_key:
     user: "{{ deploy_user }}"
-    key: "{{ lookup('file', deploy_key_path ~ '.pub') }}"
-    state: present
+    key: "{{ team_authorized_keys | join('\n') }}\n"
+    exclusive: true
+  when: team_authorized_keys is defined
 
 - name: Sudo без пароля
   ansible.builtin.copy:

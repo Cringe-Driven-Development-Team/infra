@@ -1,4 +1,6 @@
 ---
+# ansible-galaxy collection install -r requirements.yml
 collections:
   - name: openstack.cloud   # dynamic inventory
   - name: community.general # модуль ufw
+  - name: ansible.posix     # authorized_key (в ansible-core это только редирект)

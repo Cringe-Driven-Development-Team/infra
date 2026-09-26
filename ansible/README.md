@@ -8,14 +8,20 @@
 ```bash
 cd ansible
 pip install -r requirements.txt          # openstacksdk для dynamic inventory
-ansible-galaxy collection install -r requirements.yml   # openstack.cloud, community.general
+ansible-galaxy collection install -r requirements.yml   # openstack.cloud, community.general, ansible.posix
 ```
 
 ## Подготовка
 
 1. `cp clouds.yaml.example clouds.yaml` — сервисный пользователь **аккаунта** Selectel
    (тот же, что `selectel:username` в Pulumi) и `project_id` из `pulumi stack output projectId`.
-2. Ключ стенда `~/.ssh/selectel_release` (+ `.pub`) — он же `infra:sshPublicKey` в Pulumi.
+2. Ключ стенда `~/.ssh/selectel_release` (+ `.pub`) — он же `infra:sshPublicKey` в Pulumi
+   (логин через keypair при создании серверов).
+   Публичные ключи всех, кто работает со стендом, лежат в репозитории:
+   `files/authorized_keys/*.pub` (один ключ — один файл с узнаваемым именем). Роль `users`
+   кладёт их все в `deploy` c `exclusive: true`, поэтому новый доступ = PR с `.pub`-файлом
+   + `ansible-playbook site.yml`; ушедший участник = удалить его `.pub` из репо + прогнать
+   `site.yml`. Серверы пересоздавать не нужно.
 3. Inventory динамический (`inventory/openstack.yml`): группы `gateway` и `backend` собираются
    по `metadata.role`, `ansible_host` — floating IP у VPS 1 и приватный IP у VPS 2.
 
@@ -41,7 +47,7 @@ root-логин запрещён и прыгаем под `deploy`.
 
 | Роль | Хосты | Содержимое |
 |---|---|---|
-| users | все | пользователь `deploy`, authorized_keys, sudo NOPASSWD (в bootstrap) |
+| users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive), sudo NOPASSWD (в bootstrap) |
 | common | все | базовые пакеты |
 | ssh_hardening | все | drop-in: без root-логина и паролей, ключи (порт 22 открыт по DoD) |
 | firewall | все | ufw: deny incoming; gateway — 22/80/443, backend — 22 из `private_network_cidr` |
