@@ -12,6 +12,10 @@ if [ ! -r "$_sel_file" ]; then
   unset _sel_file _sel_cr
   return 1
 fi
+# Повторный source отражает только текущий файл: ключ, убранный из файла, не остаётся в оболочке
+# (иначе, например, удалённый SELECTEL_PROJECT=prod молча держал бы openstack CLI на проде).
+unset SELECTEL_USERNAME SELECTEL_PASSWORD SELECTEL_DOMAIN_NAME PULUMI_CONFIG_PASSPHRASE \
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY SELECTEL_PROJECT
 while IFS= read -r _sel_line || [ -n "$_sel_line" ]; do
   _sel_line=${_sel_line%"$_sel_cr"}   # файл, сохранённый в Windows (CRLF)
   case "$_sel_line" in

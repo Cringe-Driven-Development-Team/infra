@@ -88,6 +88,14 @@ test_openstack_cli_variables() {
   [ "$out" = "other|" ] || fail "SELECTEL_PROJECT: проект по имени и без id: '$out'"
 }
 
+test_resource_drops_removed_keys() {
+  { cat "$TMP/ok.env"; echo 'SELECTEL_PROJECT=prod'; echo 'AWS_ACCESS_KEY_ID=old'; } > "$TMP/re.env"
+  local out
+  out=$(bash -c 'SELECTEL_ENV=$1; . "$0"; cp "$2" "$1"; . "$0"; printf "%s|%s|%s" "${OS_PROJECT_NAME:-}" "${OS_PROJECT_ID:-}" "${AWS_ACCESS_KEY_ID:-}"' \
+    "$HERE/env.sh" "$TMP/re.env" "$TMP/ok.env" 2>/dev/null)
+  [ "$out" = "|36b609e10bfc4ebfa5caae77d2c3a948|" ] || fail "повторный source тянет удалённые из файла ключи: '$out'"
+}
+
 for t in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
   echo "$t"
   "$t"

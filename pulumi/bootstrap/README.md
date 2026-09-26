@@ -67,6 +67,9 @@ bootstrap-стек когда-нибудь пересоздаст проект, 
 
 ## Основной стек
 
+`env.sh` по умолчанию выставляет `OS_PROJECT_ID` проекта стейта: ресурсы основного стека должны задавать
+проект явно (`projectId`, `tenantId` провайдера OpenStack), а не полагаться на окружение.
+
 DNS-записи прода основной стек создаёт в зоне из этого стека:
 `pulumi config set infra:dnsProjectId "$(pulumi -C bootstrap stack output dnsProjectId)"` (выполнять,
 пока залогинен в префикс `bootstrap/`), `infra:dnsZone` — `cellestial.ru.`.
