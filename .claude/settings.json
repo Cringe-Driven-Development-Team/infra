@@ -1,0 +1,15 @@
+{
+  "enabledPlugins": {
+    "pulumi@cdd": true,
+    "ansible@cdd": true,
+    "selectel-ops@cdd": true
+  },
+  "extraKnownMarketplaces": {
+    "cdd": {
+      "source": {
+        "source": "github",
+        "repo": "Cringe-Driven-Development-Team/claude-plugins"
+      }
+    }
+  }
+}
