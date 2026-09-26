@@ -65,6 +65,10 @@ pulumi config set infra:gatewayFlavorName SL1.2-4096
 pulumi config set infra:backendFlavorName SL2.2-8192
 pulumi config set infra:imageName        'Ubuntu 24.04 LTS 64-bit'
 pulumi config set infra:sshPublicKey     "$(cat ~/.ssh/selectel_release.pub)"
+# Публичные ключи команды — кладутся root через cloud-init при первой загрузке
+# (keypair остаётся основным). Смена списка пересоздаёт серверы!
+pulumi config set --path 'infra:sshPublicKeys[0]' 'ssh-ed25519 AAAA... <имя-владельца>'
+pulumi config set --path 'infra:sshPublicKeys[1]' 'ssh-ed25519 AAAA... <имя-владельца>'
 
 pulumi config set infra:domain       cellestial.ru
 pulumi config set infra:dnsZone      cellestial.ru.
@@ -92,6 +96,8 @@ cp clouds.yaml.example clouds.yaml
 # project_id = `pulumi stack output projectId` (из каталога pulumi/), region_name ru-9
 
 ansible-inventory -i inventory --graph        # должны появиться 2 хоста: gateway и backend
+# ключи всех, кто заходит на стенд, — в files/authorized_keys/*.pub (коммитятся в репо;
+# роль users кладёт их все в deploy с exclusive: true)
 ansible-playbook bootstrap.yml                # root:22 → python3 + пользователь deploy
 ansible-playbook site.yml                     # базовая настройка + Caddy (получит сертификат LE)
 ansible-playbook site.yml                     # повтор: expected changed=0

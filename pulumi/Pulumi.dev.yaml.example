@@ -25,6 +25,12 @@ config:
   infra:imageName: Ubuntu 24.04 LTS 64-bit
   # Отдельный ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
   infra:sshPublicKey: "<contents of ~/.ssh/selectel_release.pub>"
+  # Публичные ключи команды (добавляются root через cloud-init при первой загрузке;
+  # дальше доступом рулит ansible/files/authorized_keys/*.pub). Заполняется командами:
+  #   pulumi config set --path 'infra:sshPublicKeys[0]' 'ssh-ed25519 AAAA... yarik'
+  # Смена списка пересоздаёт серверы — менять только при плановом rebuild.
+  # infra:sshPublicKeys:
+  #   - "ssh-ed25519 AAAA... <owner>"
   # infra:sshUser: root
 
   # DNS: A-запись domain → publicIp VPS 1 (зона Selectel DNS купленного домена)

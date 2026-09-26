@@ -70,6 +70,27 @@ const keypair = new selectel.VpcKeypairV2("release", {
   userId: serviceUser.id,
 }, renamedFromStudy);
 
+// Публичные ключи команды (infra:sshPublicKeys) кладутся root через cloud-init
+// при первой загрузке, чтобы каждый заходил своим ключом ещё до первого прогона
+// Ansible. Дальше доступом рулит ansible/files/authorized_keys/*.pub.
+// Смена списка пересоздаёт серверы — для штатного добавления человека её не используют.
+const teamSshKeys = cfg.getObject<string[]>("sshPublicKeys") ?? [];
+for (const k of teamSshKeys) {
+  if (/['"\n\r\\]/.test(k)) {
+    throw new Error(`infra:sshPublicKeys: ключ содержит недопустимые символы: ${k.slice(0, 40)}...`);
+  }
+}
+const userData = teamSshKeys.length > 0
+  ? Buffer.from([
+      "#cloud-config",
+      "runcmd:",
+      "  - |",
+      "    mkdir -p /root/.ssh && chmod 700 /root/.ssh",
+      ...teamSshKeys.map((k) => `    printf '%s\\n' '${k}' >> /root/.ssh/authorized_keys`),
+      "    chmod 600 /root/.ssh/authorized_keys",
+    ].join("\n") + "\n").toString("base64")
+  : undefined;
+
 const os = new openstack.Provider("selectel-project", {
   authUrl: "https://cloud.api.selcloud.ru/identity/v3",
   domainName,
@@ -180,6 +201,7 @@ const serverGateway = new openstack.compute.Instance("gateway", {
   }],
   // По metadata.role dynamic inventory Ansible собирает группы gateway/backend
   metadata: { role: "gateway", env: "release" },
+  userData,
   vendorOptions: { ignoreResizeConfirmation: true },
 }, { ...withOs, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
 
@@ -198,6 +220,7 @@ const serverBackend = new openstack.compute.Instance("backend", {
     deleteOnTermination: false,
   }],
   metadata: { role: "backend", env: "release" },
+  userData,
   vendorOptions: { ignoreResizeConfirmation: true },
 }, { ...withOs, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
 
