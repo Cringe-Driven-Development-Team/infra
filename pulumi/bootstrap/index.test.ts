@@ -3,6 +3,7 @@ import * as pulumi from "@pulumi/pulumi";
 
 const created = new Map<string, { type: string; inputs: Record<string, any> }>();
 
+Object.assign(process.env, { OS_USERNAME: "u", OS_PASSWORD: "p", OS_DOMAIN_NAME: "1" });
 pulumi.runtime.setAllConfig({
   "infra-bootstrap:s3Pool": "ru-7",
   "infra-bootstrap:bucketName": "cdd-infra-state",

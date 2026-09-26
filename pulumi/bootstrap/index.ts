@@ -9,6 +9,8 @@ const pool = cfg.require("s3Pool");
 const bucketName = cfg.require("bucketName");
 const keyReadyTimeout = cfg.getNumber("s3KeyReadyTimeoutSeconds") ?? 600;
 const endpoint = `https://s3.${pool}.storage.selcloud.ru`;
+// Сразу, до провайдеров: без env.sh — подсказка, а не 401 от Keystone или ошибка конфигурации провайдера.
+const selectelCredentials = credentialsFromEnv(process.env);
 
 // Отдельный проект только под стейт: рядом нет чужих ресурсов, его не снесут при уборке.
 const project = new selectel.VpcProjectV2("infra-state", { name: "infra-state" }, { protect: true });
@@ -42,7 +44,7 @@ const readyAccessKey = pulumi
     if (pulumi.runtime.isDryRun()) {
       return accessKey;
     }
-    await initProjectS3(curl, credentialsFromEnv(process.env), id, pool);
+    await initProjectS3(curl, selectelCredentials, id, pool);
     const attempts = await waitForS3Key(curl, { endpoint, pool, accessKey, secretKey, timeoutSeconds: keyReadyTimeout });
     pulumi.log.info(`S3 принял ключ стейта (попытка ${attempts})`);
     return accessKey;

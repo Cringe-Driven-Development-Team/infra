@@ -47,6 +47,10 @@ pulumi preview
 ```
 
 `pulumi login` глобален: перед работой с основным стеком войдите в его префикс (ниже).
+
+Каждый `pulumi up` (не `preview`) инициализирует S3 в проекте и проверяет ключ `infra-state-s3`
+запросом к S3 — это пара секунд и не меняет ресурсы. Если ключ стека отозвали вручную, `up`
+будет ждать его до `infra-bootstrap:s3KeyReadyTimeoutSeconds` (600 с) и упадёт с последним ответом S3.
 Тесты: `bun run test`.
 
 Выходы `stateAccessKey`/`stateSecretKey` — ключи пользователя `infra-state-s3` для автоматизации
