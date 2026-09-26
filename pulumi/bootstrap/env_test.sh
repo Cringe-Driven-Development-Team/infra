@@ -3,6 +3,10 @@
 set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Переменные, которые выставляет env.sh, не должны приходить из вызывающей оболочки.
+unset SELECTEL_ENV SELECTEL_USERNAME SELECTEL_PASSWORD SELECTEL_DOMAIN_NAME PULUMI_CONFIG_PASSPHRASE \
+  AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE \
+  OS_USERNAME OS_PASSWORD OS_DOMAIN_NAME OS_AUTH_URL OS_REGION_NAME
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 FAILS=0
