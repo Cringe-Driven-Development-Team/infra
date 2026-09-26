@@ -1,0 +1,17 @@
+---
+# Базовая настройка обеих VPS: пользователь уже создан bootstrap.yml, дальше deploy + sudo
+- name: "Базовая настройка (обе VPS)"
+  hosts: all
+  become: true
+  roles:
+    - common
+    - ssh_hardening
+    - firewall
+    - docker
+
+# VPS 1: gateway — Caddy с сертификатом Let's Encrypt на домене
+- name: "Gateway: Caddy + Let's Encrypt"
+  hosts: gateway
+  become: true
+  roles:
+    - caddy

@@ -1,0 +1,28 @@
+---
+- name: Установить ufw
+  ansible.builtin.package:
+    name: ufw
+    state: present
+
+- name: "Политика по умолчанию: deny incoming, allow outgoing"
+  community.general.ufw:
+    direction: "{{ item.direction }}"
+    policy: "{{ item.policy }}"
+  loop:
+    - { direction: incoming, policy: deny }
+    - { direction: outgoing, policy: allow }
+  loop_control:
+    label: "{{ item.direction }} {{ item.policy }}"
+
+- name: Разрешающие правила (см. firewall_rules в group_vars)
+  community.general.ufw:
+    rule: allow
+    comment: "{{ item.name }}"
+    port: "{{ item.port | default(omit) }}"
+    proto: "{{ item.proto | default(omit) }}"
+    src: "{{ item.src | default(omit) }}"
+  loop: "{{ firewall_rules }}"
+
+- name: Включить ufw
+  community.general.ufw:
+    state: enabled

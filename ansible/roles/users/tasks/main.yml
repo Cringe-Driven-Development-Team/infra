@@ -1,0 +1,38 @@
+---
+- name: Создать пользователя {{ deploy_user }} в группе sudo
+  ansible.builtin.user:
+    name: "{{ deploy_user }}"
+    shell: /bin/bash
+    groups: sudo
+    append: true
+    create_home: true
+
+- name: Найти публичные ключи команды в репозитории
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/files/authorized_keys"
+    patterns: "*.pub"
+  delegate_to: localhost
+  become: false
+  register: team_key_files
+
+- name: Прочитать ключи
+  ansible.builtin.set_fact:
+    team_authorized_keys: "{{ team_authorized_keys | default([]) + [lookup('file', item.path)] }}"
+  loop: "{{ team_key_files.files }}"
+  loop_control: { label: "{{ item.path | basename }}" }
+
+# Один вызов со всеми ключами: цикл с exclusive перезаписал бы предыдущие итерации.
+# exclusive — ушедшие участники теряют доступ при следующем прогоне.
+- name: Положить публичные ключи команды в authorized_keys
+  ansible.posix.authorized_key:
+    user: "{{ deploy_user }}"
+    key: "{{ team_authorized_keys | join('\n') }}\n"
+    exclusive: true
+  when: team_authorized_keys is defined
+
+- name: Sudo без пароля
+  ansible.builtin.copy:
+    content: "{{ deploy_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    dest: "/etc/sudoers.d/{{ deploy_user }}"
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s

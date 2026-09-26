@@ -1,0 +1,19 @@
+# Pulumi
+node_modules/
+pulumi/sdks/
+pulumi/package-lock.json
+pulumi/Pulumi.*.yaml
+!pulumi/Pulumi.*.yaml.example
+
+# Ansible
+ansible/clouds.yaml
+**/vault.yml
+*.retry
+
+# Misc
+secrets.txt
+.DS_Store
+__pycache__/
+
+# Бэкапы конфигов (могут содержать зашифрованные секреты)
+*.bak

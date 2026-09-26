@@ -1,0 +1,43 @@
+# Скопируйте в Pulumi.dev.yaml (или создайте стек: pulumi stack init dev)
+# и заполните через `pulumi config set` — секреты только с --secret.
+config:
+  # Сервисный пользователь аккаунта Selectel (роли: member + iam.admin на аккаунт)
+  selectel:domainName: "<selectel-account-id>"
+  selectel:username: "<account-service-user>"
+  # pulumi config set --secret selectel:password '<password>'
+  selectel:password:
+    secure: "<set-with-pulumi-config-set-secret>"
+  selectel:authUrl: https://cloud.api.selcloud.ru/identity/v3/
+  selectel:authRegion: ru-9
+
+  # Имя проекта / keypair (уникально в общем аккаунте)
+  infra:name: pulumi-release
+  # Имя сервисного пользователя проекта (уникально в аккаунте)
+  infra:serviceUserName: cellestialSystemUser
+
+  # OpenStack: пул/зона VPS и параметры серверов
+  infra:pool: ru-9
+  infra:zone: ru-9a
+  infra:volumeType: fast.ru-9a
+  infra:gatewayFlavorName: SL1.2-4096
+  infra:backendFlavorName: SL2.2-8192
+  # infra:backendVolumeSize: 20
+  infra:imageName: Ubuntu 24.04 LTS 64-bit
+  # Отдельный ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
+  infra:sshPublicKey: "<contents of ~/.ssh/selectel_release.pub>"
+  # Публичные ключи команды (добавляются root через cloud-init при первой загрузке;
+  # дальше доступом рулит ansible/files/authorized_keys/*.pub). Заполняется командами:
+  #   pulumi config set --path 'infra:sshPublicKeys[0]' 'ssh-ed25519 AAAA... yarik'
+  # Смена списка пересоздаёт серверы — менять только при плановом rebuild.
+  # infra:sshPublicKeys:
+  #   - "ssh-ed25519 AAAA... <owner>"
+  # infra:sshUser: root
+
+  # DNS: A-запись domain → publicIp VPS 1 (зона Selectel DNS купленного домена)
+  infra:domain: cellestial.ru
+  infra:dnsZone: cellestial.ru.
+  infra:dnsProjectId: "<id проекта, где лежит зона cellestial.ru.>"
+
+  # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
+  infra:s3Pool: ru-1
+  infra:s3Bucket: "<глобально-уникальное-имя-бакета>"
