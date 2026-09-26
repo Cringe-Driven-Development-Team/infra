@@ -2,7 +2,7 @@
   "name": "infra-bootstrap",
   "main": "index.ts",
   "scripts": {
-    "test": "bun test && bash env_test.sh"
+    "test": "bun test && bash env_test.sh && bash init-env_test.sh"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
@@ -15,5 +15,7 @@
     "@pulumi/random": "^4.21.2",
     "@pulumi/selectel": "file:sdks/selectel"
   },
-  "trustedDependencies": ["@pulumi/selectel"]
+  "trustedDependencies": [
+    "@pulumi/selectel"
+  ]
 }

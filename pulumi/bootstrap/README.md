@@ -18,11 +18,11 @@
 1. Pulumi CLI, bun, Node.js, curl.
 2. Свой сервисный пользователь **аккаунта** Selectel с ролями `member` (аккаунт) и `iam.admin`
    (IAM → Сервисные пользователи; пароль показывается один раз — сразу в менеджер паролей).
-3. Файл `~/.config/selectel.env` (права 600) — одной строкой в отдельном терминале, пароль и
-   passphrase вводятся скрыто. Passphrase стеков — в менеджере паролей команды.
+3. Файл `~/.config/selectel.env` (права 600): пароль и passphrase вводятся скрыто, passphrase
+   стеков — в менеджере паролей команды. Скрипт запускается через `bash` и в macOS (zsh):
 
    ```sh
-   install -m600 /dev/null ~/.config/selectel.env && read -rsp 'Selectel password: ' p && echo && read -rsp 'Pulumi passphrase: ' pp && echo && printf 'SELECTEL_USERNAME=<ваш-пользователь>\nSELECTEL_PASSWORD=%s\nSELECTEL_DOMAIN_NAME=631994\nPULUMI_CONFIG_PASSPHRASE=%s\n' "$p" "$pp" > ~/.config/selectel.env && unset p pp
+   bash pulumi/bootstrap/init-env.sh <ваш-сервисный-пользователь>
    ```
 
 4. Личный S3-ключ стейта — скрипт выпускает его вашему сервисному пользователю на проект
