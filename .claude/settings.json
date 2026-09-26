@@ -1,0 +1,13 @@
+{
+  "enabledPlugins": {
+    "ansible-good-practices@claude-ansible-skills": true
+  },
+  "extraKnownMarketplaces": {
+    "claude-ansible-skills": {
+      "source": {
+        "source": "github",
+        "repo": "leogallego/claude-ansible-skills"
+      }
+    }
+  }
+}
