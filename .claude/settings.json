@@ -1,7 +1,8 @@
 {
   "enabledPlugins": {
     "pulumi@cdd": true,
-    "ansible@cdd": true
+    "ansible@cdd": true,
+    "selectel-ops@cdd": true
   },
   "extraKnownMarketplaces": {
     "cdd": {
