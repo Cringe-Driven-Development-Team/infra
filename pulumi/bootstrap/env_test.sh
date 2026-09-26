@@ -56,6 +56,12 @@ test_ignores_comments_and_unknown_keys() {
     fail "чужой ключ OTHER экспортирован"
 }
 
+test_isolates_personal_aws_config() {
+  local out
+  out=$(SELECTEL_ENV=$TMP/ok.env bash -c '. "$0"; printf "%s|%s" "$AWS_CONFIG_FILE" "$AWS_SHARED_CREDENTIALS_FILE"' "$HERE/env.sh" 2>/dev/null)
+  [ "$out" = "/dev/null|/dev/null" ] || fail "личный ~/.aws не изолирован: '$out'"
+}
+
 for t in $(declare -F | awk '$3 ~ /^test_/ {print $3}'); do
   echo "$t"
   "$t"

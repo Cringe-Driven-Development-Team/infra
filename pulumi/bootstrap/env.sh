@@ -20,6 +20,10 @@ export OS_PASSWORD="${SELECTEL_PASSWORD:-}"
 export OS_DOMAIN_NAME="${SELECTEL_DOMAIN_NAME:-}"
 export OS_AUTH_URL=https://cloud.api.selcloud.ru/identity/v3/
 export OS_REGION_NAME=ru-7
+# Личный ~/.aws не участвует: регион, endpoint и ключи стейта задаются явно, а чужой профиль
+# (ca_bundle с ~, старые ключи) ломает AWS-провайдер Pulumi и pulumi login s3://.
+export AWS_CONFIG_FILE=/dev/null
+export AWS_SHARED_CREDENTIALS_FILE=/dev/null
 if [ -z "${PULUMI_CONFIG_PASSPHRASE:-}" ]; then
   echo "env.sh: в $_sel_file нет PULUMI_CONFIG_PASSPHRASE — pulumi спросит passphrase" >&2
 fi

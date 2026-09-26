@@ -28,7 +28,7 @@
 
 ```sh
 cd pulumi/bootstrap
-source env.sh                        # OS_* для провайдера Selectel, PULUMI_CONFIG_PASSPHRASE
+source env.sh                        # OS_* для Selectel, PULUMI_CONFIG_PASSPHRASE; личный ~/.aws отключён
 pulumi install                       # один раз на клоне: SDK selectel в sdks/, зависимости через bun
 export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=…   # ключи стейта (см. «Ключи стейта»)
 pulumi login "s3://cdd-infra-state/bootstrap?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
