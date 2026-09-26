@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { upsertEnv } from "./state-key";
+import { stateProjectId, upsertEnv } from "./state-key";
 
 describe("upsertEnv", () => {
   test("добавляет ключи, сохраняя остальные строки", () => {
@@ -15,5 +15,14 @@ describe("upsertEnv", () => {
   });
   test("пустой файл", () => {
     expect(upsertEnv("", { A: "1" })).toBe("A=1\n");
+  });
+});
+
+describe("stateProjectId", () => {
+  test("берёт id проекта стейта из OS_PROJECT_ID", () => {
+    expect(stateProjectId({ OS_PROJECT_ID: "abc123" })).toBe("abc123");
+  });
+  test("без OS_PROJECT_ID — подсказка про env.sh", () => {
+    expect(() => stateProjectId({})).toThrow(/OS_PROJECT_ID.*env\.sh/);
   });
 });

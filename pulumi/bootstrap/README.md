@@ -48,8 +48,12 @@ pulumi preview
 ```
 
 После `source env.sh` работает и `openstack` CLI (`uv tool install python-openstackclient`) — без
-`clouds.yaml`, в проекте `infra-shared` (другой — `SELECTEL_PROJECT=<имя>` в `selectel.env`):
+`clouds.yaml`, в проекте стейта по id (другой проект — `SELECTEL_PROJECT=<имя>` в `selectel.env`):
 `openstack flavor list`, `openstack image list --public`.
+
+id проекта стейта записан в `env.sh` (`OS_PROJECT_ID`): имя проекта может меняться, id — нет. Если
+bootstrap-стек когда-нибудь пересоздаст проект, обновите id; проверка:
+`[ "$(pulumi stack output stateProjectId)" = "$OS_PROJECT_ID" ] && echo ok`.
 
 `pulumi login` глобален: перед работой с основным стеком войдите в его префикс (ниже).
 
