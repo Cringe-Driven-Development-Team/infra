@@ -95,12 +95,19 @@ source bootstrap/env.sh
 pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi stack init dev --secrets-provider passphrase     # та же passphrase, что у старого стека
 pulumi stack import --file /tmp/cellestial-dev.json
-pulumi preview                                          # ожидается: без изменений
+# логин/пароль Selectel теперь из selectel.env (source env.sh выше); с ними в конфиге
+# программа остановится с подсказкой — убрать до первого preview
+pulumi config rm selectel:username
+pulumi config rm selectel:password
+pulumi preview                                          # ожидается: ресурсы без изменений; допустим
+                                                        # только ~ update провайдера selectel
+                                                        # (логин/пароль ушли из его входов в env)
 # имя стека — prod. Ресурсы не пересоздаются, в стейте меняются только URN;
 # Pulumi.dev.yaml переименовывается в Pulumi.prod.yaml сам
 pulumi stack rename prod
 pulumi preview                                          # снова без изменений
 rm /tmp/cellestial-dev.json
+git add Pulumi.prod.yaml                                # конфиг прода — в репо (секретов нет)
 ```
 
 Экспорт `dev` нельзя импортировать сразу в стек `prod`: URN в стейте содержат имя стека, и

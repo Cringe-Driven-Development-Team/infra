@@ -3,13 +3,26 @@ import * as random from "@pulumi/random";
 import * as openstack from "@pulumi/openstack";
 import * as selectel from "@pulumi/selectel";
 import * as aws from "@pulumi/aws";
-import { curl, initProjectS3, waitForS3Key } from "./bootstrap/selectel-s3";
+import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./bootstrap/selectel-s3";
 
 const cfg = new pulumi.Config();
 const selectelCfg = new pulumi.Config("selectel");
 
-// Номер аккаунта Selectel: берём из selectel:domainName, infra:domainName — только для переопределения
-const domainName = cfg.get("domainName") ?? selectelCfg.require("domainName");
+// Учётные данные Selectel — личный сервисный пользователь аккаунта из ~/.config/selectel.env
+// (source pulumi/bootstrap/env.sh → OS_USERNAME/OS_PASSWORD/OS_DOMAIN_NAME). Провайдер selectel
+// читает их из окружения сам; в конфиге стека (он коммитится) логина и пароля нет.
+const selectelCreds = credentialsFromEnv(process.env);
+if (selectelCfg.get("username") !== undefined || selectelCfg.get("password") !== undefined) {
+  // Конфиг сильнее окружения: провайдер работал бы от пользователя из конфига, а инициализация
+  // S3 — от пользователя из selectel.env. Такая смесь не нужна — убрать из конфига.
+  throw new Error(
+    "В конфиге стека остались selectel:username/selectel:password — учётные данные теперь из " +
+    "selectel.env. Выполните: pulumi config rm selectel:username && pulumi config rm selectel:password",
+  );
+}
+
+// Номер аккаунта: infra:domainName → selectel:domainName → OS_DOMAIN_NAME из selectel.env
+const domainName = cfg.get("domainName") ?? selectelCfg.get("domainName") ?? selectelCreds.domain;
 const pool = cfg.require("pool");                  // пул VPS, например ru-9
 const zone = cfg.require("zone");                  // например ru-9a
 const volumeType = cfg.require("volumeType");      // например fast.ru-9a
@@ -249,20 +262,14 @@ new openstack.networking.FloatingIpAssociate("gateway", {
 // curl-хелперы S3 (через системное доверие macOS, секреты только через stdin) —
 // общие с bootstrap-стеком, там же их тесты: selectel-s3.test.ts.
 const s3KeyReadyTimeoutSeconds = cfg.getNumber("s3KeyReadyTimeoutSeconds") ?? 900;
-// Пароль — requireSecret: require() на секретном значении конфига даёт предупреждение
-// и снимает с него пометку секрета.
 const s3AccessKeyReady = pulumi.all([
-  s3Credentials.accessKey, s3Credentials.secretKey, project.id, selectelCfg.requireSecret("password"),
-]).apply(async ([accessKey, secretKey, projectId, accountPassword]) => {
+  s3Credentials.accessKey, s3Credentials.secretKey, project.id,
+]).apply(async ([accessKey, secretKey, projectId]) => {
     if (pulumi.runtime.isDryRun()) {
       return accessKey;
     }
-    const creds = {
-      authUrl: selectelCfg.get("authUrl") ?? "https://cloud.api.selcloud.ru/identity/v3/",
-      username: selectelCfg.require("username"),
-      password: accountPassword,
-      domain: domainName,
-    };
+    // Инициализация S3 — от того же пользователя, что и провайдер selectel (selectel.env)
+    const creds = { ...selectelCreds, domain: domainName };
     const initStatus = await initProjectS3(curl, creds, projectId, s3Pool);
     pulumi.log.info(`S3 в проекте проинициализирован (HTTP ${initStatus})`);
     // Выданный через IAM ключ S3-шлюз признаёт не сразу: до этого CreateBucket

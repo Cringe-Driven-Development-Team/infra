@@ -1,12 +1,8 @@
-# Скопируйте в Pulumi.prod.yaml (или создайте стек: pulumi stack init prod)
-# и заполните через `pulumi config set` — секреты только с --secret.
+# Шаблон для стека с нуля (pulumi stack init prod). Рабочий Pulumi.prod.yaml лежит в репо рядом.
+# Логина и пароля Selectel здесь нет: они из ~/.config/selectel.env (source pulumi/bootstrap/env.sh),
+# у каждого свой сервисный пользователь аккаунта (member + iam.admin).
 config:
-  # Сервисный пользователь аккаунта Selectel (роли: member + iam.admin на аккаунт)
   selectel:domainName: "<selectel-account-id>"
-  selectel:username: "<account-service-user>"
-  # pulumi config set --secret selectel:password '<password>'
-  selectel:password:
-    secure: "<set-with-pulumi-config-set-secret>"
   selectel:authUrl: https://cloud.api.selcloud.ru/identity/v3/
   selectel:authRegion: ru-9
 

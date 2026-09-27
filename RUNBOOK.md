@@ -45,12 +45,14 @@ pulumi install                       # генерирует sdks/selectel, ст�
 pulumi stack select prod             # стек уже есть; с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
 
-## 3. Pulumi: конфиг (руками, значения свои)
+## 3. Pulumi: конфиг
+
+Конфиг прода — `pulumi/Pulumi.prod.yaml` в репо: для работы со стеком ничего вводить не нужно.
+Команды ниже — только для стека с нуля. Логин и пароль Selectel в конфиг **не** кладутся:
+они из `selectel.env` (п.1.3), у каждого свои.
 
 ```bash
 pulumi config set selectel:domainName '<номер аккаунта>'
-pulumi config set selectel:username   '<логин пользователя из п.1.1>'
-pulumi config set --secret selectel:password '<пароль>'
 pulumi config set selectel:authUrl    https://cloud.api.selcloud.ru/identity/v3/
 pulumi config set selectel:authRegion ru-9
 

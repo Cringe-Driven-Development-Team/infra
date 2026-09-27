@@ -4,6 +4,12 @@ pulumi/sdks/
 pulumi/package-lock.json
 pulumi/Pulumi.*.yaml
 !pulumi/Pulumi.*.yaml.example
+# Конфиг прода коммитится, как Pulumi.main.yaml у bootstrap: учётные данные — из selectel.env,
+# секретов в нём нет (encryptionsalt — не секрет). Без него у коллег не работает preview.
+!pulumi/Pulumi.prod.yaml
+# Экспорт стейта при переезде (stack export --show-secrets) — секреты в открытом виде
+*state-export*.json
+cellestial-*.json
 
 # Ansible
 ansible/clouds.yaml

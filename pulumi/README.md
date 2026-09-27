@@ -18,9 +18,11 @@ pulumi install     # генерирует SDK провайдера selectel в s
 
 ## Учётные данные
 
-Нужен **сервисный пользователь аккаунта** (панель → Управление доступом → Сервисные пользователи)
+Нужен **свой сервисный пользователь аккаунта** (панель → Управление доступом → Сервисные пользователи)
 с ролями `member` (на аккаунт) и `iam.admin` — второй нужен, чтобы Pulumi создал сервисного
-пользователя проекта.
+пользователя проекта. Логин и пароль — в `~/.config/selectel.env` (`bootstrap/README.md`, «Один раз
+на человека»); `source bootstrap/env.sh` отдаёт их провайдеру через `OS_USERNAME`/`OS_PASSWORD`.
+Без `env.sh` программа сразу падает с подсказкой.
 
 ## Backend и стек
 
@@ -33,15 +35,15 @@ pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.sel
 pulumi stack select prod      # с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
 
-`Pulumi.<stack>.yaml` содержит логин и зашифрованный пароль, поэтому в `.gitignore`;
-в репозитории только `Pulumi.prod.yaml.example`.
+`Pulumi.prod.yaml` коммитится: логина и пароля в нём нет, только несекретный конфиг и
+`encryptionsalt`. Остальные `Pulumi.*.yaml` — в `.gitignore`; шаблон для стека с нуля —
+`Pulumi.prod.yaml.example`.
 
 ## Конфиг
 
 ```bash
+# только для стека с нуля; логин/пароль Selectel — из selectel.env, не из конфига
 pulumi config set selectel:domainName <номер-аккаунта>
-pulumi config set selectel:username   <сервисный-пользователь-аккаунта>
-pulumi config set --secret selectel:password '<пароль>'
 pulumi config set selectel:authUrl    https://cloud.api.selcloud.ru/identity/v3/
 pulumi config set selectel:authRegion ru-9
 
