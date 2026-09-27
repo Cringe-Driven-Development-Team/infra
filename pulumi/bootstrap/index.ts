@@ -1,0 +1,93 @@
+import * as aws from "@pulumi/aws";
+import * as pulumi from "@pulumi/pulumi";
+import * as random from "@pulumi/random";
+import * as selectel from "@pulumi/selectel";
+import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./selectel-s3";
+
+const cfg = new pulumi.Config();
+const pool = cfg.require("s3Pool");
+const bucketName = cfg.require("bucketName");
+const dnsZoneName = cfg.require("dnsZone"); // с точкой на конце: cellestial.ru.
+const keyReadyTimeout = cfg.getNumber("s3KeyReadyTimeoutSeconds") ?? 600;
+const endpoint = `https://s3.${pool}.storage.selcloud.ru`;
+// Сразу, до провайдеров: без env.sh — подсказка, а не 401 от Keystone или ошибка конфигурации провайдера.
+const selectelCredentials = credentialsFromEnv(process.env);
+
+// Общий долгоживущий проект: стейт Pulumi и DNS-зона домена. Прод живёт отдельно — его проект
+// создаёт и удаляет основной стек. Логическое имя "infra-state" осталось от прежнего имени проекта:
+// смена логического имени пересоздала бы проект.
+const project = new selectel.VpcProjectV2("infra-state", { name: "infra-shared" }, { protect: true });
+
+// Зона домена: NS Selectel общие для всех проектов, поэтому делегирование у регистратора не меняется.
+// Записи прода (A на gateway) создаёт основной стек в этой зоне по infra:dnsProjectId.
+const zone = new selectel.DomainsZoneV2("dns-zone", { name: dnsZoneName, projectId: project.id }, { protect: true });
+
+const password = new random.RandomPassword("state-user-password", {
+  length: 24,
+  minUpper: 1,
+  minLower: 1,
+  minNumeric: 1,
+  minSpecial: 1,
+  overrideSpecial: "!#$%&*+-.:;<=>?@^_{|}~",
+});
+
+// Доступ к стейту для автоматизации: роль member только на общий проект (стейт и DNS-зона).
+const user = new selectel.IamServiceuserV1("state-user", {
+  name: "infra-state-s3",
+  password: password.result,
+  roles: [{ roleName: "member", scope: "project", projectId: project.id }],
+});
+
+const credentials = new selectel.IamS3CredentialsV1("state-s3", {
+  name: "pulumi-state",
+  userId: user.id,
+  projectId: project.id,
+});
+
+// Только при реальном up: инициализировать S3 в проекте и дождаться, пока S3 примет новый ключ.
+const readyAccessKey = pulumi
+  .all([credentials.accessKey, credentials.secretKey, project.id])
+  .apply(async ([accessKey, secretKey, id]) => {
+    if (pulumi.runtime.isDryRun()) {
+      return accessKey;
+    }
+    await initProjectS3(curl, selectelCredentials, id, pool);
+    const attempts = await waitForS3Key(curl, { endpoint, pool, accessKey, secretKey, timeoutSeconds: keyReadyTimeout });
+    pulumi.log.info(`S3 принял ключ стейта (попытка ${attempts})`);
+    return accessKey;
+  });
+
+// S3 Selectel — не AWS: path-style и пропуск проверок, как в документации Selectel для Terraform.
+const s3 = new aws.Provider("selectel-s3", {
+  region: pool,
+  accessKey: readyAccessKey,
+  secretKey: credentials.secretKey,
+  endpoints: [{ s3: endpoint }],
+  s3UsePathStyle: true,
+  skipCredentialsValidation: true,
+  skipRegionValidation: true,
+  skipRequestingAccountId: true,
+  skipMetadataApiCheck: true,
+});
+
+// Бакет стейта не удаляется случайным destroy: protect и forceDestroy по умолчанию (false).
+const bucket = new aws.s3.Bucket("state-bucket", { bucket: bucketName }, { provider: s3, protect: true });
+
+const versioning = new aws.s3.BucketVersioning(
+  "state-versioning",
+  { bucket: bucket.bucket, versioningConfiguration: { status: "Enabled" } },
+  { provider: s3 },
+);
+
+export const stateProjectId = project.id;
+export const dnsZone = zone.name;
+// infra:dnsProjectId основного стека
+export const dnsProjectId = zone.projectId;
+export const stateBucket = bucket.bucket;
+export const stateEndpoint = endpoint;
+export const stateRegion = pool;
+export const stateAccessKey = credentials.accessKey;
+export const stateSecretKey = pulumi.secret(credentials.secretKey);
+export const versioningStatus = versioning.versioningConfiguration.status;
+// pulumi login для основного стека (префикс main/); стейт bootstrap — под префиксом bootstrap/
+export const backendUrl = pulumi.interpolate`s3://${bucket.bucket}/main?region=${pool}&endpoint=s3.${pool}.storage.selcloud.ru&s3ForcePathStyle=true`;
