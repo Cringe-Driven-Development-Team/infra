@@ -35,6 +35,15 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 
 Повторный `site.yml` должен давать `changed=0`.
 
+`bootstrap.yml` ходит под `root`, а после `site.yml` root-логин закрыт — на уже настроенные хосты
+его повторно не запустить. Для нового или пересозданного хоста — только с `--limit`:
+
+- новый gateway: `ansible-playbook bootstrap.yml --limit gateway`;
+- новый backend при уже настроенном gateway: `ansible-playbook bootstrap.yml --limit backend -e jump_user=deploy`
+  — на VPS 2 заходим под `root`, но хоп через gateway уже только под `deploy`.
+
+Ключи команды на существующие хосты раскатывает `site.yml` (роль `users`), bootstrap для этого не нужен.
+
 ## Доступ к VPS 2
 
 `group_vars/backend/vars.yml` подставляет `ProxyCommand` через VPS 1 из inventory
