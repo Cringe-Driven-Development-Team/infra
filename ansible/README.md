@@ -47,17 +47,34 @@ root-логин запрещён и прыгаем под `deploy`.
 
 | Роль | Хосты | Содержимое |
 |---|---|---|
-| users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive), sudo NOPASSWD (в bootstrap) |
+| users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive, с проверкой ключа запускающего), sudo NOPASSWD — в bootstrap и в каждом site.yml |
 | common | все | базовые пакеты |
-| ssh_hardening | все | drop-in: без root-логина и паролей, ключи (порт 22 открыт по DoD) |
+| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, ключи (порт 22 открыт по DoD); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
 | firewall | все | ufw: deny incoming; gateway — 22/80/443, backend — 22 из `private_network_cidr` |
-| docker | все | Docker Engine + Compose plugin, `deploy` в группе docker |
+| docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Caddyfile с доменом `app_domain`, сертификат Let's Encrypt автоматически |
+
+## Порты контейнеров и ufw
+
+Docker публикует порты контейнеров (`-p 8080:80`) своими iptables-правилами в цепочке
+`nat`/`DOCKER`, которые обрабатываются **до** ufw: опубликованный порт откроется наружу,
+даже при `deny incoming`. Правила на стенде:
+
+- публиковать только локально: `-p 127.0.0.1:8080:80` или на приватном IP
+  (`-p 192.168.199.x:8080:80`) — наружу порт не смотрит;
+- публичные сервисы вести через Caddy на gateway, а не через проброс портов;
+- если нужен фильтр — править цепочку `DOCKER-USER` (ufw её не трогает). Правило вставлять
+  в начало (`-I`): добавленное через `-A` окажется после `RETURN` и не сработает. Интерфейс —
+  внешний интерфейс сервера (`ip route show default`), например:
+  `iptables -I DOCKER-USER -i eth0 '!' -s 192.168.199.0/24 -p tcp -m conntrack --ctorigdstport 8080 -j DROP`.
 
 ## Проверки verify.yml
 
-- `https://<app_domain>/` отвечает 200, сертификат от Let's Encrypt (с управляющей машины);
+- `https://<app_domain>/` отвечает 200, содержимое `ok`, сертификат от Let's Encrypt;
+- у VPS 2 в inventory только приватный IP из `private_network_cidr` (floating IP не выдан —
+  структурная проверка; тест «таймаут к приватному IP извне» ничего не доказывает);
 - с VPS 1 доступен порт 22 приватного IP VPS 2;
-- приватный IP VPS 2 недоступен снаружи.
+- `sshd -T` на gateway: `permitrootlogin no`, `passwordauthentication no`,
+  `kbdinteractiveauthentication no`.
 
 CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi при `infra:s3PublicRead=true`).

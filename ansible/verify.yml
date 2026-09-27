@@ -2,6 +2,8 @@
 - name: "Проверки с управляющей машины"
   hosts: localhost
   gather_facts: false
+  vars:
+    backend_ip: "{{ hostvars[groups['backend'][0]]['ansible_host'] }}"
   tasks:
     - name: HTTPS на домене отвечает 200
       ansible.builtin.uri:
@@ -19,9 +21,12 @@
         fail_msg: "Домен {{ app_domain }} отвечает не тем, чем должен"
 
     - name: Выдать информацию о сертификате
-      ansible.builtin.shell: >-
-        echo | openssl s_client -connect {{ app_domain }}:443 -servername {{ app_domain }} 2>/dev/null
-        | grep -E '^(issuer|subject)='
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          echo | openssl s_client -connect {{ app_domain }}:443 -servername {{ app_domain }} 2>/dev/null
+          | grep -E '^(issuer|subject)='
+        executable: /bin/bash
       register: cert_info
       changed_when: false
 
@@ -30,20 +35,18 @@
         that: cert_info.stdout is search("Encrypt|ISRG")
         fail_msg: "Сертификат не от Let's Encrypt: {{ cert_info.stdout }}"
 
-    - name: VPS 2 снаружи недоступна (приватный IP не маршрутизируется)
-      ansible.builtin.wait_for:
-        host: "{{ hostvars[groups['backend'][0]]['ansible_host'] }}"
-        port: 22
-        timeout: 3
-      ignore_errors: true
-      register: backend_outside
-
-    - name: Убедиться, что подключение снаружи не прошло
+    # Тест «подключиться к приватному IP извне» ничего не доказывает: такой адрес
+    # не маршрутизируется в принципе. Проверяем структурно: у VPS 2 в inventory
+    # только адрес из приватной сети — floating IP не выдан (его даёт Pulumi, см.
+    # openstack.networking.FloatingIp только на gateway).
+    - name: У VPS 2 нет публичного адреса (в inventory только приватный IP)
       ansible.builtin.assert:
-        that: backend_outside is failed
-        fail_msg: "VPS 2 unexpectedly reachable from outside"
+        that: backend_ip is match('^' ~ (private_network_cidr.split('.')[0:3] | join('\\.')) ~ '\\.')
+        fail_msg: >-
+          Ожидался приватный IP из {{ private_network_cidr }}, а в inventory у VPS 2 стоит
+          {{ backend_ip }} — похоже, у backend появился floating IP.
 
-- name: "Проверки с VPS 1"
+- name: "Проверки на VPS 1"
   hosts: gateway
   gather_facts: false
   tasks:
@@ -52,3 +55,21 @@
         host: "{{ hostvars[groups['backend'][0]]['ansible_host'] }}"
         port: 22
         timeout: 10
+
+    - name: Эффективный конфиг sshd (sshd -T)
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          sshd -T | grep -E '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication) '
+        executable: /bin/bash
+      become: true
+      register: sshd_effective
+      changed_when: false
+
+    - name: "Hardening активен: root-логин и аутентификация паролем выключены"
+      ansible.builtin.assert:
+        that:
+          - sshd_effective.stdout is search('(?m)^permitrootlogin no$')
+          - sshd_effective.stdout is search('(?m)^passwordauthentication no$')
+          - sshd_effective.stdout is search('(?m)^kbdinteractiveauthentication no$')
+        fail_msg: "sshd -T: {{ sshd_effective.stdout }}"

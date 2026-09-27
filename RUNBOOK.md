@@ -23,28 +23,26 @@ ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
 
 1. **Сервисный пользователь аккаунта** (Управление доступом → Сервисные пользователи):
    роли `member` + `iam.admin` **на аккаунт**. Записать: логин (hex-строка) и пароль.
-2. **Зона DNS** `cellestial.ru.` существует (создаётся автоматически при покупке домена;
-   если её нет — включить DNS-хостинг для домена). Записать **project id** проекта, где лежит зона
-   (панель → проект → адрес: `.../projects/<id>/...`) → это `dnsProjectId`.
-3. **Object Storage для состояния Pulumi** (отдельный пользователь, не из п.1):
-   - сервисный пользователь с доступом к объекчному хранилищу → выдать access/secret key;
-   - создать бакет, например `pulumi-state-cellestial` (приватный).
-   Записать: ключи, имя бакета, пул (у нас `ru-7`).
+2. **Зона DNS** `cellestial.ru.` и **бакет стейта** `cdd-infra-state` живут в проекте `infra-shared`
+   и создаются bootstrap-стеком, руками их не заводят — см. `pulumi/bootstrap/README.md`.
+   `dnsProjectId` для п.3 — `pulumi -C pulumi/bootstrap stack output dnsProjectId`
+   (пока залогинены в префикс `bootstrap/`).
+3. **Личный доступ к стейту** — один раз на человека, по `pulumi/bootstrap/README.md`
+   («Один раз на человека»): `~/.config/selectel.env` (`init-env.sh`) и личный S3-ключ
+   (`bun state-key.ts`). Общих ключей стейта нет.
 4. Если в зоне `cellestial.ru.` уже есть **рукописная A-запись** `cellestial.ru.` — удалить:
    запись будет под управлением Pulumi, иначе конфликт.
 
 ## 2. Pulumi: backend и стек
 
-```bash
-export AWS_ACCESS_KEY_ID='<ключ из п.1.3>'
-export AWS_SECRET_ACCESS_KEY='<секретный ключ>'
-# Схема https:// обязательна: без неё Pulumi падает с "was not a valid URI"
-export AWS_ENDPOINT_URL='https://s3.ru-7.storage.selcloud.ru'   # https://s3.<пул>.storage.selcloud.ru
+Стейт основного стека — в бакете `cdd-infra-state`, префикс `main/`, стек `prod`.
 
+```bash
+source pulumi/bootstrap/env.sh       # личный ключ стейта (AWS_*), passphrase, OS_* — п.1.3
 cd pulumi
-pulumi login 's3://pulumi-state-cellestial'
+pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi install                       # генерирует sdks/selectel, ставит deps через bun
-pulumi stack init dev                # спросит passphrase для секретов — СОХРАНИТЬ
+pulumi stack select prod             # стек уже есть; с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
 
 ## 3. Pulumi: конфиг (руками, значения свои)
@@ -62,7 +60,7 @@ pulumi config set infra:pool              ru-9
 pulumi config set infra:zone              ru-9a
 pulumi config set infra:volumeType        fast.ru-9a
 pulumi config set infra:gatewayFlavorName SL1.2-4096
-pulumi config set infra:backendFlavorName SL2.2-8192
+pulumi config set infra:backendFlavorName SL1.2-8192
 pulumi config set infra:imageName        'Ubuntu 24.04 LTS 64-bit'
 pulumi config set infra:sshPublicKey     "$(cat ~/.ssh/selectel_release.pub)"
 # Публичные ключи команды — кладутся root через cloud-init при первой загрузке
@@ -151,8 +149,8 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 
 | Симптом | Причина |
 |---|---|
-| `pulumi whoami` падает с `no EC2 IMDS role found` | Не заданы `AWS_*` env или ключи от state-бакета — п.2 |
-| `Custom endpoint ... was not a valid URI` | В `AWS_ENDPOINT_URL` нет схемы `https://` — п.2 |
+| `pulumi whoami` падает с `no EC2 IMDS role found` | Не выполнен `source pulumi/bootstrap/env.sh` (нет личного ключа стейта `AWS_*`) — п.2 |
+| `pulumi stack select prod`: стек не найден | `pulumi login` не в префикс `main/` бакета `cdd-infra-state` (login глобален — после работы с bootstrap-стеком перелогиниться) — п.2 |
 | `409 already_exists` | Имя занято в общем аккаунте → сменить `infra:name` / `infra:serviceUserName` / `infra:s3Bucket` |
 | `Your query returned no results` на зоне | `infra:dnsZone`/`infra:dnsProjectId` не совпадают с реальностью |
 | `ExternalGatewayForFloatingIPNotFound` | Уже обработан (`dependsOn`), повторить `pulumi up` |

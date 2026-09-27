@@ -1,4 +1,4 @@
-# Скопируйте в Pulumi.dev.yaml (или создайте стек: pulumi stack init dev)
+# Скопируйте в Pulumi.prod.yaml (или создайте стек: pulumi stack init prod)
 # и заполните через `pulumi config set` — секреты только с --secret.
 config:
   # Сервисный пользователь аккаунта Selectel (роли: member + iam.admin на аккаунт)
@@ -20,7 +20,7 @@ config:
   infra:zone: ru-9a
   infra:volumeType: fast.ru-9a
   infra:gatewayFlavorName: SL1.2-4096
-  infra:backendFlavorName: SL2.2-8192
+  infra:backendFlavorName: SL1.2-8192
   # infra:backendVolumeSize: 20
   infra:imageName: Ubuntu 24.04 LTS 64-bit
   # Отдельный ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
@@ -31,7 +31,7 @@ config:
   # Смена списка пересоздаёт серверы — менять только при плановом rebuild.
   # infra:sshPublicKeys:
   #   - "ssh-ed25519 AAAA... <owner>"
-  # infra:sshUser: root
+  # infra:sshUser: deploy   # выход стека; по умолчанию deploy (root — только для bootstrap)
 
   # DNS: A-запись domain → publicIp VPS 1 (зона Selectel DNS купленного домена)
   infra:domain: cellestial.ru

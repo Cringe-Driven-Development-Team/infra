@@ -24,17 +24,17 @@ pulumi install     # генерирует SDK провайдера selectel в s
 
 ## Backend и стек
 
-Состояние стека хранится в S3-бакете Selectel (Object Storage). Ключи и бакет — отдельный
-пользователь Object Storage, не путать с сервисным пользователем аккаунта:
+Стейт — в бакете `cdd-infra-state` (создаёт bootstrap-стек, `bootstrap/README.md`), префикс
+`main/`, стек `prod`. Доступ — личный S3-ключ стейта из `~/.config/selectel.env`:
 
 ```bash
-export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
-pulumi login "s3://<state-bucket>?region=<s3-pool>"   # endpoint — через AWS_ENDPOINT_URL
-pulumi stack init dev         # спросит passphrase для секретов — сохраните её
+source bootstrap/env.sh       # AWS_* (личный ключ стейта), PULUMI_CONFIG_PASSPHRASE, OS_*
+pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
+pulumi stack select prod      # с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
 
 `Pulumi.<stack>.yaml` содержит логин и зашифрованный пароль, поэтому в `.gitignore`;
-в репозитории только `Pulumi.dev.yaml.example`.
+в репозитории только `Pulumi.prod.yaml.example`.
 
 ## Конфиг
 
@@ -51,7 +51,7 @@ pulumi config set infra:pool             ru-9
 pulumi config set infra:zone             ru-9a
 pulumi config set infra:volumeType       fast.ru-9a
 pulumi config set infra:gatewayFlavorName SL1.2-4096
-pulumi config set infra:backendFlavorName SL2.2-8192
+pulumi config set infra:backendFlavorName SL1.2-8192
 pulumi config set infra:imageName        "Ubuntu 24.04 LTS 64-bit"
 pulumi config set infra:sshPublicKey     "$(cat ~/.ssh/selectel_release.pub)"
 
@@ -85,7 +85,7 @@ A-запись домена находится под управлением Pul
 
 ```bash
 # Ключи продукта читаем в локальные переменные и отдаём только команде aws:
-# AWS_* в окружении — это ключи backend'а стейта (п.2), перетирать их нельзя,
+# AWS_* в окружении — это личный ключ стейта (см. «Backend и стек»), перетирать его нельзя,
 # иначе следующие pulumi stack output не прочитают стейт.
 S3_ENDPOINT=$(pulumi stack output s3Endpoint)
 S3_BUCKET=$(pulumi stack output s3Bucket)

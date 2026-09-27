@@ -96,10 +96,18 @@ pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.sel
 pulumi stack init dev --secrets-provider passphrase     # та же passphrase, что у старого стека
 pulumi stack import --file /tmp/cellestial-dev.json
 pulumi preview                                          # ожидается: без изменений
+# имя стека — prod. Ресурсы не пересоздаются, в стейте меняются только URN;
+# Pulumi.dev.yaml переименовывается в Pulumi.prod.yaml сам
+pulumi stack rename prod
+pulumi preview                                          # снова без изменений
 rm /tmp/cellestial-dev.json
 ```
 
-После этого `devops-pulumi-state` можно удалить.
+Экспорт `dev` нельзя импортировать сразу в стек `prod`: URN в стейте содержат имя стека, и
+Pulumi увидит все ресурсы как чужие. Переименование — только через `stack rename` после импорта.
+
+`devops-pulumi-state` удалять только после того, как оба `preview` в новом бакете прошли без
+изменений и личные ключи стейта у всех сохранены вне стейта.
 
 ## Первый запуск (выполнен 2026-09-26, для справки)
 

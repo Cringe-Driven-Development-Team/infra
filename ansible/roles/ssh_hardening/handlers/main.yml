@@ -1,5 +1,24 @@
 ---
-- name: Restart sshd
-  ansible.builtin.service:
-    name: ssh
+# Ubuntu 24.04: sshd запускается через socket activation. Порт и адреса слушает ssh.socket,
+# остальной конфиг читает ssh.service — перезапускаем оба. На хосте без socket activation
+# (сокет выключен) его рестарт запустил бы сокет на уже занятом sshd порту 22 — поэтому
+# ssh.socket трогаем, только если он активен.
+- name: Проверить socket activation sshd
+  ansible.builtin.command: systemctl is-active ssh.socket
+  register: ssh_hardening_socket
+  changed_when: false
+  failed_when: false
+  listen: Restart sshd
+
+- name: Перезапустить ssh.socket
+  ansible.builtin.systemd:
+    name: ssh.socket
     state: restarted
+  when: ssh_hardening_socket.stdout == 'active'
+  listen: Restart sshd
+
+- name: Перезапустить ssh.service
+  ansible.builtin.systemd:
+    name: ssh.service
+    state: restarted
+  listen: Restart sshd

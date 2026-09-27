@@ -1,9 +1,12 @@
 ---
-# Базовая настройка обеих VPS: пользователь уже создан bootstrap.yml, дальше deploy + sudo
+# Базовая настройка обеих VPS: пользователь уже создан bootstrap.yml, дальше deploy + sudo.
+# users — и здесь: ключи команды (files/authorized_keys/*.pub) раскатываются каждым site.yml,
+# bootstrap.yml после ssh_hardening повторно не запустить (root-логин закрыт).
 - name: "Базовая настройка (обе VPS)"
   hosts: all
   become: true
   roles:
+    - users
     - common
     - ssh_hardening
     - firewall

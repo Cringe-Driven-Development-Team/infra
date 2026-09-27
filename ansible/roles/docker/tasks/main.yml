@@ -1,4 +1,6 @@
 ---
+# Внимание: -p/--publish у контейнеров обходит ufw (цепочка DOCKER обрабатывается до него) —
+# см. раздел «Порты контейнеров и ufw» в ansible/README.md.
 - name: Ключ репозитория Docker
   ansible.builtin.get_url:
     url: https://download.docker.com/linux/ubuntu/gpg
