@@ -104,6 +104,10 @@ ansible-playbook site.yml                     # повтор: expected changed=0
 ansible-playbook verify.yml                   # проверки DoD
 ```
 
+`bootstrap.yml` — только для чистых хостов: после `site.yml` вход под root закрыт. Новый или пересозданный
+хост — `ansible-playbook bootstrap.yml --limit <хост>` (для backend при настроенном gateway ещё
+`-e jump_user=deploy`), затем `site.yml`. Подробнее — `ansible/README.md`, «Запуск».
+
 ## 6. Проверки руками (DoD)
 
 ```bash
