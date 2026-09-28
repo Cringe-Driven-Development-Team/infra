@@ -110,7 +110,8 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 
 ## Передача в Ansible
 
-- `projectId` → `project_id` в `ansible/clouds.yaml` (dynamic inventory найдёт серверы по `metadata.role`);
+- `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт
+  его сам, для `ansible/clouds.yaml` — вписать в `project_id`;
 - `domain` → `app_domain` в `ansible/inventory/group_vars/all/vars.yml`;
 - `privateIp` использовать руками не нужно — inventory сам подставит его как `ansible_host` VPS 2.
 

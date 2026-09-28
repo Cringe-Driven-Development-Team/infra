@@ -12,6 +12,16 @@ const selectelCfg = new pulumi.Config("selectel");
 // (source pulumi/bootstrap/env.sh → OS_USERNAME/OS_PASSWORD/OS_DOMAIN_NAME). Провайдер selectel
 // читает их из окружения сам; в конфиге стека (он коммитится) логина и пароля нет.
 const selectelCreds = credentialsFromEnv(process.env);
+// SELECTEL_PROJECT в selectel.env даёт OS_PROJECT_NAME (для openstack CLI). Провайдер OpenStack
+// читает его как tenant_name рядом с явным tenantId ниже, и gophercloud такую пару отвергает —
+// с непонятной ошибкой посреди up. Проверяем заранее.
+if (process.env.OS_PROJECT_NAME) {
+  throw new Error(
+    `Задан OS_PROJECT_NAME=${process.env.OS_PROJECT_NAME} (SELECTEL_PROJECT в selectel.env): провайдер OpenStack ` +
+      "возьмёт его вместе с tenantId проекта и не авторизуется. Для pulumi: unset OS_PROJECT_NAME " +
+      "или source pulumi/bootstrap/env.sh без SELECTEL_PROJECT.",
+  );
+}
 if (selectelCfg.get("username") !== undefined || selectelCfg.get("password") !== undefined) {
   // Конфиг сильнее окружения: провайдер работал бы от пользователя из конфига, а инициализация
   // S3 — от пользователя из selectel.env. Такая смесь не нужна — убрать из конфига.

@@ -13,8 +13,13 @@ ansible-galaxy collection install -r requirements.yml   # openstack.cloud, commu
 
 ## Подготовка
 
-1. `cp clouds.yaml.example clouds.yaml` — сервисный пользователь **аккаунта** Selectel
-   (тот же, что `selectel:username` в Pulumi) и `project_id` из `pulumi stack output projectId`.
+1. Доступ к OpenStack для inventory и `verify.yml` — одно из двух:
+   - `. ./env.sh` (из `ansible/`): учётка из `~/.config/selectel.env`, проект и пул — из прод-стека
+     Pulumi, `clouds.yaml` не нужен;
+   - `cp clouds.yaml.example clouds.yaml` — сервисный пользователь **аккаунта** Selectel
+     (тот же, что в `selectel.env`) и `project_id` из `pulumi stack output projectId`.
+
+   Оба сразу нельзя: openstacksdk откажется от двух облаков `selectel`.
 2. Ключ стенда `~/.ssh/selectel_release` (+ `.pub`) — он же `infra:sshPublicKey` в Pulumi
    (логин через keypair при создании серверов).
    Публичные ключи всех, кто работает со стендом, лежат в репозитории:
@@ -36,11 +41,15 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 Повторный `site.yml` должен давать `changed=0`.
 
 `bootstrap.yml` ходит под `root`, а после `site.yml` root-логин закрыт — на уже настроенные хосты
-его повторно не запустить. Для нового или пересозданного хоста — только с `--limit`:
+его повторно не запустить. Он нужен только хосту с **новым диском** (после `pulumi destroy` или замены
+boot-volume), и только с `--limit`:
 
-- новый gateway: `ansible-playbook bootstrap.yml --limit gateway`;
-- новый backend при уже настроенном gateway: `ansible-playbook bootstrap.yml --limit backend -e jump_user=deploy`
+- gateway: `ansible-playbook bootstrap.yml --limit gateway`;
+- backend при уже настроенном gateway: `ansible-playbook bootstrap.yml --limit backend -e jump_user=deploy`
   — на VPS 2 заходим под `root`, но хоп через gateway уже только под `deploy`.
+
+Пересоздание сервера Pulumi'ем (смена `infra:sshPublicKeys`, `deleteBeforeReplace`) диск сохраняет:
+`deploy` и hardening на нём уже есть, bootstrap не нужен (и не пройдёт) — хватает `site.yml`.
 
 Ключи команды на существующие хосты раскатывает `site.yml` (роль `users`), bootstrap для этого не нужен.
 
@@ -80,10 +89,17 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 ## Проверки verify.yml
 
 - `https://<app_domain>/` отвечает 200, содержимое `ok`, сертификат от Let's Encrypt;
-- у VPS 2 в inventory только приватный IP из `private_network_cidr` (floating IP не выдан —
-  структурная проверка; тест «таймаут к приватному IP извне» ничего не доказывает);
-- с VPS 1 доступен порт 22 приватного IP VPS 2;
-- `sshd -T` на gateway: `permitrootlogin no`, `passwordauthentication no`,
+- VPS 2 без публичного адреса — по данным OpenStack: ни один floating IP проекта не привязан к его
+  портам, порты не во внешней сети (приватный `ansible_host` сам по себе ничего не доказывает);
+- ufw на VPS 2: active, `deny (incoming)`, разрешающих правил ровно `firewall_rules` из
+  `group_vars/backend` (сейчас одно — 22/tcp из `private_network_cidr`);
+- с VPS 1: порты из `firewall_rules` VPS 2 открыты, остальные — всё, что VPS 2 слушает не на loopback,
+  плюс 80/443/2375/2376/8080 — закрыты (ловит и порты Docker в обход ufw). Порт приложения для Caddy
+  добавляется в `firewall_rules` — проверки его учтут;
+- `sshd -T` на обеих VPS: `permitrootlogin no`, `passwordauthentication no`,
   `kbdinteractiveauthentication no`.
+
+`verify.yml` запускать целиком: с `--limit gateway` проба портов не знает, что слушает VPS 2, и
+проверяет только типовые порты.
 
 CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi при `infra:s3PublicRead=true`).

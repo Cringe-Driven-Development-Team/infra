@@ -91,9 +91,9 @@ pulumi stack output   # projectId, publicIp, privateIp, s3Endpoint, s3Bucket, s3
 
 ```bash
 cd ansible
-cp clouds.yaml.example clouds.yaml
-# в clouds.yaml руками: username/password/user_domain_name из п.1.1,
-# project_id = `pulumi stack output projectId` (из каталога pulumi/), region_name ru-9
+. ./env.sh                                    # OS_* из selectel.env + projectId/pool прод-стека
+# или вместо env.sh: cp clouds.yaml.example clouds.yaml и руками username/password/user_domain_name
+# из п.1.1, project_id = `pulumi stack output projectId`, region_name ru-9 (оба сразу — нельзя)
 
 ansible-inventory -i inventory --graph        # должны появиться 2 хоста: gateway и backend
 # ключи всех, кто заходит на стенд, — в files/authorized_keys/*.pub (коммитятся в репо;
@@ -104,9 +104,11 @@ ansible-playbook site.yml                     # повтор: expected changed=0
 ansible-playbook verify.yml                   # проверки DoD
 ```
 
-`bootstrap.yml` — только для чистых хостов: после `site.yml` вход под root закрыт. Новый или пересозданный
-хост — `ansible-playbook bootstrap.yml --limit <хост>` (для backend при настроенном gateway ещё
-`-e jump_user=deploy`), затем `site.yml`. Подробнее — `ansible/README.md`, «Запуск».
+`bootstrap.yml` — только для хоста с новым диском (после `destroy` или замены boot-volume): после
+`site.yml` вход под root закрыт. Такой хост — `ansible-playbook bootstrap.yml --limit <хост>` (для backend
+при настроенном gateway ещё `-e jump_user=deploy`), затем `site.yml`. Сервер, пересозданный Pulumi'ем
+(смена ключей в `infra:sshPublicKeys`), сохраняет диск — ему хватает `site.yml`. Подробнее —
+`ansible/README.md`, «Запуск».
 
 ## 6. Проверки руками (DoD)
 

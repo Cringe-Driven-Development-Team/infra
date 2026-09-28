@@ -4,7 +4,7 @@
   gather_facts: false
   vars:
     backend_server_id: "{{ hostvars[groups['backend'][0]]['openstack']['id'] }}"
-  # clouds.yaml ищется в текущем каталоге — запускать из ansible/, как и inventory
+  # Облако selectel — из clouds.yaml в ansible/ или из OS_* (source env.sh), см. README
   module_defaults:
     group/openstack.cloud.openstack:
       cloud: selectel
@@ -84,17 +84,30 @@
       register: ufw_status
       changed_when: false
 
-    # Разрешающих правил ровно одно: 22/tcp из приватной сети. Всё прочее — default deny.
-    - name: "ufw: входящие запрещены, открыт только 22/tcp из {{ private_network_cidr }}"
-      vars:
-        allow_rules: "{{ ufw_status.stdout_lines | select('search', ' ALLOW ') | list }}"
+    - name: Разрешающие правила ufw
+      ansible.builtin.set_fact:
+        ufw_allow_rules: "{{ ufw_status.stdout_lines | select('search', ' ALLOW ') | list }}"
+
+    # Разрешено ровно то, что в firewall_rules (group_vars/backend), остальное — default deny.
+    # Новый порт для приложения добавляется в firewall_rules — проверки ниже и проба с VPS 1 его учтут.
+    - name: "UFW: активен, входящие запрещены, разрешающих правил столько же, сколько в firewall_rules"
       ansible.builtin.assert:
         that:
           - ufw_status.stdout is search('(?m)^Status: active$')
           - ufw_status.stdout is search('deny \\(incoming\\)')
-          - allow_rules | length == 1
-          - allow_rules[0] is match('^22/tcp\\s+ALLOW IN\\s+' ~ (private_network_cidr | regex_escape) ~ '(\\s|$)')
+          - ufw_allow_rules | length == firewall_rules | length
         fail_msg: "{{ ufw_status.stdout }}"
+
+    - name: "UFW: разрешено {{ item.port }}/{{ item.proto }} только из {{ item.src }}"
+      ansible.builtin.assert:
+        that: >-
+          ufw_allow_rules
+          | select('match', '^' ~ item.port ~ '/' ~ item.proto ~ '\\s+ALLOW IN\\s+' ~ (item.src | regex_escape) ~ '(\\s|$)')
+          | list | length == 1
+        fail_msg: "{{ ufw_status.stdout }}"
+      loop: "{{ firewall_rules }}"
+      loop_control:
+        label: "{{ item.name }}"
 
     # Какие TCP-порты слушает VPS 2 не на loopback: их и проверим снаружи, с VPS 1.
     # Порты, опубликованные Docker, ufw не закрывает (DNAT раньше INPUT) — проба с VPS 1 это поймает.
@@ -122,19 +135,23 @@
   vars:
     backend_host: "{{ groups['backend'][0] }}"
     backend_ip: "{{ hostvars[backend_host]['ansible_host'] }}"
+    # allowlist — firewall_rules VPS 2; с --limit gateway play VPS 2 не шёл, его портов нет —
+    # тогда пробуем только типовые
+    backend_allowed_ports: "{{ hostvars[backend_host]['firewall_rules'] | map(attribute='port') | map('int') | list }}"
+    backend_listen_ports: "{{ (hostvars[backend_host]['backend_listen'] | default({'stdout': '[]'}))['stdout'] | from_json }}"
     probe_ports: >-
-      {{ ((hostvars[backend_host]['backend_listen']['stdout'] | from_json) + [80, 443, 2375, 2376, 8080])
-         | unique | difference([22]) | sort }}
+      {{ (backend_listen_ports + [80, 443, 2375, 2376, 8080]) | unique | difference(backend_allowed_ports) | sort }}
   tasks:
-    - name: С VPS 1 до VPS 2 открыт порт 22
+    - name: "С VPS 1 до VPS 2 открыт {{ item }}/tcp"
       ansible.builtin.wait_for:
         host: "{{ backend_ip }}"
-        port: 22
+        port: "{{ item }}"
         timeout: 10
+      loop: "{{ backend_allowed_ports }}"
 
-    # Всё, что VPS 2 слушает кроме 22, плюс типовые порты — из приватной сети недоступно.
+    # Всё, что VPS 2 слушает вне allowlist, плюс типовые порты — из приватной сети недоступно.
     # state: stopped — любая ошибка соединения (reset или таймаут DROP) считается «закрыт».
-    - name: "С VPS 1 до VPS 2 закрыто всё, кроме 22: {{ probe_ports }}"
+    - name: "С VPS 1 до VPS 2 закрыто всё вне allowlist: {{ probe_ports }}"
       ansible.builtin.wait_for:
         host: "{{ backend_ip }}"
         port: "{{ item }}"
@@ -144,13 +161,17 @@
         msg: "VPS 2 принимает соединения на {{ item }}/tcp из приватной сети"
       loop: "{{ probe_ports }}"
 
+- name: "Проверки на обеих VPS"
+  hosts: gateway:backend
+  gather_facts: false
+  become: true
+  tasks:
     - name: Эффективный конфиг sshd (sshd -T)
       ansible.builtin.shell:
         cmd: >-
           set -o pipefail;
           sshd -T | grep -E '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication) '
         executable: /bin/bash
-      become: true
       register: sshd_effective
       changed_when: false
 

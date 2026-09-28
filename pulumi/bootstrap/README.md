@@ -50,6 +50,9 @@ pulumi preview
 После `source env.sh` работает и `openstack` CLI (`uv tool install python-openstackclient`) — без
 `clouds.yaml`, в проекте стейта по id (другой проект — `SELECTEL_PROJECT=<имя>` в `selectel.env`):
 `openstack flavor list`, `openstack image list --public`.
+С `SELECTEL_PROJECT` прод-стек не запускается: `OS_PROJECT_NAME` провайдер OpenStack берёт вместе с
+`tenantId` проекта, и `pulumi/index.ts` падает заранее с подсказкой. Для `pulumi` — `source env.sh` без
+`SELECTEL_PROJECT` (или `unset OS_PROJECT_NAME`).
 
 id проекта стейта записан в `env.sh` (`OS_PROJECT_ID`): имя проекта может меняться, id — нет. Если
 bootstrap-стек когда-нибудь пересоздаст проект, обновите id; проверка:
