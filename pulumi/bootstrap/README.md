@@ -110,6 +110,10 @@ pulumi preview                                          # ожидается: р
 pulumi stack rename prod
 pulumi preview                                          # снова без изменений
 rm /tmp/cellestial-dev.json
+# программа не читает секретов из конфига — secure-значения в нём остатки ранних версий
+# (infra:s3AccessKey/infra:s3SecretKey). В публичном репо шифротекст + encryptionsalt дают
+# офлайн-перебор passphrase, поэтому вывод должен быть пуст; иначе pulumi config rm <ключ>
+grep -n 'secure:' Pulumi.prod.yaml
 git add Pulumi.prod.yaml                                # конфиг прода — в репо (секретов нет)
 ```
 
