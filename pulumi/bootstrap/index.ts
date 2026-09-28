@@ -89,5 +89,5 @@ export const stateRegion = pool;
 export const stateAccessKey = credentials.accessKey;
 export const stateSecretKey = pulumi.secret(credentials.secretKey);
 export const versioningStatus = versioning.versioningConfiguration.status;
-// pulumi login для основного стека (префикс main/); стейт bootstrap — под префиксом bootstrap/
-export const backendUrl = pulumi.interpolate`s3://${bucket.bucket}/main?region=${pool}&endpoint=s3.${pool}.storage.selcloud.ru&s3ForcePathStyle=true`;
+// Бэкенд основного стека (префикс prod/) — он же backend.url в pulumi/Pulumi.yaml; стейт bootstrap — под префиксом bootstrap/
+export const backendUrl = pulumi.interpolate`s3://${bucket.bucket}/prod?region=${pool}&endpoint=s3.${pool}.storage.selcloud.ru&s3ForcePathStyle=true`;

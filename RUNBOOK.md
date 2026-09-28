@@ -27,8 +27,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
    роли `member` + `iam.admin` **на аккаунт**. Записать: логин (hex-строка) и пароль.
 2. **Зона DNS** `cellestial.ru.` и **бакет стейта** `cdd-infra-state` живут в проекте `infra-shared`
    и создаются bootstrap-стеком, руками их не заводят — см. `pulumi/bootstrap/README.md`.
-   `dnsProjectId` для п.3 — `pulumi -C pulumi/bootstrap stack output dnsProjectId`
-   (пока залогинены в префикс `bootstrap/`).
+   `dnsProjectId` для п.3 — `pulumi -C pulumi/bootstrap stack output dnsProjectId --stack main`.
 3. **Личный доступ к стейту** — один раз на человека, по `pulumi/bootstrap/README.md`
    («Один раз на человека»): `~/.config/selectel.env` (`init-env.sh`) и личный S3-ключ
    (`bun state-key.ts`). Общих ключей стейта нет.
@@ -37,12 +36,13 @@ ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
 
 ## 2. Pulumi: backend и стек
 
-Стейт основного стека — в бакете `cdd-infra-state`, префикс `main/`, стек `prod`.
+Стейт основного стека — в бакете `cdd-infra-state`, префикс `prod/`, стек `prod`. Бэкенд прибит в
+`pulumi/Pulumi.yaml` (`backend.url`), `pulumi login` не нужен. Проверка: `pulumi whoami -v` в `pulumi/`
+показывает `s3://cdd-infra-state/prod…`.
 
 ```bash
 source pulumi/bootstrap/env.sh       # личный ключ стейта (AWS_*), passphrase, OS_* — п.1.3
 cd pulumi
-pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi install                       # генерирует sdks/selectel, ставит deps через bun
 pulumi stack select prod             # стек уже есть; с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
@@ -162,7 +162,7 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 | Симптом | Причина |
 |---|---|
 | `pulumi whoami` падает с `no EC2 IMDS role found` | Не выполнен `source pulumi/bootstrap/env.sh` (нет личного ключа стейта `AWS_*`) — п.2 |
-| `pulumi stack select prod`: стек не найден | `pulumi login` не в префикс `main/` бакета `cdd-infra-state` (login глобален — после работы с bootstrap-стеком перелогиниться) — п.2 |
+| `pulumi stack select prod`: стек не найден | Команда запущена не из `pulumi/` (бэкенд берётся из `Pulumi.yaml` каталога) или задана `PULUMI_BACKEND_URL` — `pulumi whoami -v` должен показать `s3://cdd-infra-state/prod…` — п.2 |
 | `409 already_exists` | Имя занято в общем аккаунте → сменить `infra:name` / `infra:serviceUserName` / `infra:s3Bucket` |
 | `Your query returned no results` на зоне | `infra:dnsZone`/`infra:dnsProjectId` не совпадают с реальностью |
 | `ExternalGatewayForFloatingIPNotFound` | Уже обработан (`dependsOn`), повторить `pulumi up` |

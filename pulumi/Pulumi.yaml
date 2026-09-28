@@ -5,6 +5,10 @@ runtime:
     typescript: true
     packagemanager: bun
 description: Selectel (2 VPS + S3 + DNS) for DevOps course
+# Бэкенд стейта прибит к проекту: pulumi в этом каталоге ходит сюда независимо от глобального
+# `pulumi login`. Стек prod. Перебивает его только переменная PULUMI_BACKEND_URL — не задавать.
+backend:
+  url: s3://cdd-infra-state/prod?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true
 packages:
   selectel:
     source: terraform-provider

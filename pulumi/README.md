@@ -27,11 +27,14 @@ pulumi install     # генерирует SDK провайдера selectel в s
 ## Backend и стек
 
 Стейт — в бакете `cdd-infra-state` (создаёт bootstrap-стек, `bootstrap/README.md`), префикс
-`main/`, стек `prod`. Доступ — личный S3-ключ стейта из `~/.config/selectel.env`:
+`prod/`, стек `prod`. Доступ — личный S3-ключ стейта из `~/.config/selectel.env`.
+
+Бэкенд прибит в `Pulumi.yaml` (`backend.url`): `pulumi` в этом каталоге всегда работает со стейтом
+`s3://cdd-infra-state/prod`, глобальный `pulumi login` на него не влияет и не нужен. Перебивает
+только `PULUMI_BACKEND_URL` — её не задавать. Проверка: `pulumi whoami -v`.
 
 ```bash
 source bootstrap/env.sh       # AWS_* (личный ключ стейта), PULUMI_CONFIG_PASSPHRASE, OS_*
-pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi stack select prod      # с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
 
