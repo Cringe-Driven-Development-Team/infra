@@ -1,0 +1,184 @@
+---
+- name: "Проверки с управляющей машины"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    backend_server_id: "{{ hostvars[groups['backend'][0]]['openstack']['id'] }}"
+  # Облако selectel — из clouds.yaml в ansible/ или из OS_* (source env.sh), см. README
+  module_defaults:
+    group/openstack.cloud.openstack:
+      cloud: selectel
+  tasks:
+    - name: HTTPS на домене отвечает 200
+      ansible.builtin.uri:
+        url: "https://{{ app_domain }}/"
+        status_code: 200
+        return_content: true
+      register: https_ok
+      until: https_ok is succeeded
+      retries: 5
+      delay: 5
+
+    - name: Проверить содержимое ответа
+      ansible.builtin.assert:
+        that: https_ok.content | trim == 'ok'
+        fail_msg: "Домен {{ app_domain }} отвечает не тем, чем должен"
+
+    - name: Выдать информацию о сертификате
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          echo | openssl s_client -connect {{ app_domain }}:443 -servername {{ app_domain }} 2>/dev/null
+          | grep -E '^(issuer|subject)='
+        executable: /bin/bash
+      register: cert_info
+      changed_when: false
+
+    - name: Сертификат выдан Let's Encrypt
+      ansible.builtin.assert:
+        that: cert_info.stdout is search("Encrypt|ISRG")
+        fail_msg: "Сертификат не от Let's Encrypt: {{ cert_info.stdout }}"
+
+    # Приватный ansible_host у VPS 2 ничего не доказывает: inventory сам выбирает floating IP,
+    # если он есть, а приватный адрес с управляющей машины и так не маршрутизируется.
+    # Спрашиваем OpenStack напрямую: какие порты у сервера, в каких сетях, есть ли на них FIP.
+    - name: Порты VPS 2 в OpenStack
+      openstack.cloud.port_info:
+        filters:
+          device_id: "{{ backend_server_id }}"
+      register: backend_ports
+
+    - name: Сети проекта
+      openstack.cloud.networks_info:
+      register: project_networks
+
+    - name: Floating IP проекта
+      openstack.cloud.floating_ip_info:
+      register: project_fips
+
+    - name: У VPS 2 нет публичного адреса
+      vars:
+        port_ids: "{{ backend_ports.ports | map(attribute='id') | list }}"
+        external_net_ids: >-
+          {{ project_networks.networks | selectattr('is_router_external') | map(attribute='id') | list }}
+        backend_fips: "{{ project_fips.floating_ips | selectattr('port_id', 'in', port_ids) | list }}"
+      ansible.builtin.assert:
+        that:
+          - port_ids | length > 0
+          - backend_fips | length == 0
+          - backend_ports.ports | selectattr('network_id', 'in', external_net_ids) | list | length == 0
+        fail_msg: >-
+          VPS 2 доступен извне: floating IP
+          {{ backend_fips | map(attribute='floating_ip_address') | list }},
+          сети портов {{ backend_ports.ports | map(attribute='network_id') | list }}
+          (внешние: {{ external_net_ids }}).
+        success_msg: "Порты VPS 2 ({{ port_ids | length }}) только во внутренней сети, floating IP нет"
+
+- name: "Проверки на VPS 2"
+  hosts: backend
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Правила ufw
+      ansible.builtin.command: ufw status verbose
+      register: ufw_status
+      changed_when: false
+
+    - name: Разрешающие правила ufw
+      ansible.builtin.set_fact:
+        ufw_allow_rules: "{{ ufw_status.stdout_lines | select('search', ' ALLOW ') | list }}"
+
+    # Разрешено ровно то, что в firewall_rules (group_vars/backend), остальное — default deny.
+    # Новый порт для приложения добавляется в firewall_rules — проверки ниже и проба с VPS 1 его учтут.
+    - name: "UFW: активен, входящие запрещены, разрешающих правил столько же, сколько в firewall_rules"
+      ansible.builtin.assert:
+        that:
+          - ufw_status.stdout is search('(?m)^Status: active$')
+          - ufw_status.stdout is search('deny \\(incoming\\)')
+          - ufw_allow_rules | length == firewall_rules | length
+        fail_msg: "{{ ufw_status.stdout }}"
+
+    - name: "UFW: разрешено {{ item.port }}/{{ item.proto }} только из {{ item.src }}"
+      ansible.builtin.assert:
+        that: >-
+          ufw_allow_rules
+          | select('match', '^' ~ item.port ~ '/' ~ item.proto ~ '\\s+ALLOW IN\\s+' ~ (item.src | regex_escape) ~ '(\\s|$)')
+          | list | length == 1
+        fail_msg: "{{ ufw_status.stdout }}"
+      loop: "{{ firewall_rules }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # Какие TCP-порты слушает VPS 2 не на loopback: их и проверим снаружи, с VPS 1.
+    # Порты, опубликованные Docker, ufw не закрывает (DNAT раньше INPUT) — проба с VPS 1 это поймает.
+    - name: Слушающие TCP-порты (кроме loopback)
+      ansible.builtin.shell:
+        cmd: |
+          python3 - <<'EOF'
+          import json, subprocess
+          out = subprocess.run(["ss", "-Hltn"], capture_output=True, text=True, check=True).stdout
+          ports = set()
+          for line in out.splitlines():
+              addr, _, port = line.split()[3].rpartition(":")
+              if addr.startswith("127.") or addr == "[::1]" or "%lo" in addr:
+                  continue
+              ports.add(int(port))
+          print(json.dumps(sorted(ports)))
+          EOF
+        executable: /bin/bash
+      register: backend_listen
+      changed_when: false
+
+- name: "Проверки на VPS 1"
+  hosts: gateway
+  gather_facts: false
+  vars:
+    backend_host: "{{ groups['backend'][0] }}"
+    backend_ip: "{{ hostvars[backend_host]['ansible_host'] }}"
+    # allowlist — firewall_rules VPS 2; с --limit gateway play VPS 2 не шёл, его портов нет —
+    # тогда пробуем только типовые
+    backend_allowed_ports: "{{ hostvars[backend_host]['firewall_rules'] | map(attribute='port') | map('int') | list }}"
+    backend_listen_ports: "{{ (hostvars[backend_host]['backend_listen'] | default({'stdout': '[]'}))['stdout'] | from_json }}"
+    probe_ports: >-
+      {{ (backend_listen_ports + [80, 443, 2375, 2376, 8080]) | unique | difference(backend_allowed_ports) | sort }}
+  tasks:
+    - name: "С VPS 1 до VPS 2 открыт {{ item }}/tcp"
+      ansible.builtin.wait_for:
+        host: "{{ backend_ip }}"
+        port: "{{ item }}"
+        timeout: 10
+      loop: "{{ backend_allowed_ports }}"
+
+    # Всё, что VPS 2 слушает вне allowlist, плюс типовые порты — из приватной сети недоступно.
+    # state: stopped — любая ошибка соединения (reset или таймаут DROP) считается «закрыт».
+    - name: "С VPS 1 до VPS 2 закрыто всё вне allowlist: {{ probe_ports }}"
+      ansible.builtin.wait_for:
+        host: "{{ backend_ip }}"
+        port: "{{ item }}"
+        state: stopped
+        connect_timeout: 3
+        timeout: 10
+        msg: "VPS 2 принимает соединения на {{ item }}/tcp из приватной сети"
+      loop: "{{ probe_ports }}"
+
+- name: "Проверки на обеих VPS"
+  hosts: gateway:backend
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Эффективный конфиг sshd (sshd -T)
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          sshd -T | grep -E '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication) '
+        executable: /bin/bash
+      register: sshd_effective
+      changed_when: false
+
+    - name: "Hardening активен: root-логин и аутентификация паролем выключены"
+      ansible.builtin.assert:
+        that:
+          - sshd_effective.stdout is search('(?m)^permitrootlogin no$')
+          - sshd_effective.stdout is search('(?m)^passwordauthentication no$')
+          - sshd_effective.stdout is search('(?m)^kbdinteractiveauthentication no$')
+        fail_msg: "sshd -T: {{ sshd_effective.stdout }}"

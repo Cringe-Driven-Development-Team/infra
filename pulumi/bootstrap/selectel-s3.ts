@@ -1,6 +1,7 @@
 import { execFile } from "child_process";
 
-// Ответ HTTP-запроса. status 0 — ответа нет (сеть, TLS, curl не запустился), body — текст ошибки.
+// Ответ HTTP-запроса. status 0 — ответа нет (сеть, TLS, таймаут), body — текст ошибки.
+// curl, которого нет в PATH, — не ответ, а отказ промиса: ждать тут нечего.
 export interface HttpResult {
   status: number;
   body: string;
@@ -11,12 +12,16 @@ export type Http = (args: string[], stdin: string) => Promise<HttpResult>;
 // --data-binary @-), чтобы не светиться в списке процессов. curl ходит через системное доверие
 // к сертификатам, как и сам Pulumi.
 export const curl: Http = (args, stdin) =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     const child = execFile(
       "curl",
       ["-sS", "--max-time", "30", "-o", "-", "-w", "\n%{http_code}", ...args],
       { maxBuffer: 10 * 1024 * 1024 },
       (err, stdout, stderr) => {
+        if ((err as NodeJS.ErrnoException | null)?.code === "ENOENT") {
+          reject(new Error("curl не найден в PATH: он нужен для API Selectel и проверки S3-ключа"));
+          return;
+        }
         const lines = String(stdout ?? "").trimEnd().split("\n");
         const status = Number(lines.pop());
         if (!Number.isFinite(status) || status === 0) {
@@ -147,18 +152,24 @@ export interface WaitOptions {
   secretKey: string;
   timeoutSeconds: number;
   intervalMs?: number;
+  // Сколько попыток подряд без HTTP-ответа (status 0) терпеть: разовый сбой сети переживаем,
+  // лежащую сеть или закрытый egress — нет, иначе ждали бы до конца timeoutSeconds.
+  maxNetworkFailures?: number;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 }
 
 // Выданный через IAM ключ S3 принимает не сразу: до этого ListBuckets отвечает 403
-// InvalidAccessKeyId. Опрашиваем, пока не будет 200; любой другой ответ — неудачная попытка.
+// InvalidAccessKeyId. Опрашиваем, пока не будет 200; любой другой HTTP-ответ — неудачная попытка.
+// Без ответа (status 0) maxNetworkFailures раз подряд — сразу ошибка: это сеть, а не ключ.
 export async function waitForS3Key(http: Http, o: WaitOptions): Promise<number> {
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const now = o.now ?? Date.now;
   const interval = o.intervalMs ?? 15000;
+  const maxNetworkFailures = o.maxNetworkFailures ?? 3;
   const deadline = now() + o.timeoutSeconds * 1000;
   let last: HttpResult = { status: 0, body: "" };
+  let networkFailures = 0;
   for (let attempt = 1; ; attempt++) {
     last = await http(
       ["--aws-sigv4", `aws:amz:${o.pool}:s3`, "-K", "-", `${o.endpoint}/`],
@@ -166,6 +177,13 @@ export async function waitForS3Key(http: Http, o: WaitOptions): Promise<number> 
     );
     if (last.status === 200) {
       return attempt;
+    }
+    networkFailures = last.status === 0 ? networkFailures + 1 : 0;
+    if (networkFailures >= maxNetworkFailures) {
+      throw new Error(
+        `S3 ${o.endpoint} не отвечает: ${networkFailures} попытки подряд без HTTP-ответа ` +
+          `(сеть, TLS или прокси; последняя ошибка: ${last.body.slice(0, 300)})`,
+      );
     }
     if (now() + interval > deadline) {
       break;

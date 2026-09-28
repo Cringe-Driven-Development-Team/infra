@@ -93,6 +93,22 @@ describe("waitForS3Key", () => {
     await expect(waitForS3Key(http, { ...base, timeoutSeconds: 0, ...clock() })).rejects.toThrow();
     expect(calls).toBe(1);
   });
+  test("сеть лежит: ошибка после maxNetworkFailures попыток подряд, без ожидания таймаута", async () => {
+    let calls = 0;
+    const http: Http = async () => { calls++; return { status: 0, body: "Could not resolve host" }; };
+    await expect(waitForS3Key(http, { ...base, timeoutSeconds: 600, ...clock() }))
+      .rejects.toThrow(/не отвечает: 3 попытки подряд.*Could not resolve host/s);
+    expect(calls).toBe(3);
+  });
+  test("HTTP-ответ сбрасывает счётчик сетевых ошибок", async () => {
+    const replies: HttpResult[] = [
+      { status: 0, body: "t" }, { status: 0, body: "t" }, { status: 403, body: "InvalidAccessKeyId" },
+      { status: 0, body: "t" }, { status: 0, body: "t" }, { status: 200, body: "<ok/>" },
+    ];
+    let i = 0;
+    const http: Http = async () => replies[i++];
+    expect(await waitForS3Key(http, { ...base, timeoutSeconds: 600, ...clock() })).toBe(6);
+  });
   test("секрет — только в stdin, не в аргументах и не в ошибке", async () => {
     const seen: { args: string[]; stdin: string }[] = [];
     const http: Http = async (args, stdin) => { seen.push({ args, stdin }); return { status: 403, body: "no" }; };

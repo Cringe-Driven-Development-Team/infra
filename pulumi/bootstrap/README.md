@@ -50,6 +50,9 @@ pulumi preview
 После `source env.sh` работает и `openstack` CLI (`uv tool install python-openstackclient`) — без
 `clouds.yaml`, в проекте стейта по id (другой проект — `SELECTEL_PROJECT=<имя>` в `selectel.env`):
 `openstack flavor list`, `openstack image list --public`.
+С `SELECTEL_PROJECT` прод-стек не запускается: `OS_PROJECT_NAME` провайдер OpenStack берёт вместе с
+`tenantId` проекта, и `pulumi/index.ts` падает заранее с подсказкой. Для `pulumi` — `source env.sh` без
+`SELECTEL_PROJECT` (или `unset OS_PROJECT_NAME`).
 
 id проекта стейта записан в `env.sh` (`OS_PROJECT_ID`): имя проекта может меняться, id — нет. Если
 bootstrap-стек когда-нибудь пересоздаст проект, обновите id; проверка:
@@ -95,11 +98,32 @@ source bootstrap/env.sh
 pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi stack init dev --secrets-provider passphrase     # та же passphrase, что у старого стека
 pulumi stack import --file /tmp/cellestial-dev.json
-pulumi preview                                          # ожидается: без изменений
+# логин/пароль Selectel теперь из selectel.env (source env.sh выше); с ними в конфиге
+# программа остановится с подсказкой — убрать до первого preview
+pulumi config rm selectel:username
+pulumi config rm selectel:password
+pulumi preview                                          # ожидается: ресурсы без изменений; допустим
+                                                        # только ~ update провайдера selectel
+                                                        # (логин/пароль ушли из его входов в env).
+                                                        # FloatingIp gateway — строго без diff: замена
+                                                        # = новый publicIp и A-запись, up не делать
+# имя стека — prod. Ресурсы не пересоздаются, в стейте меняются только URN;
+# Pulumi.dev.yaml переименовывается в Pulumi.prod.yaml сам
+pulumi stack rename prod
+pulumi preview                                          # снова без изменений
 rm /tmp/cellestial-dev.json
+# программа не читает секретов из конфига — secure-значения в нём остатки ранних версий
+# (infra:s3AccessKey/infra:s3SecretKey). В публичном репо шифротекст + encryptionsalt дают
+# офлайн-перебор passphrase, поэтому вывод должен быть пуст; иначе pulumi config rm <ключ>
+grep -n 'secure:' Pulumi.prod.yaml
+git add Pulumi.prod.yaml                                # конфиг прода — в репо (секретов нет)
 ```
 
-После этого `devops-pulumi-state` можно удалить.
+Экспорт `dev` нельзя импортировать сразу в стек `prod`: URN в стейте содержат имя стека, и
+Pulumi увидит все ресурсы как чужие. Переименование — только через `stack rename` после импорта.
+
+`devops-pulumi-state` удалять только после того, как оба `preview` в новом бакете прошли без
+изменений и личные ключи стейта у всех сохранены вне стейта.
 
 ## Первый запуск (выполнен 2026-09-26, для справки)
 

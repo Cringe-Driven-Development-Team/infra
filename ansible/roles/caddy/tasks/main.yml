@@ -1,0 +1,33 @@
+---
+- name: Ключ репозитория Caddy (cloudsmith)
+  ansible.builtin.get_url:
+    url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+    dest: /etc/apt/keyrings/caddy-stable.asc
+    mode: "0644"
+
+- name: Репозиторий Caddy
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/etc/apt/keyrings/caddy-stable.asc]
+      https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
+    filename: caddy-stable
+    state: present
+
+- name: Установить caddy
+  ansible.builtin.package:
+    name: caddy
+    state: present
+
+- name: Конфигурация Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+    mode: "0644"
+    validate: /usr/bin/caddy validate --config %s --adapter caddyfile
+  notify: Restart caddy
+
+- name: Включить и запустить caddy
+  ansible.builtin.service:
+    name: caddy
+    state: started
+    enabled: true

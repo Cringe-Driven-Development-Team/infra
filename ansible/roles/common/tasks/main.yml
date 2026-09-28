@@ -1,0 +1,15 @@
+---
+- name: Обновить кэш apt
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Базовые пакеты
+  ansible.builtin.package:
+    name:
+      - acl
+      - curl
+      - ca-certificates
+      - gnupg
+      - unzip
+    state: present

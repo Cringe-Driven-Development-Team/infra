@@ -1,0 +1,5 @@
+# VPS 1: публичный IP, открыты 22/80/443 (DoD)
+firewall_rules:
+  - { name: SSH, port: "22", proto: tcp }
+  - { name: HTTP, port: "80", proto: tcp }
+  - { name: HTTPS, port: "443", proto: tcp }

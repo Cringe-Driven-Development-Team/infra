@@ -1,0 +1,10 @@
+---
+# ansible-galaxy collection install -r requirements.yml
+# Версии зафиксированы: стенд должен разворачиваться одинаково у всех участников.
+collections:
+  - name: openstack.cloud
+    version: 2.6.0     # dynamic inventory
+  - name: community.general
+    version: 13.3.0    # модуль ufw
+  - name: ansible.posix
+    version: 2.2.2     # authorized_key (в ansible-core это только редирект)

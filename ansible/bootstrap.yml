@@ -1,0 +1,27 @@
+---
+# Первый контакт с чистыми образами: root на 22 порту, python3 может отсутствовать.
+# Запуск: ansible-playbook bootstrap.yml (параллельно с pulumi up нельзя — нужны хосты из inventory)
+- name: "Bootstrap: python3 на чистых хостах"
+  hosts: all
+  gather_facts: false
+  # ansible_user, а не remote_user: ansible_user из group_vars/all (deploy) —
+  # переменная подключения и перекрывает ключевое слово remote_user плейбука.
+  vars:
+    ansible_user: root
+    jump_user: root
+  tasks:
+    - name: Поставить python3, если его нет
+      ansible.builtin.raw: >-
+        test -e /usr/bin/python3 ||
+        (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3)
+      changed_when: false
+
+- name: "Bootstrap: пользователь deploy"
+  hosts: all
+  # ansible_user, а не remote_user: ansible_user из group_vars/all (deploy) —
+  # переменная подключения и перекрывает ключевое слово remote_user плейбука.
+  vars:
+    ansible_user: root
+    jump_user: root
+  roles:
+    - users

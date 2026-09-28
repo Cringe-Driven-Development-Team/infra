@@ -1,0 +1,13 @@
+name: infra
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+    packagemanager: bun
+description: Selectel (2 VPS + S3 + DNS) for DevOps course
+packages:
+  selectel:
+    source: terraform-provider
+    parameters:
+      - selectel/selectel
+      - 8.3.1
