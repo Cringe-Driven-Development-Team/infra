@@ -3,12 +3,10 @@ config:
   selectel:domainName: "631994"
   selectel:authUrl: https://cloud.api.selcloud.ru/identity/v3/
   selectel:authRegion: ru-9
-  infra:name: pulumi-cellestial
   infra:serviceUserName: cellestialSystemUser
   infra:pool: ru-9
   infra:zone: ru-9a
   infra:volumeType: fast.ru-9a
-  infra:username: pulumi-cellestial
   infra:gatewayFlavorName: SL1.2-4096
   infra:backendFlavorName: SL1.2-8192
   infra:imageName: Ubuntu 24.04 LTS 64-bit
