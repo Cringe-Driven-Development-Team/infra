@@ -14,6 +14,7 @@ config:
   # OpenStack: пул/зона VPS и параметры серверов
   infra:pool: ru-9
   infra:zone: ru-9a
+  # infra:externalNetwork: external-network   # внешняя сеть пула (floating IP, роутер)
   infra:volumeType: fast.ru-9a
   infra:gatewayFlavorName: SL1.2-4096
   infra:backendFlavorName: SL1.2-8192

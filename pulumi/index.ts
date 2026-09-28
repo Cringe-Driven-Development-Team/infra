@@ -125,7 +125,11 @@ const os = new openstack.Provider("selectel-project", {
 
 const withOs = { provider: os };
 
-const external = openstack.networking.getNetworkOutput({ external: true }, withOs);
+// Внешняя сеть — по имени (в Selectel external-network). pool у FloatingIp — ForceNew: имя
+// берём из конфига, а не из invoke, иначе смена ответа getNetwork пересоздала бы floating IP
+// (новый publicIp и A-запись), а при нескольких внешних сетях invoke без имени упал бы.
+const externalNetworkName = cfg.get("externalNetwork") ?? "external-network";
+const external = openstack.networking.getNetworkOutput({ name: externalNetworkName, external: true }, withOs);
 
 const network = new openstack.networking.Network("private", {
   name: "private-network",
@@ -251,7 +255,7 @@ const serverBackend = new openstack.compute.Instance("backend", {
 }, { ...withOs, deleteBeforeReplace: true, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
 
 const floatingIp = new openstack.networking.FloatingIp("gateway", {
-  pool: external.name,
+  pool: externalNetworkName,
 }, withOs);
 
 // Без dependsOn привязка стартует раньше подключения подсети к роутеру:

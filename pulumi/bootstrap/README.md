@@ -104,7 +104,9 @@ pulumi config rm selectel:username
 pulumi config rm selectel:password
 pulumi preview                                          # ожидается: ресурсы без изменений; допустим
                                                         # только ~ update провайдера selectel
-                                                        # (логин/пароль ушли из его входов в env)
+                                                        # (логин/пароль ушли из его входов в env).
+                                                        # FloatingIp gateway — строго без diff: замена
+                                                        # = новый publicIp и A-запись, up не делать
 # имя стека — prod. Ресурсы не пересоздаются, в стейте меняются только URN;
 # Pulumi.dev.yaml переименовывается в Pulumi.prod.yaml сам
 pulumi stack rename prod
