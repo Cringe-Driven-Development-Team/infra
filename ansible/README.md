@@ -5,11 +5,18 @@
 
 ## Установка
 
+Нужен **ansible-core ≥ 2.18** (`community.general` 13.x: `requires_ansible: '>=2.18.0'`); ansible-core
+из apt Ubuntu 24.04 — 2.16, не подойдёт.
+
 ```bash
 cd ansible
-pip install -r requirements.txt          # openstacksdk для dynamic inventory
+pipx install 'ansible-core>=2.18'
+pipx inject ansible-core -r requirements.txt            # openstacksdk в venv Ansible (pipx ≥ 1.4)
 ansible-galaxy collection install -r requirements.yml   # openstack.cloud, community.general, ansible.posix
 ```
+
+Ansible не из pipx — `openstacksdk` ставится тем же python, что у Ansible (`ansible --version`,
+строка `python version`), иначе inventory не найдёт модуль.
 
 ## Подготовка
 

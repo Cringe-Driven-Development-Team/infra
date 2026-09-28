@@ -6,11 +6,13 @@
 ## 0. Инструменты (один раз)
 
 ```bash
-brew install pulumi/tap/pulumi bun awscli
-pipx install ansible-core || brew install ansible   # + python3
-cd ansible && pip install -r requirements.txt       # openstacksdk
-ansible-galaxy collection install -r requirements.yml
-cd ..
+brew install pulumi/tap/pulumi bun awscli pipx
+# ansible-core ≥ 2.18: этого требует community.general 13.x (apt в Ubuntu 24.04 даёт 2.16 — не подходит)
+pipx install 'ansible-core>=2.18'
+# openstacksdk — в venv Ansible, а не в системный python: обычный pip поставит мимо (pipx ≥ 1.4)
+pipx inject ansible-core -r ansible/requirements.txt
+ansible-galaxy collection install -r ansible/requirements.yml
+ansible --version | head -1                         # core 2.18 или новее
 ```
 
 Ключ стенда (если нет):
