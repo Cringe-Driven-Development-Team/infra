@@ -15,7 +15,5 @@
     "@pulumi/random": "^4.21.2",
     "@pulumi/selectel": "file:sdks/selectel"
   },
-  "trustedDependencies": [
-    "@pulumi/selectel"
-  ]
+  "trustedDependencies": ["@pulumi/selectel"]
 }
