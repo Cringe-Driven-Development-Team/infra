@@ -93,7 +93,7 @@
     - name: "UFW: активен, входящие запрещены, разрешающих правил столько же, сколько в firewall_rules"
       ansible.builtin.assert:
         that:
-          - ufw_status.stdout is search('(?m)^Status: active$')
+          - "ufw_status.stdout is search('(?m)^Status: active$')"
           - ufw_status.stdout is search('deny \\(incoming\\)')
           - ufw_allow_rules | length == firewall_rules | length
         fail_msg: "{{ ufw_status.stdout }}"
