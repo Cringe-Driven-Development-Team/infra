@@ -167,6 +167,6 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 | `Your query returned no results` на зоне | `infra:dnsZone`/`infra:dnsProjectId` не совпадают с реальностью |
 | `ExternalGatewayForFloatingIPNotFound` | Уже обработан (`dependsOn`), повторить `pulumi up` |
 | VPS 2 не пингуется из Ansible | До `bootstrap.yml` на шлюзе нет `deploy`, хоп под `root` идёт только в `bootstrap.yml`. Если bootstrap прервался на VPS 2: `ansible-playbook bootstrap.yml --limit backend` |
-| `Host key verification failed` на хопе до VPS 1 | Стек пересоздан с тем же floating IP, а host key новый: `ssh-keygen -R <publicIp>` |
+| `Host key verification failed` / `REMOTE HOST IDENTIFICATION HAS CHANGED` | Серверы пересозданы (новые host keys на тех же адресах), `accept-new` старую запись не заменит. Удалить обе: `ssh-keygen -R <publicIp>` и `ssh-keygen -R <privateIp VPS 2>` (`pulumi stack output publicIp` / `privateIp`) |
 | `Too many authentication failures` | ssh перебрал ключи агента раньше ключа стенда (`MaxAuthTries 4`). В `ansible.cfg` уже `IdentitiesOnly=yes`; при ручном ssh добавлять `-o IdentitiesOnly=yes` |
 | Caddy не получает сертификат | A-запись ещё не указала на `publicIp` — `dig cellestial.ru`, подождать TTL 300s |

@@ -91,7 +91,8 @@ const keypair = new selectel.VpcKeypairV2("release", {
   name,
   publicKey: sshPublicKey,
   userId: serviceUser.id,
-}, renamedFromStudy);
+// Смена infra:sshPublicKey — замена keypair с тем же name: create-before-delete упрётся в 409
+}, { ...renamedFromStudy, deleteBeforeReplace: true });
 
 // Публичные ключи команды (infra:sshPublicKeys) кладутся root через cloud-init
 // при первой загрузке, чтобы каждый заходил своим ключом ещё до первого прогона
