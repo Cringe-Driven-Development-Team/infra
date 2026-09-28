@@ -319,19 +319,32 @@ const bucket = new aws.s3.Bucket("product-releases", {
   forceDestroy: true,
 }, { provider: s3 });
 
-// Публичное чтение объектов (под будущий CDN). Роль member на проект разрешает
-// управлять политиками; включается infra:s3PublicRead=true.
+// Публичное чтение объектов (под будущий CDN); включается infra:s3PublicRead=true.
+// В Selectel политика бакета работает по принципу «всё, что не разрешено, запрещено» — роли
+// проекта перестают действовать. Политика только с публичным GetObject отрезала бы сервисного
+// пользователя стека от собственного бакета (403 уже на GetBucketPolicy сразу после создания),
+// поэтому вторым правилом ему явно выдан полный доступ. Principal пользователя — его id в IAM.
 if (cfg.getBoolean("s3PublicRead") ?? false) {
   new aws.s3.BucketPolicy("product-public-read", {
     bucket: bucket.id,
-    policy: bucket.arn.apply((arn) => JSON.stringify({
+    policy: pulumi.all([bucket.arn, serviceUser.id]).apply(([arn, userId]) => JSON.stringify({
       Version: "2012-10-17",
-      Statement: [{
-        Effect: "Allow",
-        Principal: "*",
-        Action: "s3:GetObject",
-        Resource: `${arn}/*`,
-      }],
+      Statement: [
+        {
+          Sid: "StackServiceUserFullAccess",
+          Effect: "Allow",
+          Principal: { AWS: [userId] },
+          Action: "s3:*",
+          Resource: [arn, `${arn}/*`],
+        },
+        {
+          Sid: "PublicRead",
+          Effect: "Allow",
+          Principal: { AWS: ["*"] },
+          Action: "s3:GetObject",
+          Resource: `${arn}/*`,
+        },
+      ],
     })),
   }, { provider: s3 });
 }
