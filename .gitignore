@@ -9,6 +9,8 @@ pulumi/Pulumi.*.yaml
 !pulumi/Pulumi.prod.yaml
 # Экспорт стейта при переезде (stack export --show-secrets) — секреты в открытом виде
 *state-export*.json
+# Любой экспорт стека (prod-export.json и т.п.) — секреты в открытом виде
+*-export.json
 cellestial-*.json
 
 # Ansible
