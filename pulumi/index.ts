@@ -4,6 +4,7 @@ import * as openstack from "@pulumi/openstack";
 import * as selectel from "@pulumi/selectel";
 import * as aws from "@pulumi/aws";
 import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./bootstrap/selectel-s3";
+import { BucketAccess, CdnResource, checkCdnName } from "./selectel-storage";
 
 const cfg = new pulumi.Config();
 const selectelCfg = new pulumi.Config("selectel");
@@ -49,6 +50,11 @@ const name = cfg.get("name") ?? "pulumi-release";
 const s3Pool = cfg.require("s3Pool");
 const s3BucketName = cfg.require("s3Bucket");
 const s3EndpointUrl = `https://s3.${s3Pool}.storage.selcloud.ru`;
+// Тип бакета Selectel: public (по умолчанию) — чтение объектов без авторизации, источник для CDN.
+const s3Public = cfg.getBoolean("s3Public") ?? true;
+// Поддомен CDN (например cdn.cellestial.ru): Pulumi создаёт для него зону DNS и CDN-ресурс,
+// привязка домена к CDN-ресурсу — в панели.
+const cdnDomain = cfg.get("cdnDomain");
 
 const renamedFromStudy = { aliases: [{ name: "study" }] };
 
@@ -119,7 +125,9 @@ const os = new openstack.Provider("selectel-project", {
   authUrl: "https://cloud.api.selcloud.ru/identity/v3",
   domainName,
   tenantId: project.id,
-  userName: serviceUser.name,
+  // Через id: имя и пароль известны уже на preview, до создания пользователя, — invoke'и
+  // (образ, внешняя сеть) шли бы от несуществующего пользователя и падали с 401.
+  userName: pulumi.all([serviceUser.id, serviceUser.name]).apply(([, userName]) => userName),
   password: password.result,
   region: pool,
 });
@@ -286,7 +294,17 @@ const bucket = new aws.s3.Bucket("product-releases", {
   forceDestroy: true,
 }, { provider: s3 });
 
-// Публичное чтение объектов (под будущий CDN); включается infra:s3PublicRead=true.
+// Тип бакета — не S3 API (ACL Selectel не поддерживает), а API хранилища пула: selectel-storage.ts.
+// Публичный бакет получает домен <uuid>.selstorage.ru — источник для CDN.
+const bucketAccess = new BucketAccess("product-releases", {
+  projectId: project.id,
+  pool: s3Pool,
+  bucket: bucket.bucket,
+  type: s3Public ? "public" : "private",
+}, { dependsOn: [bucket] });
+
+// Публичное чтение через S3 API по политике бакета; включается infra:s3PublicRead=true.
+// Для публичного бакета (infra:s3Public) не нужна.
 // В Selectel политика бакета работает по принципу «всё, что не разрешено, запрещено» — роли
 // проекта перестают действовать. Политика только с публичным GetObject отрезала бы сервисного
 // пользователя стека от собственного бакета (403 уже на GetBucketPolicy сразу после создания),
@@ -316,22 +334,49 @@ if (cfg.getBoolean("s3PublicRead") ?? false) {
   }, { provider: s3 });
 }
 
-// A-запись домена → publicIp VPS в зоне Selectel DNS (зона может лежать в другом проекте)
+// DNS: зона домена (infra:dnsZone) лежит в проекте infra:dnsProjectId, по умолчанию — в проекте стека.
 const appDomain = cfg.get("domain");
-if (appDomain) {
-  const dnsZone = cfg.require("dnsZone");            // с точкой на конце: cellestial.ru.
-  const dnsProjectId = cfg.require("dnsProjectId");  // проект, где лежит зона
-  const fqdn = appDomain.endsWith(".") ? appDomain : `${appDomain}.`;
+const withDot = (d: string) => (d.endsWith(".") ? d : `${d}.`);
+const dnsProjectId: pulumi.Input<string> = cfg.get("dnsProjectId") ?? project.id;
+// Свой провайдер selectel для DNS: его projectId — проект, где провайдер ищет импортируемые записи и
+// зоны (у провайдера по умолчанию он берётся из INFRA_PROJECT_ID, иначе import падает с
+// «INFRA_PROJECT_ID must be set»). Явный провайдер не читает selectel:* из конфига стека — передаём;
+// логин и пароль он, как и провайдер по умолчанию, берёт из OS_* (selectel.env).
+const dnsProvider = new selectel.Provider("dns", {
+  projectId: dnsProjectId,
+  domainName,
+  authUrl: selectelCfg.get("authUrl"),
+  authRegion: selectelCfg.get("authRegion"),
+});
+const withDns = { provider: dnsProvider };
+const parentZone = appDomain
+  ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
+  : undefined;
 
-  const zoneRef = selectel.getDomainsZoneV2Output({ name: dnsZone, projectId: dnsProjectId });
-
+// A-запись домена → publicIp VPS
+if (appDomain && parentZone) {
   new selectel.DomainsRrsetV2("app", {
-    zoneId: zoneRef.id,
+    zoneId: parentZone.id,
     projectId: dnsProjectId,
-    name: fqdn,
+    name: withDot(appDomain),
     type: "A",
     ttl: 300,
     records: [{ content: floatingIp.address }],
+  // Смена projectId/zoneId — замена записи с тем же именем: сначала удалить, иначе 409
+  }, { ...withDns, deleteBeforeReplace: true });
+}
+
+// cdn.<домен>: зона DNS и CDN-ресурс с публичным бакетом источником. Зона — только зона, в проекте
+// стека (рядом с CDN), не в проекте родительской зоны: NS-делегирование из родительской Selectel
+// ставит сам, а привязку домена к CDN-ресурсу (записи в зоне и сертификат) делают в панели.
+let cdn: CdnResource | undefined;
+if (cdnDomain) {
+  // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
+  new selectel.DomainsZoneV2("cdn", { name: withDot(cdnDomain), projectId: project.id }, { deleteBeforeReplace: true });
+  cdn = new CdnResource("cdn", {
+    projectId: project.id,
+    name: checkCdnName(cfg.get("cdnName") ?? `${name}-cdn`),
+    originHost: bucketAccess.publicDomain,
   });
 }
 
@@ -342,6 +387,10 @@ export const sshUser = cfg.get("sshUser") ?? "deploy";
 export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;
 export const s3Bucket = bucket.bucket;
+export const s3PublicDomain = bucketAccess.publicDomain;
+export const cdnCustomDomain = cdnDomain ?? null;
+export const cdnResourceId = cdn?.id ?? null;
+export const cdnDefaultDomain = cdn?.cdnDomain ?? null;
 export const serviceUserName = serviceUser.name;
 export const serviceUserPassword = pulumi.secret(password.result);
 export const s3AccessKey = s3Credentials.accessKey;
