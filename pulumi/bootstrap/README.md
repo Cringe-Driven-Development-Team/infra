@@ -9,7 +9,7 @@
 | Префикс в бакете | Стейт |
 |---|---|
 | `bootstrap/` | этот стек |
-| `main/` | основной стек (`pulumi/`) |
+| `prod/` | основной стек (`pulumi/`) |
 
 Доступ к стейту у каждого свой: личный S3-ключ на проект `infra-shared`, выпущенный своим
 сервисным пользователем. Общих ключей, которые надо передавать из рук в руки, нет.
@@ -42,8 +42,8 @@
 ```sh
 cd pulumi/bootstrap
 source env.sh     # OS_* для Selectel, passphrase, личный ключ стейта; личный ~/.aws отключён
-pulumi login "s3://cdd-infra-state/bootstrap?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi stack select main
+pulumi whoami -v  # Backend URL: s3://cdd-infra-state/bootstrap…
 pulumi preview
 ```
 
@@ -58,7 +58,9 @@ id проекта стейта записан в `env.sh` (`OS_PROJECT_ID`): и�
 bootstrap-стек когда-нибудь пересоздаст проект, обновите id; проверка:
 `[ "$(pulumi stack output stateProjectId)" = "$OS_PROJECT_ID" ] && echo ok`.
 
-`pulumi login` глобален: перед работой с основным стеком войдите в его префикс (ниже).
+Бэкенд прибит к каталогу: `backend.url` в `Pulumi.yaml` здесь — префикс `bootstrap/`, в
+`pulumi/Pulumi.yaml` — `prod/`. `pulumi login` не нужен, и перелогиниваться между стеками тоже.
+Перебивает `backend.url` только переменная `PULUMI_BACKEND_URL` — её не задавать.
 
 Каждый `pulumi up` (не `preview`) инициализирует S3 в проекте и проверяет ключ `infra-state-s3`
 запросом к S3 — это пара секунд и не меняет ресурсы. Если ключ стека отозвали вручную, `up`
@@ -74,17 +76,19 @@ bootstrap-стек когда-нибудь пересоздаст проект, 
 проект явно (`projectId`, `tenantId` провайдера OpenStack), а не полагаться на окружение.
 
 DNS-записи прода основной стек создаёт в зоне из этого стека:
-`pulumi config set infra:dnsProjectId "$(pulumi -C bootstrap stack output dnsProjectId)"` (выполнять,
-пока залогинен в префикс `bootstrap/`), `infra:dnsZone` — `cellestial.ru.`.
-
+`pulumi config set infra:dnsProjectId "$(pulumi -C bootstrap stack output dnsProjectId --stack main)"`,
+`infra:dnsZone` — `cellestial.ru.`.
 
 ```sh
 source pulumi/bootstrap/env.sh
-cd pulumi
-pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
+cd pulumi         # бэкенд prod/ — из pulumi/Pulumi.yaml
 ```
 
 ### Переезд стека pulumi-cellestial из devops-pulumi-state
+
+История, не выполнять: прод-стек пересоздан с нуля. С `backend.url` в `Pulumi.yaml` команды
+`pulumi login` ниже в каталоге проекта не действуют; чужой бэкенд — только через
+`PULUMI_BACKEND_URL=<url> pulumi …`.
 
 Делает тот, у кого есть доступ к старому бакету:
 
@@ -126,6 +130,10 @@ Pulumi увидит все ресурсы как чужие. Переимено�
 изменений и личные ключи стейта у всех сохранены вне стейта.
 
 ## Первый запуск (выполнен 2026-09-26, для справки)
+
+**Не выполнять.** Стек `main` уже есть в бакете. Повтор этих шагов создаёт пустой стек поверх
+настоящего или дубли ресурсов в аккаунте. `pulumi login` из шагов ниже в каталоге проекта не
+действует: его перебивает `backend.url` в `Pulumi.yaml`.
 
 1. `mkdir -p ~/.pulumi-bootstrap-local && pulumi login file://~/.pulumi-bootstrap-local`,
    `pulumi stack init main --secrets-provider passphrase`,

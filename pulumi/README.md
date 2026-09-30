@@ -1,8 +1,10 @@
-# Pulumi: две VPS + S3 + DNS в Selectel
+# Pulumi: одна VPS + S3 + DNS в Selectel
 
-Создаёт: проект, сервисного пользователя проекта (+ S3-ключи), keypair, приватную сеть с роутером,
-VPS 1 (floating IP, роль gateway), VPS 2 (только приватная сеть, роль backend), S3-бакет через @pulumi/aws
-(публичное чтение — при `infra:s3PublicRead=true`), A-запись домена на VPS 1.
+Создаёт: проект, сервисного пользователя проекта (+ S3-ключи), keypair, приватную сеть с роутером
+(нужна для floating IP), VPS (floating IP, роль gateway: Caddy, позже Go API и Postgres в Docker Compose),
+S3-бакет через @pulumi/aws (публичное чтение — при `infra:s3PublicRead=true`), A-запись домена на VPS.
+
+Двухсерверная схема (gateway + backend) заморожена в git в варианте `bff` документации; стек — одна VPS.
 
 ## Установка
 
@@ -27,11 +29,14 @@ pulumi install     # генерирует SDK провайдера selectel в s
 ## Backend и стек
 
 Стейт — в бакете `cdd-infra-state` (создаёт bootstrap-стек, `bootstrap/README.md`), префикс
-`main/`, стек `prod`. Доступ — личный S3-ключ стейта из `~/.config/selectel.env`:
+`prod/`, стек `prod`. Доступ — личный S3-ключ стейта из `~/.config/selectel.env`.
+
+Бэкенд прибит в `Pulumi.yaml` (`backend.url`): `pulumi` в этом каталоге всегда работает со стейтом
+`s3://cdd-infra-state/prod`, глобальный `pulumi login` на него не влияет и не нужен. Перебивает
+только `PULUMI_BACKEND_URL` — её не задавать. Проверка: `pulumi whoami -v`.
 
 ```bash
 source bootstrap/env.sh       # AWS_* (личный ключ стейта), PULUMI_CONFIG_PASSPHRASE, OS_*
-pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi stack select prod      # с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
 
@@ -52,12 +57,15 @@ pulumi config set infra:serviceUserName  cellestialSystemUser # сервисны
 pulumi config set infra:pool             ru-9
 pulumi config set infra:zone             ru-9a
 pulumi config set infra:volumeType       fast.ru-9a
-pulumi config set infra:gatewayFlavorName SL1.2-4096
-pulumi config set infra:backendFlavorName SL1.2-8192
+# Флейвор единственной VPS — не меньше SL1.2-8192 (на ней Caddy, Go API и Postgres);
+# актуальные флейворы пула: ./scripts/list-flavors.sh (из pulumi/, после source bootstrap/env.sh)
+pulumi config set infra:gatewayFlavorName SL1.2-8192
+# # Boot-диск VPS (под будущий Postgres), по умолчанию 20 ГБ:
+# pulumi config set infra:gatewayVolumeSize 20
 pulumi config set infra:imageName        "Ubuntu 24.04 LTS 64-bit"
 pulumi config set infra:sshPublicKey     "$(cat ~/.ssh/selectel_release.pub)"
 
-# DNS: A-запись domain → publicIp VPS 1
+# DNS: A-запись domain → publicIp VPS
 pulumi config set infra:domain       cellestial.ru
 pulumi config set infra:dnsZone      cellestial.ru.
 pulumi config set infra:dnsProjectId <id проекта с зоной>
@@ -75,7 +83,7 @@ pulumi config set infra:s3Bucket <имя-бакета>
 ```bash
 pulumi preview
 pulumi up
-pulumi stack output            # projectId, publicIp, privateIp, s3*, domain
+pulumi stack output            # projectId, publicIp, s3*, domain
 ```
 
 A-запись домена находится под управлением Pulumi: созданную вручную запись нужно удалить
@@ -112,8 +120,9 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт
   его сам, для `ansible/clouds.yaml` — вписать в `project_id`;
-- `domain` → `app_domain` в `ansible/inventory/group_vars/all/vars.yml`;
-- `privateIp` использовать руками не нужно — inventory сам подставит его как `ansible_host` VPS 2.
+- `domain` → `app_domain` в `ansible/inventory/group_vars/all/vars.yml`.
+
+`privateIp` у стека больше нет: VPS одна, её приватный адрес inventory не используется.
 
 ## Разбор ошибок
 
@@ -127,4 +136,4 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 | Ошибка создания бакета провайдером aws | Проверить `infra:s3Pool`: endpoint `s3.<pool>.storage.selcloud.ru` должен существовать |
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
-Логические имена ресурсов (`"release"`, `"gateway"`, `"backend"`, `"product-releases"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`.
+Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.

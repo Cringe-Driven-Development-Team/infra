@@ -12,8 +12,8 @@
       PubkeyAuthentication yes
       MaxAuthTries 4
       X11Forwarding no
-      # ProxyJump на VPS 2 работает через forwarding на шлюзе
-      AllowTcpForwarding yes
+      # Jump-хост больше не нужен: VPS одна, ProxyCommand/ProxyJump удалены из inventory
+      AllowTcpForwarding no
   notify: Restart sshd
 
 # Старое имя drop-in (99-) от предыдущих прогонов: sshd берёт первое значение, 00- его перекрывает,

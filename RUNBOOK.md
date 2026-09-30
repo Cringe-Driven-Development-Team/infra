@@ -27,8 +27,7 @@ ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
    роли `member` + `iam.admin` **на аккаунт**. Записать: логин (hex-строка) и пароль.
 2. **Зона DNS** `cellestial.ru.` и **бакет стейта** `cdd-infra-state` живут в проекте `infra-shared`
    и создаются bootstrap-стеком, руками их не заводят — см. `pulumi/bootstrap/README.md`.
-   `dnsProjectId` для п.3 — `pulumi -C pulumi/bootstrap stack output dnsProjectId`
-   (пока залогинены в префикс `bootstrap/`).
+   `dnsProjectId` для п.3 — `pulumi -C pulumi/bootstrap stack output dnsProjectId --stack main`.
 3. **Личный доступ к стейту** — один раз на человека, по `pulumi/bootstrap/README.md`
    («Один раз на человека»): `~/.config/selectel.env` (`init-env.sh`) и личный S3-ключ
    (`bun state-key.ts`). Общих ключей стейта нет.
@@ -37,12 +36,13 @@ ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
 
 ## 2. Pulumi: backend и стек
 
-Стейт основного стека — в бакете `cdd-infra-state`, префикс `main/`, стек `prod`.
+Стейт основного стека — в бакете `cdd-infra-state`, префикс `prod/`, стек `prod`. Бэкенд прибит в
+`pulumi/Pulumi.yaml` (`backend.url`), `pulumi login` не нужен. Проверка: `pulumi whoami -v` в `pulumi/`
+показывает `s3://cdd-infra-state/prod…`.
 
 ```bash
 source pulumi/bootstrap/env.sh       # личный ключ стейта (AWS_*), passphrase, OS_* — п.1.3
 cd pulumi
-pulumi login "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true"
 pulumi install                       # генерирует sdks/selectel, ставит deps через bun
 pulumi stack select prod             # стек уже есть; с нуля: pulumi stack init prod --secrets-provider passphrase
 ```
@@ -65,12 +65,15 @@ pulumi config set infra:serviceUserName   cellestialSystemUser
 pulumi config set infra:pool              ru-9
 pulumi config set infra:zone              ru-9a
 pulumi config set infra:volumeType        fast.ru-9a
-pulumi config set infra:gatewayFlavorName SL1.2-4096
-pulumi config set infra:backendFlavorName SL1.2-8192
+# Флейвор единственной VPS — не меньше SL1.2-8192 (Caddy, позже Go API и Postgres);
+# актуальные флейворы пула: ./scripts/list-flavors.sh
+pulumi config set infra:gatewayFlavorName SL1.2-8192
+# Boot-диск (под будущий Postgres), по умолчанию 20 ГБ:
+# pulumi config set infra:gatewayVolumeSize 20
 pulumi config set infra:imageName        'Ubuntu 24.04 LTS 64-bit'
 pulumi config set infra:sshPublicKey     "$(cat ~/.ssh/selectel_release.pub)"
 # Публичные ключи команды — кладутся root через cloud-init при первой загрузке
-# (keypair остаётся основным). Смена списка пересоздаёт серверы!
+# (keypair остаётся основным). Смена списка пересоздаёт сервер!
 pulumi config set --path 'infra:sshPublicKeys[0]' 'ssh-ed25519 AAAA... <имя-владельца>'
 pulumi config set --path 'infra:sshPublicKeys[1]' 'ssh-ed25519 AAAA... <имя-владельца>'
 
@@ -86,9 +89,9 @@ pulumi config set infra:s3PublicRead true   # публичное чтение о
 ## 4. Pulumi: создать инфраструктуру
 
 ```bash
-pulumi preview        # должно быть: 2 server, 2 volume, сеть, бакет, rrset, ...
+pulumi preview        # должно быть: 1 server, 1 volume, сеть, бакет, rrset, ...
 pulumi up             # подтвердить, ~5-10 минут
-pulumi stack output   # projectId, publicIp, privateIp, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, domain
+pulumi stack output   # projectId, publicIp, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, domain
 ```
 
 ## 5. Ansible: креды и запуск
@@ -99,7 +102,7 @@ cd ansible
 # или вместо env.sh: cp clouds.yaml.example clouds.yaml и руками username/password/user_domain_name
 # из п.1.1, project_id = `pulumi stack output projectId`, region_name ru-9 (оба сразу — нельзя)
 
-ansible-inventory -i inventory --graph        # должны появиться 2 хоста: gateway и backend
+ansible-inventory -i inventory --graph        # должен появиться 1 хост: gateway
 # ключи всех, кто заходит на стенд, — в files/authorized_keys/*.pub (коммитятся в репо;
 # роль users кладёт их все в deploy с exclusive: true)
 ansible-playbook bootstrap.yml                # root:22 → python3 + пользователь deploy
@@ -109,10 +112,9 @@ ansible-playbook verify.yml                   # проверки DoD
 ```
 
 `bootstrap.yml` — только для хоста с новым диском (после `destroy` или замены boot-volume): после
-`site.yml` вход под root закрыт. Такой хост — `ansible-playbook bootstrap.yml --limit <хост>` (для backend
-при настроенном gateway ещё `-e jump_user=deploy`), затем `site.yml`. Сервер, пересозданный Pulumi'ем
-(смена ключей в `infra:sshPublicKeys`), сохраняет диск — ему хватает `site.yml`. Подробнее —
-`ansible/README.md`, «Запуск».
+`site.yml` вход под root закрыт, тогда `ansible-playbook bootstrap.yml --limit gateway`. Сервер,
+пересозданный Pulumi'ем (смена ключей в `infra:sshPublicKeys`), сохраняет диск — ему хватает
+`site.yml`. Подробнее — `ansible/README.md`, «Запуск».
 
 ## 6. Проверки руками (DoD)
 
@@ -140,12 +142,11 @@ AWS_ACCESS_KEY_ID="$S3_AK" AWS_SECRET_ACCESS_KEY="$S3_SK" \
 # только если включено infra:s3PublicRead (п.3)
 curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 
-# VPS 2 доступна только через VPS 1. Ключ и IdentitiesOnly передаём и хопу:
-# опции командной строки на хоп через -J не действуют.
-KEY=~/.ssh/selectel_release
-ssh -i $KEY -o IdentitiesOnly=yes \
-  -o ProxyCommand="ssh -W %h:%p -i $KEY -o IdentitiesOnly=yes deploy@$(pulumi stack output publicIp)" \
-  deploy@$(pulumi stack output privateIp) 'hostname'
+# Публичные порты стенда — только 22/80/443 (проверяет и verify.yml). Остальные,
+# в т.ч. порты Docker в обход ufw, должны быть закрыты:
+IP=$(pulumi stack output publicIp)
+for p in 22 80 443;   do nc -z -G3 "$IP" $p && echo "$p open"; done
+for p in 5432 8080 2375 2376; do nc -z -G3 "$IP" $p && echo "$p OPEN — так не надо"; done
 ```
 
 CDN (static.site.ru в схеме) — настраивается вручную в панели Selectel и связывается с бакетом;
@@ -162,11 +163,10 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 | Симптом | Причина |
 |---|---|
 | `pulumi whoami` падает с `no EC2 IMDS role found` | Не выполнен `source pulumi/bootstrap/env.sh` (нет личного ключа стейта `AWS_*`) — п.2 |
-| `pulumi stack select prod`: стек не найден | `pulumi login` не в префикс `main/` бакета `cdd-infra-state` (login глобален — после работы с bootstrap-стеком перелогиниться) — п.2 |
+| `pulumi stack select prod`: стек не найден | Команда запущена не из `pulumi/` (бэкенд берётся из `Pulumi.yaml` каталога) или задана `PULUMI_BACKEND_URL` — `pulumi whoami -v` должен показать `s3://cdd-infra-state/prod…` — п.2 |
 | `409 already_exists` | Имя занято в общем аккаунте → сменить `infra:name` / `infra:serviceUserName` / `infra:s3Bucket` |
 | `Your query returned no results` на зоне | `infra:dnsZone`/`infra:dnsProjectId` не совпадают с реальностью |
 | `ExternalGatewayForFloatingIPNotFound` | Уже обработан (`dependsOn`), повторить `pulumi up` |
-| VPS 2 не пингуется из Ansible | До `bootstrap.yml` на шлюзе нет `deploy`, хоп под `root` идёт только в `bootstrap.yml`. Если bootstrap прервался на VPS 2: `ansible-playbook bootstrap.yml --limit backend` |
-| `Host key verification failed` / `REMOTE HOST IDENTIFICATION HAS CHANGED` | Серверы пересозданы (новые host keys на тех же адресах), `accept-new` старую запись не заменит. Удалить обе: `ssh-keygen -R <publicIp>` и `ssh-keygen -R <privateIp VPS 2>` (`pulumi stack output publicIp` / `privateIp`) |
+| `Host key verification failed` / `REMOTE HOST IDENTIFICATION HAS CHANGED` | Сервер пересоздан (новые host keys на том же адресе), `accept-new` старую запись не заменит: `ssh-keygen -R $(pulumi stack output publicIp)` |
 | `Too many authentication failures` | ssh перебрал ключи агента раньше ключа стенда (`MaxAuthTries 4`). В `ansible.cfg` уже `IdentitiesOnly=yes`; при ручном ssh добавлять `-o IdentitiesOnly=yes` |
 | Caddy не получает сертификат | A-запись ещё не указала на `publicIp` — `dig cellestial.ru`, подождать TTL 300s |

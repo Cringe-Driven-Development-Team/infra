@@ -1,0 +1,22 @@
+encryptionsalt: v1:DALqzcHdGmg=:v1:WKtCpxq4jVmNES8Y:fvrmml1icSg7eUwHObzljlRaRuinpQ==
+config:
+  selectel:domainName: "631994"
+  selectel:authUrl: https://cloud.api.selcloud.ru/identity/v3/
+  selectel:authRegion: ru-9
+  infra:name: pulumi-cellestial
+  infra:serviceUserName: cellestialSystemUser
+  infra:pool: ru-9
+  infra:zone: ru-9a
+  infra:volumeType: fast.ru-9a
+  infra:gatewayFlavorName: SL1.2-8192
+  infra:imageName: Ubuntu 24.04 LTS 64-bit
+  infra:sshPublicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0odNAHfl8l5IbkfcuP9I5HSDeShI+4rZ/gTHAkVw6E redtea@MacBook-Air-RedTea.local
+  infra:sshPublicKeys:
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0odNAHfl8l5IbkfcuP9I5HSDeShI+4rZ/gTHAkVw6E redtea@MacBook-Air-RedTea.local
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICjLHZfhl3FfnhWRGcqQ0o1x2e8W6D9ocC5qNfI1IzCe oleg@wsl-selectel_release-2026-09-26
+  infra:domain: cellestial.ru
+  infra:dnsZone: cellestial.ru.
+  infra:dnsProjectId: 93af1a9f31094257be483e9b24663a5f
+  infra:s3Pool: ru-7
+  infra:s3Bucket: cellestial-release-0
+  infra:s3PublicRead: "false"

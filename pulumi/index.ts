@@ -97,7 +97,7 @@ const keypair = new selectel.VpcKeypairV2("release", {
 // Публичные ключи команды (infra:sshPublicKeys) кладутся root через cloud-init
 // при первой загрузке, чтобы каждый заходил своим ключом ещё до первого прогона
 // Ansible. Дальше доступом рулит ansible/files/authorized_keys/*.pub.
-// Смена списка пересоздаёт серверы — для штатного добавления человека её не используют.
+// Смена списка пересоздаёт сервер — для штатного добавления человека её не используют.
 const teamSshKeys = cfg.getObject<string[]>("sshPublicKeys") ?? [];
 for (const k of teamSshKeys) {
   if (/['"\n\r\\]/.test(k)) {
@@ -181,7 +181,6 @@ function flavorId(role: string): pulumi.Input<string> {
 }
 
 const gatewayFlavorId = flavorId("gateway");
-const backendFlavorId = flavorId("backend");
 
 const gatewayPort = new openstack.networking.Port("gateway", {
   name: "gateway-port",
@@ -189,31 +188,19 @@ const gatewayPort = new openstack.networking.Port("gateway", {
   fixedIps: [{ subnetId: subnet.id }],
 }, withOs);
 
-const backendPort = new openstack.networking.Port("backend", {
-  name: "backend-port",
-  networkId: network.id,
-  fixedIps: [{ subnetId: subnet.id }],
-}, withOs);
-
+// Boot-диск единственной VPS — под будущий Postgres (docker volume), 20 ГБ;
+// enableOnlineResize: увеличение без пересоздания.
 const gatewayVolume = new openstack.blockstorage.Volume("gateway", {
   name: "boot-volume-gateway",
-  size: 10,
+  size: cfg.getNumber("gatewayVolumeSize") ?? 20,
   imageId: image.id,
   volumeType,
   availabilityZone: zone,
   enableOnlineResize: true,
 }, { ...withOs, ignoreChanges: ["imageId"] });
 
-const backendVolume = new openstack.blockstorage.Volume("backend", {
-  name: "boot-volume-backend",
-  size: cfg.getNumber("backendVolumeSize") ?? 10,
-  imageId: image.id,
-  volumeType,
-  availabilityZone: zone,
-  enableOnlineResize: true,
-}, { ...withOs, ignoreChanges: ["imageId"] });
-
-// VPS 1: шлюз — публичный IP, Caddy, jump-хост для Ansible к VPS 2
+// Единственная VPS: публичный IP, Caddy; позже — Go API и Postgres в Docker Compose.
+// Приватная сеть/подсеть/роутер оставлены: без них к инстансу нельзя привязать floating IP.
 const serverGateway = new openstack.compute.Instance("gateway", {
   name: "pulumi-server-gateway",
   flavorId: gatewayFlavorId,
@@ -227,32 +214,12 @@ const serverGateway = new openstack.compute.Instance("gateway", {
     bootIndex: 0,
     deleteOnTermination: false,
   }],
-  // По metadata.role dynamic inventory Ansible собирает группы gateway/backend
+  // По metadata.role dynamic inventory Ansible собирает группу gateway
   metadata: { role: "gateway", env: "release" },
   userData,
   vendorOptions: { ignoreResizeConfirmation: true },
 // userData ForceNew: сервер пересоздаётся. deleteBeforeReplace — иначе up падает
 // на занятом старым сервером порту/boot-диске (имена и ресурсы переиспользуются).
-}, { ...withOs, deleteBeforeReplace: true, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
-
-// VPS 2: только в приватной сети, без floating IP
-const serverBackend = new openstack.compute.Instance("backend", {
-  name: "pulumi-server-backend",
-  flavorId: backendFlavorId,
-  keyPair: keypair.name,
-  availabilityZone: zone,
-  networks: [{ port: backendPort.id }],
-  blockDevices: [{
-    sourceType: "volume",
-    destinationType: "volume",
-    uuid: backendVolume.id,
-    bootIndex: 0,
-    deleteOnTermination: false,
-  }],
-  metadata: { role: "backend", env: "release" },
-  userData,
-  vendorOptions: { ignoreResizeConfirmation: true },
-  // deleteBeforeReplace — как у gateway (userData ForceNew)
 }, { ...withOs, deleteBeforeReplace: true, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
 
 const floatingIp = new openstack.networking.FloatingIp("gateway", {
@@ -319,24 +286,37 @@ const bucket = new aws.s3.Bucket("product-releases", {
   forceDestroy: true,
 }, { provider: s3 });
 
-// Публичное чтение объектов (под будущий CDN). Роль member на проект разрешает
-// управлять политиками; включается infra:s3PublicRead=true.
+// Публичное чтение объектов (под будущий CDN); включается infra:s3PublicRead=true.
+// В Selectel политика бакета работает по принципу «всё, что не разрешено, запрещено» — роли
+// проекта перестают действовать. Политика только с публичным GetObject отрезала бы сервисного
+// пользователя стека от собственного бакета (403 уже на GetBucketPolicy сразу после создания),
+// поэтому вторым правилом ему явно выдан полный доступ. Principal пользователя — его id в IAM.
 if (cfg.getBoolean("s3PublicRead") ?? false) {
   new aws.s3.BucketPolicy("product-public-read", {
     bucket: bucket.id,
-    policy: bucket.arn.apply((arn) => JSON.stringify({
+    policy: pulumi.all([bucket.arn, serviceUser.id]).apply(([arn, userId]) => JSON.stringify({
       Version: "2012-10-17",
-      Statement: [{
-        Effect: "Allow",
-        Principal: "*",
-        Action: "s3:GetObject",
-        Resource: `${arn}/*`,
-      }],
+      Statement: [
+        {
+          Sid: "StackServiceUserFullAccess",
+          Effect: "Allow",
+          Principal: { AWS: [userId] },
+          Action: "s3:*",
+          Resource: [arn, `${arn}/*`],
+        },
+        {
+          Sid: "PublicRead",
+          Effect: "Allow",
+          Principal: { AWS: ["*"] },
+          Action: "s3:GetObject",
+          Resource: `${arn}/*`,
+        },
+      ],
     })),
   }, { provider: s3 });
 }
 
-// A-запись домена → publicIp VPS 1 в зоне Selectel DNS (зона может лежать в другом проекте)
+// A-запись домена → publicIp VPS в зоне Selectel DNS (зона может лежать в другом проекте)
 const appDomain = cfg.get("domain");
 if (appDomain) {
   const dnsZone = cfg.require("dnsZone");            // с точкой на конце: cellestial.ru.
@@ -357,9 +337,7 @@ if (appDomain) {
 
 export const projectId = project.id;
 export const publicIp = floatingIp.address;
-export const privateIp = backendPort.allFixedIps.apply((ips) => ips[0]);
 export const gatewayName = serverGateway.name;
-export const backendName = serverBackend.name;
 export const sshUser = cfg.get("sshUser") ?? "deploy";
 export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;

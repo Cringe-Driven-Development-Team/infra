@@ -1,12 +1,15 @@
 # infra
 
-Стенд в Selectel: две VPS + объектное хранилище S3 + DNS.
+Стенд в Selectel: одна VPS + объектное хранилище S3 + DNS.
 
 - `pulumi/` — инфраструктура как код: проект, сервисный пользователь (+S3-ключи), сети,
-  VPS 1 (gateway, публичный IP), VPS 2 (backend, только приватная сеть), S3-бакет
-  (публичное чтение — при `infra:s3PublicRead=true`), A-запись домена. См. `pulumi/README.md`.
-- `ansible/` — настройка серверов: пользователь, SSH-hardening, firewall, Docker + Compose,
-  Caddy с Let's Encrypt на VPS 1. См. `ansible/README.md`.
+  VPS (публичный IP), S3-бакет (публичное чтение — при `infra:s3PublicRead=true`),
+  A-запись домена. См. `pulumi/README.md`.
+- `ansible/` — настройка сервера: пользователь, SSH-hardening, firewall, Docker + Compose,
+  Caddy с Let's Encrypt. См. `ansible/README.md`.
+
+На единственной VPS крутится Docker Compose: Caddy, Go API, Postgres
+(схемы: docs/deployment.html, docs/infra.html; вариант с двумя VPS заморожен в docs/bff/infra.html).
 
 Порядок: `pulumi up` → `ansible-playbook bootstrap.yml` → `site.yml` → `verify.yml`.
 Пошаговая инструкция со всеми командами и значениями «что вводить руками» — [RUNBOOK.md](RUNBOOK.md).

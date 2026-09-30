@@ -90,9 +90,9 @@ describe("bootstrap-стек", () => {
     expect(await stack.stateSecretKey.isSecret).toBe(true);
   });
 
-  test("backendUrl для основного стека — префикс main/", async () => {
+  test("backendUrl для основного стека — префикс prod/", async () => {
     expect(await value(stack.backendUrl)).toBe(
-      "s3://cdd-infra-state/main?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true",
+      "s3://cdd-infra-state/prod?region=ru-7&endpoint=s3.ru-7.storage.selcloud.ru&s3ForcePathStyle=true",
     );
   });
 });

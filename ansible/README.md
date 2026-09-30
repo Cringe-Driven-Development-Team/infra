@@ -1,7 +1,8 @@
-# Ansible: настройка двух VPS из Pulumi
+# Ansible: настройка единственной VPS из Pulumi
 
-Инфраструктура: **VPS 1 (gateway)** — публичный IP, Caddy на домене с Let's Encrypt, jump-хост;
-**VPS 2 (backend)** — без публичного IP, доступна только из приватной сети через VPS 1 (ProxyCommand).
+Инфраструктура: **одна VPS** — публичный IP, Caddy в Docker Compose на домене с Let's Encrypt.
+Схемы уже переведены на одну VPS с Docker Compose (Caddy, Go API, Postgres);
+прежний вариант с двумя VPS заморожен в docs (раздел bff/infra).
 
 ## Установка
 
@@ -28,45 +29,33 @@ Ansible не из pipx — `openstacksdk` ставится тем же python, �
 
    Оба сразу нельзя: openstacksdk откажется от двух облаков `selectel`.
 2. Ключ стенда `~/.ssh/selectel_release` (+ `.pub`) — он же `infra:sshPublicKey` в Pulumi
-   (логин через keypair при создании серверов).
+   (логин через keypair при создании сервера).
    Публичные ключи всех, кто работает со стендом, лежат в репозитории:
    `files/authorized_keys/*.pub` (один ключ — один файл с узнаваемым именем). Роль `users`
    кладёт их все в `deploy` c `exclusive: true`, поэтому новый доступ = PR с `.pub`-файлом
    + `ansible-playbook site.yml`; ушедший участник = удалить его `.pub` из репо + прогнать
-   `site.yml`. Серверы пересоздавать не нужно.
-3. Inventory динамический (`inventory/openstack.yml`): группы `gateway` и `backend` собираются
-   по `metadata.role`, `ansible_host` — floating IP у VPS 1 и приватный IP у VPS 2.
+   `site.yml`. Сервер пересоздавать не нужно.
+3. Inventory динамический (`inventory/openstack.yml`): группа `gateway` собирается по
+   `metadata.role`, `ansible_host` — floating IP (публичный адрес).
 
 ## Запуск
 
 ```bash
 ansible-playbook bootstrap.yml   # один раз: python3 + пользователь deploy (root, порт 22)
-ansible-playbook site.yml        # базовая настройка обеих VPS + Caddy на gateway
+ansible-playbook site.yml        # базовая настройка VPS + Caddy
 ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 ```
 
 Повторный `site.yml` должен давать `changed=0`.
 
-`bootstrap.yml` ходит под `root`, а после `site.yml` root-логин закрыт — на уже настроенные хосты
-его повторно не запустить. Он нужен только хосту с **новым диском** (после `pulumi destroy` или замены
-boot-volume), и только с `--limit`:
-
-- gateway: `ansible-playbook bootstrap.yml --limit gateway`;
-- backend при уже настроенном gateway: `ansible-playbook bootstrap.yml --limit backend -e jump_user=deploy`
-  — на VPS 2 заходим под `root`, но хоп через gateway уже только под `deploy`.
+`bootstrap.yml` ходит под `root`, а после `site.yml` root-логин закрыт — на уже настроенный хост
+его повторно не запустить. Он нужен только после пересоздания сервера **с новым диском**
+(`pulumi destroy` или замена boot-volume) и запускается без `--limit`.
 
 Пересоздание сервера Pulumi'ем (смена `infra:sshPublicKeys`, `deleteBeforeReplace`) диск сохраняет:
 `deploy` и hardening на нём уже есть, bootstrap не нужен (и не пройдёт) — хватает `site.yml`.
 
-Ключи команды на существующие хосты раскатывает `site.yml` (роль `users`), bootstrap для этого не нужен.
-
-## Доступ к VPS 2
-
-`group_vars/backend/vars.yml` подставляет `ProxyCommand` через VPS 1 из inventory
-(`hostvars[groups['gateway'][0]]`). Именно `ProxyCommand`, а не `ProxyJump`: опции командной
-строки на хоп через `-J` не действуют, а хопу нужен ключ стенда и `IdentitiesOnly=yes`.
-Во время bootstrap прыгаем под `root` (`jump_user=root` в плейбуке), после `ssh_hardening`
-root-логин запрещён и прыгаем под `deploy`.
+Ключи команды на существующем хосте раскатывает `site.yml` (роль `users`), bootstrap для этого не нужен.
 
 ## Что настраивается
 
@@ -74,41 +63,48 @@ root-логин запрещён и прыгаем под `deploy`.
 |---|---|---|
 | users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive, с проверкой ключа запускающего), sudo NOPASSWD — в bootstrap и в каждом site.yml |
 | common | все | базовые пакеты |
-| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, ключи (порт 22 открыт по DoD); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
-| firewall | все | ufw: deny incoming; gateway — 22/80/443, backend — 22 из `private_network_cidr` |
+| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
+| firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
-| caddy | gateway | Caddyfile с доменом `app_domain`, сертификат Let's Encrypt автоматически |
+| caddy | все | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`, сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
-## Порты контейнеров и ufw
+## Проект Compose
+
+Всё приложение — один проект Compose в `/opt/cellestial` на VPS. Сейчас в нём только Caddy
+(роль `caddy`); Go API и Postgres добавит задача деплоя
+([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)) в тот же `compose.yml`,
+в сеть `app` и **без** `ports:` — Caddy достаёт их по имени сервиса (`reverse_proxy api:8080`).
+Смена Caddyfile применяется `caddy reload` внутри контейнера, без рестарта.
+
+## Порты контейнеров и ufw (одна VPS)
 
 Docker публикует порты контейнеров (`-p 8080:80`) своими iptables-правилами в цепочке
 `nat`/`DOCKER`, которые обрабатываются **до** ufw: опубликованный порт откроется наружу,
 даже при `deny incoming`. Правила на стенде:
 
-- на gateway публиковать только на `127.0.0.1` (`-p 127.0.0.1:8080:80`): floating IP — это 1:1 DNAT
-  на приватный адрес шлюза, поэтому `-p 192.168.199.x:…` на gateway открыт в интернет мимо ufw;
-- на приватном IP (`-p 192.168.199.x:8080:80`) — только на VPS 2: floating IP у него нет;
-- публичные сервисы вести через Caddy на gateway, а не через проброс портов;
-- если нужен фильтр — править цепочку `DOCKER-USER` (ufw её не трогает). Правило вставлять
-  в начало (`-I`): добавленное через `-A` окажется после `RETURN` и не сработает. Интерфейс —
-  внешний интерфейс сервера (`ip route show default`), например:
-  `iptables -I DOCKER-USER -i eth0 '!' -s 192.168.199.0/24 -p tcp -m conntrack --ctorigdstport 8080 -j DROP`.
+- **Postgres и Go API наружу не публикуются**: только внутренняя сеть Compose
+  (`expose`, без `-p`); при прямом доступе с хоста — bind на `127.0.0.1`
+  (`-p 127.0.0.1:8080:8000`), не `0.0.0.0`;
+- наружу смотрит **только Caddy** (80/443) и ssh (22); floating IP — 1:1 DNAT на адрес
+  сервера, поэтому любой `-p 0.0.0.0:X` открыт в интернет мимо ufw;
+- если нужен фильтр-страховка — править цепочку `DOCKER-USER` (ufw её не трогает). Правило
+  вставлять в начало (`-I`): добавленное через `-A` окажется после `RETURN` и не сработает.
+  Интерфейс — внешний (`ip route show default`), например — все новые соединения снаружи к
+  контейнерам, кроме 80/443:
+  `iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctstate NEW -m multiport ! --dports 80,443 -j DROP`
+  (в `DOCKER-USER` порт уже после DNAT — порт контейнера; у Caddy он те же 80/443).
   Такое правило не переживает перезагрузку — после reboot его нужно вернуть (или завести в Ansible).
 
 ## Проверки verify.yml
 
+- ровно один сервер в inventory (проект) — второй VPS больше нет;
 - `https://<app_domain>/` отвечает 200, содержимое `ok`, сертификат от Let's Encrypt;
-- VPS 2 без публичного адреса — по данным OpenStack: ни один floating IP проекта не привязан к его
-  портам, порты не во внешней сети (приватный `ansible_host` сам по себе ничего не доказывает);
-- ufw на VPS 2: active, `deny (incoming)`, разрешающих правил ровно `firewall_rules` из
-  `group_vars/backend` (сейчас одно — 22/tcp из `private_network_cidr`);
-- с VPS 1: порты из `firewall_rules` VPS 2 открыты, остальные — всё, что VPS 2 слушает не на loopback,
-  плюс 80/443/2375/2376/8080 — закрыты (ловит и порты Docker в обход ufw). Порт приложения для Caddy
-  добавляется в `firewall_rules` — проверки его учтут;
-- `sshd -T` на обеих VPS: `permitrootlogin no`, `passwordauthentication no`,
-  `kbdinteractiveauthentication no`.
-
-`verify.yml` запускать целиком: с `--limit gateway` проба портов не знает, что слушает VPS 2, и
-проверяет только типовые порты.
+- на публичном IP открыты 22/80/443 и закрыты 5432, 8080, 2375, 2376 (ловит порты Docker
+  в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
+- ufw: active, `deny (incoming)`, разрешающих правил ровно `firewall_rules` из
+  `group_vars/gateway` (22/80/443 tcp);
+- `sshd -T`: `permitrootlogin no`, `passwordauthentication no`,
+  `kbdinteractiveauthentication no`, `allowtcpforwarding no`;
+- вне allowlist (22/80/443) на интерфейсах, отличных от loopback, ничего не слушает.
 
 CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi при `infra:s3PublicRead=true`).

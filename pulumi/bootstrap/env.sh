@@ -41,7 +41,7 @@ if [ -n "${SELECTEL_PROJECT:-}" ]; then
   export OS_PROJECT_NAME="$SELECTEL_PROJECT"
 else
   unset OS_PROJECT_NAME
-  export OS_PROJECT_ID=36b609e10bfc4ebfa5caae77d2c3a948
+  export OS_PROJECT_ID=93af1a9f31094257be483e9b24663a5f
 fi
 # Личный ~/.aws не участвует: регион, endpoint и ключи стейта задаются явно, а чужой профиль
 # (ca_bundle с ~, старые ключи) ломает AWS-провайдер Pulumi и pulumi login s3://.

@@ -11,26 +11,27 @@ config:
   # Имя сервисного пользователя проекта (уникально в аккаунте)
   infra:serviceUserName: cellestialSystemUser
 
-  # OpenStack: пул/зона VPS и параметры серверов
+  # OpenStack: пул/зона единственной VPS и параметры сервера
   infra:pool: ru-9
   infra:zone: ru-9a
   # infra:externalNetwork: external-network   # внешняя сеть пула (floating IP, роутер)
   infra:volumeType: fast.ru-9a
-  infra:gatewayFlavorName: SL1.2-4096
-  infra:backendFlavorName: SL1.2-8192
-  # infra:backendVolumeSize: 20
+  # Флейвор не меньше SL1.2-8192: на VPS Caddy, позже Go API и Postgres (./scripts/list-flavors.sh)
+  infra:gatewayFlavorName: SL1.2-8192
+  # Boot-диск (под будущий Postgres), по умолчанию 20 ГБ, online-увеличение включено
+  # infra:gatewayVolumeSize: 20
   infra:imageName: Ubuntu 24.04 LTS 64-bit
   # Отдельный ключ стенда: ssh-keygen -t ed25519 -f ~/.ssh/selectel_release -N ""
   infra:sshPublicKey: "<contents of ~/.ssh/selectel_release.pub>"
   # Публичные ключи команды (добавляются root через cloud-init при первой загрузке;
   # дальше доступом рулит ansible/files/authorized_keys/*.pub). Заполняется командами:
   #   pulumi config set --path 'infra:sshPublicKeys[0]' 'ssh-ed25519 AAAA... yarik'
-  # Смена списка пересоздаёт серверы — менять только при плановом rebuild.
+  # Смена списка пересоздаёт сервер (userData ForceNew) — менять только при плановом rebuild.
   # infra:sshPublicKeys:
   #   - "ssh-ed25519 AAAA... <owner>"
   # infra:sshUser: deploy   # выход стека; по умолчанию deploy (root — только для bootstrap)
 
-  # DNS: A-запись domain → publicIp VPS 1 (зона Selectel DNS купленного домена)
+  # DNS: A-запись domain → publicIp VPS (зона Selectel DNS купленного домена)
   infra:domain: cellestial.ru
   infra:dnsZone: cellestial.ru.
   infra:dnsProjectId: "<id проекта, где лежит зона cellestial.ru.>"

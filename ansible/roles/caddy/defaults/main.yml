@@ -1,0 +1,4 @@
+---
+# Образ Caddy: мажор.минор зафиксированы, патч-версии подтягиваются при pull.
+# Каталог проекта Compose (app_compose_dir) — в inventory/group_vars/all: он общий с ролью приложения.
+caddy_image: caddy:2.11-alpine
