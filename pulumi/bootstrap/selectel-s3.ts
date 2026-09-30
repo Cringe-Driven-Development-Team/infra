@@ -81,7 +81,7 @@ async function keystoneToken(http: Http, c: Credentials, scope: object, what: st
   return token;
 }
 
-const projectToken = (http: Http, c: Credentials, projectId: string) =>
+export const projectToken = (http: Http, c: Credentials, projectId: string) =>
   keystoneToken(http, c, { project: { id: projectId } }, `проекта ${projectId}`);
 
 export const accountToken = (http: Http, c: Credentials) =>
