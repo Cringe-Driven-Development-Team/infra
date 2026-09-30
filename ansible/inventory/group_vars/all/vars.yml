@@ -12,3 +12,7 @@ app_domain: cellestial.ru
 # Пользователи в группе docker (эквивалент root на хосте)
 docker_users:
   - "{{ deploy_user }}"
+
+# Проект Docker Compose на VPS (схема MVP: Caddy, Go API, Postgres в одном проекте).
+# Общий для роли caddy и будущей роли приложения — сервисы лягут в один compose.yml.
+app_compose_dir: /opt/cellestial
