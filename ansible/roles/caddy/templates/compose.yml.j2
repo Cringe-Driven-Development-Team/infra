@@ -1,0 +1,24 @@
+# Managed by Ansible (роль caddy). Проект Compose стенда: сюда же задача деплоя добавит
+# Go API и Postgres — только в сеть app, без ports: наружу смотрит один Caddy.
+name: cellestial
+
+services:
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data        # сертификаты Let's Encrypt — переживают пересоздание контейнера
+      - caddy_config:/config
+    networks:
+      - app
+
+networks:
+  app: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

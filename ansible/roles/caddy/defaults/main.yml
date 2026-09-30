@@ -1,0 +1,6 @@
+---
+# Caddy работает в Docker Compose (схема MVP: Caddy, Go API, Postgres в одном проекте Compose).
+# Каталог проекта Compose на VPS: сюда же задача деплоя добавит сервисы Go API и Postgres.
+app_compose_dir: /opt/cellestial
+# Образ Caddy: мажор.минор зафиксированы, патч-версии подтягиваются при pull.
+caddy_image: caddy:2.11-alpine

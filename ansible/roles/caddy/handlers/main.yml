@@ -1,5 +1,7 @@
 ---
-- name: Restart caddy
-  ansible.builtin.service:
-    name: caddy
-    state: restarted
+# Caddy перечитывает конфиг без рестарта контейнера: сертификаты и соединения не сбрасываются.
+- name: Reload caddy
+  ansible.builtin.command:
+    cmd: docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+    chdir: "{{ app_compose_dir }}"
+  changed_when: true

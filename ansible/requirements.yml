@@ -6,5 +6,7 @@ collections:
     version: 2.6.0     # dynamic inventory
   - name: community.general
     version: 13.3.0    # модуль ufw
+  - name: community.docker
+    version: 5.3.0     # docker_compose_v2 (Caddy в Compose)
   - name: ansible.posix
     version: 2.2.2     # authorized_key (в ansible-core это только редирект)

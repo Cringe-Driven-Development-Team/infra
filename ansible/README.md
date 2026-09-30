@@ -1,6 +1,6 @@
 # Ansible: настройка единственной VPS из Pulumi
 
-Инфраструктура: **одна VPS** — публичный IP, Caddy на домене с Let's Encrypt.
+Инфраструктура: **одна VPS** — публичный IP, Caddy в Docker Compose на домене с Let's Encrypt.
 Схемы уже переведены на одну VPS с Docker Compose (Caddy, Go API, Postgres);
 прежний вариант с двумя VPS заморожен в docs (раздел bff/infra).
 
@@ -66,7 +66,15 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 | ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
 | firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
-| caddy | все | Caddyfile с доменом `app_domain`, сертификат Let's Encrypt автоматически |
+| caddy | все | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`, сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
+
+## Проект Compose
+
+Всё приложение — один проект Compose в `/opt/cellestial` на VPS. Сейчас в нём только Caddy
+(роль `caddy`); Go API и Postgres добавит задача деплоя
+([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)) в тот же `compose.yml`,
+в сеть `app` и **без** `ports:` — Caddy достаёт их по имени сервиса (`reverse_proxy api:8080`).
+Смена Caddyfile применяется `caddy reload` внутри контейнера, без рестарта.
 
 ## Порты контейнеров и ufw (одна VPS)
 
