@@ -14,6 +14,7 @@ config:
   infra:sshPublicKeys:
     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0odNAHfl8l5IbkfcuP9I5HSDeShI+4rZ/gTHAkVw6E redtea@MacBook-Air-RedTea.local
     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICjLHZfhl3FfnhWRGcqQ0o1x2e8W6D9ocC5qNfI1IzCe oleg@wsl-selectel_release-2026-09-26
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGdLUKIUytZP0VfYJsLvgcgAESHa6irTZaG5oAzIKmwM cunev@ROGStrixG814JIR
   infra:domain: cellestial.ru
   infra:dnsZone: cellestial.ru.
   infra:dnsProjectId: 93af1a9f31094257be483e9b24663a5f
