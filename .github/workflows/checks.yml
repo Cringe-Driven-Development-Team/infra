@@ -1,0 +1,31 @@
+name: Проверки
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  vault-encrypted:
+    name: vault.yml зашифрован
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Репо публичный: vault.yml, закоммиченный открытым текстом, — утечка секретов.
+      - name: Первая строка vault.yml — заголовок ansible-vault
+        run: |
+          required=ansible/inventory/group_vars/all/vault.yml
+          [ -f "$required" ] || { echo "::error file=$required::файла нет"; exit 1; }
+          rc=0
+          for f in $(git ls-files ':(glob)ansible/**/vault.yml'); do
+            case "$(head -n 1 "$f")" in
+              '$ANSIBLE_VAULT;'*) echo "ok: $f" ;;
+              *) echo "::error file=$f::не зашифрован: первая строка не начинается с \$ANSIBLE_VAULT;"; rc=1 ;;
+            esac
+          done
+          exit $rc

@@ -37,6 +37,9 @@ Ansible не из pipx — `openstacksdk` ставится тем же python, �
    `site.yml`. Сервер пересоздавать не нужно.
 3. Inventory динамический (`inventory/openstack.yml`): группа `gateway` собирается по
    `metadata.role`, `ansible_host` — floating IP (публичный адрес).
+4. Пароль vault — в `~/.config/cdd-vault-pass` (права `600`), путь — в `ANSIBLE_VAULT_PASSWORD_FILE`
+   (`. ./env.sh` экспортирует сам; с `clouds.yaml` — выставить руками). Нужен для **любого**
+   playbook'а — см. «Секреты».
 
 ## Запуск
 
@@ -56,6 +59,95 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 `deploy` и hardening на нём уже есть, bootstrap не нужен (и не пройдёт) — хватает `site.yml`.
 
 Ключи команды на существующем хосте раскатывает `site.yml` (роль `users`), bootstrap для этого не нужен.
+
+## Секреты (ansible-vault)
+
+Секреты выкатки лежат в репо зашифрованными: `inventory/group_vars/all/vault.yml`
+(`ansible-vault`, AES256). Репо публичный, шифротекст виден всем — стойкость держится на пароле.
+
+| В `vault.yml` (зашифровано) | Открытое имя в `group_vars/all/vars.yml` |
+|---|---|
+| `vault_postgres_password` | `postgres_password` |
+| `vault_jwt_secret` | `jwt_secret` |
+
+Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
+переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
+
+### Пароль
+
+Пароль vault — у Дениса и менторов, передаётся лично, не в общий чат. Он лежит в файле вне репо, путь
+к файлу — в `ANSIBLE_VAULT_PASSWORD_FILE`; в `ansible.cfg` путь не прописывается (у ноутбука и CI он
+разный).
+
+```bash
+umask 077
+printf '%s\n' '<пароль>' > ~/.config/cdd-vault-pass     # права 600
+. ./env.sh                                               # экспортирует ANSIBLE_VAULT_PASSWORD_FILE
+# без env.sh (clouds.yaml): export ANSIBLE_VAULT_PASSWORD_FILE=~/.config/cdd-vault-pass
+```
+
+`vault.yml` лежит в `group_vars/all`, поэтому пароль нужен для любого playbook'а: `site.yml`,
+`verify.yml`, `bootstrap.yml`. Без него запуск падает (`Attempting to decrypt but no vault secrets
+found`), а не идёт с пустыми значениями.
+
+### Просмотр и правка
+
+```bash
+ansible-vault view inventory/group_vars/all/vault.yml
+ansible-vault edit inventory/group_vars/all/vault.yml    # $EDITOR, при сохранении шифрует обратно
+```
+
+Только `edit`: `decrypt` → правка → `encrypt` оставляет на диске открытый текст, который легко
+закоммитить. Значения секретов — `openssl rand -base64 32`.
+
+### CI
+
+- **В этом репо** workflow `Проверки` (`.github/workflows/checks.yml`) проверяет, что первая строка
+  каждого `ansible/**/vault.yml` начинается с `$ANSIBLE_VAULT;`. Файл, закоммиченный открытым
+  текстом, роняет проверку. Пароль для неё не нужен.
+- **Выкатка из CI** (job `deploy`,
+  [backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)): пароль приходит из
+  секрета `ANSIBLE_VAULT_PASSWORD`, job пишет его во временный файл и выставляет
+  `ANSIBLE_VAULT_PASSWORD_FILE` — playbook'и читают его так же, как с ноутбука:
+
+  ```yaml
+  - name: Пароль vault во временный файл
+    env:
+      ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+    run: |
+      umask 077
+      printf '%s\n' "$ANSIBLE_VAULT_PASSWORD" > "$RUNNER_TEMP/vault-pass"
+      echo "ANSIBLE_VAULT_PASSWORD_FILE=$RUNNER_TEMP/vault-pass" >> "$GITHUB_ENV"
+  # ... шаги с ansible-playbook ...
+  - name: Удалить файл пароля
+    if: always()
+    run: rm -f "$RUNNER_TEMP/vault-pass"
+  ```
+
+  Секрет передаётся через `env`, а не подстановкой `${{ }}` в текст скрипта. Сам секрет заводится в
+  backend#2.
+
+### Смена пароля
+
+```bash
+openssl rand -base64 48 > ~/.config/cdd-vault-pass.new && chmod 600 ~/.config/cdd-vault-pass.new
+ansible-vault rekey --new-vault-password-file ~/.config/cdd-vault-pass.new \
+  inventory/group_vars/all/vault.yml
+mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
+```
+
+Затем: закоммитить перешифрованный `vault.yml`, обновить секрет `ANSIBLE_VAULT_PASSWORD` в CI,
+передать новый пароль лично тем, у кого был старый.
+
+### Утечка пароля
+
+`rekey` **не помогает**: старый шифротекст остаётся в истории git публичного репо и расшифровывается
+утёкшим паролем. Меняются сами секреты:
+
+1. новый пароль vault — как в «Смена пароля»;
+2. `ansible-vault edit` — новые значения всех секретов (`openssl rand -base64 32`);
+3. выкатить: пароль Postgres меняется и в самой БД, смена `jwt_secret` разлогинивает пользователей;
+4. обновить `ANSIBLE_VAULT_PASSWORD` в CI.
 
 ## Что настраивается
 

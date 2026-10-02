@@ -6,10 +6,16 @@
 # Если рядом лежит clouds.yaml с облаком selectel, openstacksdk откажется: оставьте что-то одно.
 # Оболочка после этого смотрит в прод-проект (OS_PROJECT_ID, OS_REGION_NAME) — для bootstrap-стека
 # и state-key.ts заново source pulumi/bootstrap/env.sh.
+# Пароль vault (inventory/group_vars/all/vault.yml) — из файла вне репо: ANSIBLE_VAULT_PASSWORD_FILE,
+# по умолчанию ~/.config/cdd-vault-pass (права 600). Уже заданная переменная (CI) не перетирается.
 # POSIX sh — работает в bash, zsh и dash.
 if [ ! -r ../pulumi/bootstrap/env.sh ] || [ ! -r inventory/openstack.yml ]; then
   echo "ansible/env.sh: запускать из каталога ansible/" >&2
   return 1
+fi
+export ANSIBLE_VAULT_PASSWORD_FILE="${ANSIBLE_VAULT_PASSWORD_FILE:-$HOME/.config/cdd-vault-pass}"
+if [ ! -r "$ANSIBLE_VAULT_PASSWORD_FILE" ]; then
+  echo "ansible/env.sh: нет файла пароля vault $ANSIBLE_VAULT_PASSWORD_FILE — playbook'и не расшифруют vault.yml (README, «Секреты»)" >&2
 fi
 . ../pulumi/bootstrap/env.sh || return 1
 _ans_stack=${INFRA_STACK:-prod}

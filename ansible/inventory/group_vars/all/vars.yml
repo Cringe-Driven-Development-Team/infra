@@ -16,3 +16,8 @@ docker_users:
 # Проект Docker Compose на VPS (схема MVP: Caddy, Go API, Postgres в одном проекте).
 # Общий для роли caddy и будущей роли приложения — сервисы лягут в один compose.yml.
 app_compose_dir: /opt/cellestial
+
+# Секреты выкатки: значения — в vault.yml рядом (ansible-vault, префикс vault_).
+# Роли и шаблоны используют только открытые имена.
+postgres_password: "{{ vault_postgres_password }}"
+jwt_secret: "{{ vault_jwt_secret }}"
