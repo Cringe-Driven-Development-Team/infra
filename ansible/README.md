@@ -102,9 +102,6 @@ ansible-vault edit inventory/group_vars/all/vault.yml    # $EDITOR, при со�
 
 ### CI
 
-- **В этом репо** workflow `Проверки` (`.github/workflows/checks.yml`) проверяет, что первая строка
-  каждого `ansible/**/vault.yml` начинается с `$ANSIBLE_VAULT;`. Файл, закоммиченный открытым
-  текстом, роняет проверку. Пароль для неё не нужен.
 - **Выкатка из CI** (job `deploy`,
   [backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)): пароль приходит из
   секрета `ANSIBLE_VAULT_PASSWORD`, job пишет его во временный файл и выставляет
