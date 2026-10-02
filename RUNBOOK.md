@@ -187,6 +187,7 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 
 | Симптом | Причина |
 |---|---|
+| `root_zone_already_belongs_to_another_user` при создании зоны `cdn.` | Зона-поддомен создаётся не в проекте родительской зоны — должна быть в `infra:dnsProjectId` (`CLAUDE.md`) |
 | `pulumi whoami` падает с `no EC2 IMDS role found` | Не выполнен `source pulumi/bootstrap/env.sh` (нет личного ключа стейта `AWS_*`) — п.2 |
 | `pulumi stack select prod`: стек не найден | Команда запущена не из `pulumi/` (бэкенд берётся из `Pulumi.yaml` каталога) или задана `PULUMI_BACKEND_URL` — `pulumi whoami -v` должен показать `s3://cdd-infra-state/prod…` — п.2 |
 | `409 already_exists` | Имя занято в общем аккаунте → сменить `infra:name` / `infra:serviceUserName` / `infra:s3Bucket` |

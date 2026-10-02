@@ -22,7 +22,8 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   dynamic-ресурс `BucketAccess` (`pulumi/selectel-storage.ts`), публичный домен
   `<uuid>.selstorage.ru` — выход `s3PublicDomain`.
 - При заданном `infra:cdnDomain`:
-  - зона DNS `cdn.cellestial.ru.` — **только зона, без записей**, в проекте `pulumi-cellestial`;
+  - зона DNS `cdn.cellestial.ru.` — **только зона, без записей**, в проекте родительской зоны
+    `infra-shared` (`infra:dnsProjectId`, провайдер `dns`);
   - CDN-ресурс `<infra:name>-cdn` с бакетом источником, **без своего домена** (dynamic-ресурс
     `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
 
@@ -44,6 +45,8 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 - CNAME/ALIAS для `cdn.cellestial.ru` и `names` у CDN-ресурса: CNAME на вершине зоны невозможен,
   ALIAS не принимают ни привязка домена бакета (`domain_cname_invalid`), ни CDN, а домен, который ещё
   не указывает на CDN, API молча отбрасывает — это делает панель.
+- Зону-поддомен в проекте стека (`project.id`): Selectel отвечает `root_zone_already_belongs_to_another_user`
+  (корень `cellestial.ru.` в `infra-shared`) — после `destroy` и нового проекта `up` падал на этом.
 - Зоны-поддомены при живой зоне-поддомене не заменять на CNAME в `cellestial.ru.` в одном `up`:
   пока зона существует, NS Selectel отвечают из неё и не видят CNAME.
 
