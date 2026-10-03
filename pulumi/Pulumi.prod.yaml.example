@@ -41,7 +41,7 @@ config:
   # Свои домены CDN-ресурса и бакета релизов: CNAME в зоне infra:dnsZone, привязка и Let's Encrypt
   # infra:cdnDomain: cdn.cellestial.ru
   # infra:s3Domain: s3.cellestial.ru
-  # infra:s3CertProjectId: "<id проекта>"   # где выпускать сертификат бакета; по умолчанию — проект стека
+  # infra:s3CertProjectId: "<id проекта>"   # где выпускать сертификат бакета; по умолчанию — проект зоны (infra:dnsProjectId)
 
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1

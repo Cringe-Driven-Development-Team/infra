@@ -61,6 +61,8 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   `cellestial.ru.`.
 - `names` в теле создания/изменения `CdnResource`: домен, который ещё не CNAME на CDN, API молча
   отбрасывает при `accept`. Привязка — отдельный `CdnDomain` после записи, со сверкой через `GET`.
+- Выпуск Let's Encrypt для домена бакета в проекте стека: `api.selectel.ru/certs/le/issue` отвечает
+  `400 domain not found` — зона `cellestial.ru.` в `infra-shared`, выпуск идёт с токеном этого проекта.
 - Зону-поддомен в проекте стека (`project.id`): Selectel отвечает `root_zone_already_belongs_to_another_user`
   (корень `cellestial.ru.` в `infra-shared`) — после `destroy` и нового проекта `up` падал на этом.
 - Зоны-поддомены при живой зоне-поддомене не заменять на CNAME в `cellestial.ru.` в одном `up`:

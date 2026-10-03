@@ -526,13 +526,14 @@ if (cdnEnabled) {
 }
 
 // Свой домен бакета релизов: CNAME на access.<пул>.storage.selcloud.ru. Сертификат выпускается в
-// проекте infra:s3CertProjectId (по умолчанию — проект стека) и загружается в хранилище проекта стека.
+// проекте зоны DNS: Let's Encrypt Selectel ищет зону домена в проекте токена, в проекте стека он
+// отвечает 400 domain not found. В хранилище проекта стека сертификат загружает BucketDomain.
 let s3Domain: BucketDomain | undefined;
 if (s3CustomDomainName) {
   const record = cnameRecord("s3", s3CustomDomainName, `access.${s3Pool}.storage.selcloud.ru`);
   s3Domain = new BucketDomain("product-releases", {
     projectId: project.id,
-    certProjectId: cfg.get("s3CertProjectId") ?? project.id,
+    certProjectId: cfg.get("s3CertProjectId") ?? dnsProjectId,
     pool: s3Pool,
     bucket: bucket.bucket,
     domain: s3CustomDomainName,
