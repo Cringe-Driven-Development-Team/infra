@@ -173,6 +173,13 @@ describe("ensureBucketDomain", () => {
     expect(calls.filter((c) => c.url.endsWith("/v2/ssl") && c.method === "POST")).toHaveLength(1);
   });
 
+  test("статус строчными, как отвечает API, — тоже загрузка", async () => {
+    const { http, calls } = api({ id: "le1", name: "s3-example-ru", status: "active", version: 1, knox_cert_id: "k1" });
+    const state = await ensureBucketDomain(http, "st", "ct", spec, {}, noWait);
+    expect(state).toMatchObject({ certificateStatus: "ACTIVE", uploadedVersion: "1" });
+    expect(calls.filter((c) => c.url.endsWith("/v2/ssl") && c.method === "POST")).toHaveLength(1);
+  });
+
   test("та же версия уже загружена — повторной загрузки нет", async () => {
     const { http, calls } = api({ id: "le1", name: "s3-example-ru", status: "ACTIVE", version: 1, knox_cert_id: "k1" });
     await ensureBucketDomain(http, "st", "ct", spec, { uploadedVersion: "1", s3CertificateName: "s3-example-ru-v1" }, noWait);

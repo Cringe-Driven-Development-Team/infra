@@ -254,7 +254,7 @@ const certManagerApi = "https://cloud.api.selcloud.ru/certificate-manager/v1";
 export interface LeCertificate {
   id: string;
   name: string;
-  status: string;          // CREATING, ACTIVE, RENEWING, INVALID, ERROR
+  status: string;          // creating, active, renewing, invalid, error — API отдаёт строчными
   version?: number;
   knox_cert_id?: string;
   expire_at?: string;
@@ -335,8 +335,10 @@ export async function ensureBucketDomain(
   prev: Partial<BucketDomainState> = {}, w: Waiting = {},
 ): Promise<BucketDomainState> {
   await bindBucketDomain(http, storageToken, s.pool, s.bucket, s.domain, w);
+  // Статус сравниваем без регистра: документация пишет ACTIVE, API отвечает active
+  const status = (c: LeCertificate) => c.status.toUpperCase();
   let le = await findLeCertificate(http, certToken, s.certName);
-  if (le?.status === "ERROR") {
+  if (le && status(le) === "ERROR") {
     await deleteLeCertificate(http, certToken, le.id);
     le = undefined;
   }
@@ -344,7 +346,7 @@ export async function ensureBucketDomain(
   const issuedVersion = String(le.version ?? "");
   let uploadedVersion = prev.uploadedVersion ?? "";
   let s3CertificateName = prev.s3CertificateName ?? "";
-  if (le.status === "ACTIVE" && le.knox_cert_id && uploadedVersion !== issuedVersion) {
+  if (status(le) === "ACTIVE" && le.knox_cert_id && uploadedVersion !== issuedVersion) {
     const name = `${s.certName}-v${issuedVersion}`;
     await uploadBucketCertificate(
       http, storageToken, s.pool, name,
@@ -359,7 +361,7 @@ export async function ensureBucketDomain(
   }
   return {
     leCertificateId: le.id,
-    certificateStatus: le.status,
+    certificateStatus: status(le),
     issuedVersion,
     uploadedVersion,
     s3CertificateName,
@@ -583,7 +585,7 @@ const bucketDomainProvider: pulumi.dynamic.ResourceProvider<BucketDomainInputs> 
       props: {
         ...props,
         leCertificateId: le?.id ?? "",
-        certificateStatus: le?.status ?? "",
+        certificateStatus: le?.status.toUpperCase() ?? "",
         issuedVersion: String(le?.version ?? ""),
         expireAt: le?.expire_at ?? "",
       },
