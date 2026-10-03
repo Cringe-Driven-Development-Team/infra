@@ -15,7 +15,7 @@
         fail_msg: "Ожидалась одна VPS, в inventory: {{ groups['all'] }}"
 
     # current.json в бакете релизов пишет CI фронта при выкатке: { "stable": "{sha}", ... }; пока
-    # его нет, клиент не выкатан. Устаревший frontend_s3_domain (стек пересоздан, бакет новый)
+    # его нет, клиент не выкатан. Домен бакета без привязки или без сертификата (Pulumi: BucketDomain)
     # здесь не отвечает вовсе — под видом «клиент ещё не выкатан» он проверку не пройдёт.
     - name: Указатель релиза в бакете релизов
       ansible.builtin.uri:
@@ -23,6 +23,20 @@
         status_code: [200, 404]
         return_content: true
       register: release_pointer
+
+    # Чанки браузер грузит со своего домена CDN запросом в режиме CORS (<script type="module"
+    # crossorigin>): CDN обязан отвечать по HTTPS и разрешать чужой Origin. Источник CDN — тот же
+    # бакет, поэтому статус совпадает с доменом бакета.
+    - name: Домен CDN отдаёт указатель релиза с CORS
+      ansible.builtin.uri:
+        url: "https://{{ frontend_cdn_domain }}/current.json"
+        headers:
+          Origin: "https://{{ app_domain }}"
+        status_code: [200, 404]
+      register: cdn_pointer
+      failed_when: >-
+        cdn_pointer.status != release_pointer.status
+        or cdn_pointer.access_control_allow_origin | default('') not in ['*', 'https://' ~ app_domain]
 
     - name: Релиз клиента, который обязан отдавать домен
       ansible.builtin.set_fact:
@@ -92,6 +106,28 @@
         return_content: true
       register: api_route
       failed_when: api_route.status != 503 or api_route.content != 'API is not deployed'
+
+    # uri выше уже проверил цепочки доверия своих доменов бакета и CDN; здесь — кем выданы
+    - name: Выдать информацию о сертификатах доменов бакета и CDN
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          echo | openssl s_client -connect {{ item }}:443 -servername {{ item }} 2>/dev/null
+          | grep -E '^(issuer|subject)='
+        executable: /bin/bash
+      register: storage_cert_info
+      changed_when: false
+      loop: ["{{ frontend_s3_domain }}", "{{ frontend_cdn_domain }}"]
+
+    - name: Сертификаты доменов бакета и CDN выданы Let's Encrypt на эти домены
+      ansible.builtin.assert:
+        that:
+          - item.stdout is search("Encrypt|ISRG")
+          - item.stdout is search(item.item | regex_escape)
+        fail_msg: "Сертификат {{ item.item }}: {{ item.stdout }}"
+      loop: "{{ storage_cert_info.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
     - name: Выдать информацию о сертификате
       ansible.builtin.shell:

@@ -18,7 +18,7 @@
 		# «?» в конце сбрасывает query string запроса: в бакет идёт ровно /index.html
 		rewrite * /index.html?
 		reverse_proxy https://{{ frontend_s3_domain }} {
-			# публичный домен бакета выбирает бакет по Host
+			# хранилище выбирает бакет по Host — своему домену бакета
 			header_up Host {upstream_hostport}
 			# cookie сессии и токен пользователя хранилищу не нужны
 			header_up -Cookie
