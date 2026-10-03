@@ -251,4 +251,4 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   `kbdinteractiveauthentication no`, `allowtcpforwarding no`;
 - вне allowlist (22/80/443) на интерфейсах, отличных от loopback, ничего не слушает.
 
-CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi при `infra:s3PublicRead=true`).
+CDN-ресурс и его свой домен создаёт Pulumi, сертификат домена — в панели (`pulumi/README.md`, «Свой домен CDN»).
