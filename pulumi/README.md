@@ -2,7 +2,8 @@
 
 Создаёт: проект, сервисного пользователя проекта (+ S3-ключи), keypair, приватную сеть с роутером
 (нужна для floating IP), VPS (floating IP, роль gateway: Caddy, позже Go API и Postgres в Docker Compose),
-S3-бакет через @pulumi/aws (публичное чтение — при `infra:s3PublicRead=true`), A-запись домена на VPS.
+S3-бакет через @pulumi/aws (публичное чтение — при `infra:s3PublicRead=true`), A-запись домена на VPS,
+приватный бакет ноутбуков пользователей с отдельным сервисным пользователем и S3-ключом для Go API.
 
 Двухсерверная схема (gateway + backend) заморожена в git в варианте `bff` документации; стек — одна VPS.
 
@@ -73,6 +74,9 @@ pulumi config set infra:dnsProjectId <id проекта с зоной>
 # Object Storage
 pulumi config set infra:s3Pool   ru-1
 pulumi config set infra:s3Bucket <имя-бакета>
+# Приватный бакет ноутбуков (.ipynb) в том же пуле и сервисный пользователь Go API
+pulumi config set infra:notebooksBucket <имя-бакета>
+# pulumi config set infra:notebooksUserName cellestialNotebooksUser   # по умолчанию; уникально в аккаунте
 ```
 
 `pool`, `zone` и `volumeType` — из одного региона VPS (`ru-9` / `ru-9a` / `fast.ru-9a`).
@@ -116,6 +120,49 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 
 `pulumi destroy` удаляет бакет вместе с объектами (`forceDestroy: true`).
 
+## Бакет ноутбуков
+
+`infra:notebooksBucket` — данные пользователей (`.ipynb`), доступ только у Go API:
+
+- тип бакета `private` (`BucketAccess`), публичного домена `selstorage.ru` нет, источником CDN не служит;
+- сервисный пользователь `infra:notebooksUserName` с ролью `s3.bucket.user` и свой S3-ключ. Ключ
+  пользователя стека (`s3AccessKey`) бэку не отдаётся: у того `member` на весь проект;
+- политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject`, `ListBucket` только
+  здесь; пользователю стека — `s3:*` (с политикой роли проекта не действуют, без этого правила Pulumi
+  получил бы `403` на `GetBucketPolicy`). В `infra:s3Bucket` пользователя бэка нет — там `AccessDenied`;
+- `protect: true`, без `forceDestroy`: `pulumi destroy` на бакете остановится. Удалить осознанно —
+  опустошить бакет и `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'`.
+
+Выходы: `notebooksBucket`, `notebooksAccessKey`, `notebooksSecretKey` (оба ключа — только с
+`--show-secrets`). Endpoint и регион те же: `s3Endpoint`, `infra:s3Pool`. Ключи переносятся в
+`ansible/inventory/group_vars/all/vault.yml` (`vault_notebooks_s3_access_key`,
+`vault_notebooks_s3_secret_key`) через `ansible-vault edit` — `ansible/README.md`, «Секреты».
+
+Проверка доступа (после `source bootstrap/env.sh`):
+
+```bash
+S3_ENDPOINT=$(pulumi stack output s3Endpoint)
+S3_POOL=$(pulumi config get infra:s3Pool)
+NB_BUCKET=$(pulumi stack output notebooksBucket)
+NB_AK=$(pulumi stack output notebooksAccessKey --show-secrets)
+NB_SK=$(pulumi stack output notebooksSecretKey --show-secrets)
+nb_aws() {   # ключ бэка — только этой команде, AWS_* оболочки (ключ стейта) не трогаем
+  AWS_ACCESS_KEY_ID="$NB_AK" AWS_SECRET_ACCESS_KEY="$NB_SK" \
+    AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+    aws --endpoint-url "$S3_ENDPOINT" --region "$S3_POOL" "$@"
+}
+
+echo '{}' > /tmp/check.ipynb
+nb_aws s3 cp /tmp/check.ipynb "s3://$NB_BUCKET/check.ipynb"        # проходит
+nb_aws s3 cp "s3://$NB_BUCKET/check.ipynb" /tmp/check-back.ipynb   # проходит
+nb_aws s3 ls "s3://$NB_BUCKET/"                                    # check.ipynb
+nb_aws s3 cp /tmp/check.ipynb "s3://$(pulumi stack output s3Bucket)/check.ipynb"   # AccessDenied
+curl -I "$S3_ENDPOINT/$NB_BUCKET/check.ipynb"                      # 403 без авторизации
+nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
+```
+
+Новый ключ шлюз S3 признаёт не сразу: первые секунды (иногда минуты) — `InvalidAccessKeyId`.
+
 ## Передача в Ansible
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт
@@ -136,4 +183,4 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 | Ошибка создания бакета провайдером aws | Проверить `infra:s3Pool`: endpoint `s3.<pool>.storage.selcloud.ru` должен существовать |
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
-Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.
+Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.

@@ -50,6 +50,8 @@ const name = cfg.get("name") ?? "pulumi-release";
 const s3Pool = cfg.require("s3Pool");
 const s3BucketName = cfg.require("s3Bucket");
 const s3EndpointUrl = `https://s3.${s3Pool}.storage.selcloud.ru`;
+// Приватный бакет ноутбуков пользователей (.ipynb) — в том же пуле; доступ только у Go API.
+const notebooksBucketName = cfg.require("notebooksBucket");
 // Тип бакета Selectel: public (по умолчанию) — чтение объектов без авторизации, источник для CDN.
 const s3Public = cfg.getBoolean("s3Public") ?? true;
 // Поддомен CDN (например cdn.cellestial.ru): Pulumi создаёт для него зону DNS и CDN-ресурс,
@@ -60,7 +62,7 @@ const renamedFromStudy = { aliases: [{ name: "study" }] };
 
 const project = new selectel.VpcProjectV2("release", { name }, renamedFromStudy);
 
-const password = new random.RandomPassword("serviceuser", {
+const serviceUserPasswordArgs: random.RandomPasswordArgs = {
   length: 24,
   upper: true,
   lower: true,
@@ -70,7 +72,8 @@ const password = new random.RandomPassword("serviceuser", {
   minNumeric: 1,
   minSpecial: 1,
   overrideSpecial: "!#$%&*+-.:;<=>?@^_{|}~",
-});
+};
+const password = new random.RandomPassword("serviceuser", serviceUserPasswordArgs);
 
 // Имя сервисного пользователя проекта отдельно от infra:name (проект/keypair),
 // оно видно в панели IAM и используется как логин OpenStack.
@@ -90,6 +93,24 @@ const serviceUser = new selectel.IamServiceuserV1("release", {
 const s3Credentials = new selectel.IamS3CredentialsV1("product-s3", {
   name: `${name}-releases`,
   userId: serviceUser.id,
+  projectId: project.id,
+});
+
+// Сервисный пользователь Go API — только бакет ноутбуков. Ключ пользователя release бэку не годится:
+// у того member на весь проект (OpenStack и все бакеты). s3.bucket.user сам по себе не даёт ничего —
+// доступ появляется только там, где пользователь назван в политике бакета (ниже, "notebooks").
+// Пароль нужен API IAM, им никто не входит: бэк ходит в S3 по ключу.
+const notebooksUser = new selectel.IamServiceuserV1("notebooks", {
+  name: cfg.get("notebooksUserName") ?? "cellestialNotebooksUser",
+  password: new random.RandomPassword("notebooks-serviceuser", serviceUserPasswordArgs).result,
+  roles: [
+    { roleName: "s3.bucket.user", scope: "project", projectId: project.id },
+  ],
+});
+
+const notebooksCredentials = new selectel.IamS3CredentialsV1("notebooks-s3", {
+  name: `${name}-notebooks`,
+  userId: notebooksUser.id,
   projectId: project.id,
 });
 
@@ -334,6 +355,56 @@ if (cfg.getBoolean("s3PublicRead") ?? false) {
   }, { provider: s3 });
 }
 
+// Бакет ноутбуков пользователей. Данные пользователей: без forceDestroy и с protect — pulumi destroy
+// и случайная замена ресурса не сносят бакет с объектами (снять: pulumi state unprotect).
+const notebooksBucketResource = new aws.s3.Bucket("notebooks", {
+  bucket: notebooksBucketName,
+}, { provider: s3, protect: true });
+
+// Тип private задаётся явно: публичного домена <uuid>.selstorage.ru у бакета нет, источником CDN
+// он не служит.
+new BucketAccess("notebooks", {
+  projectId: project.id,
+  pool: s3Pool,
+  bucket: notebooksBucketResource.bucket,
+  type: "private",
+}, { dependsOn: [notebooksBucketResource] });
+
+// Пользователю бэка — объекты и листинг только этого бакета; в product-releases его нет ни в какой
+// политике, там он получает AccessDenied. Как и у product-public-read, с появлением политики роли
+// проекта перестают действовать, поэтому первым правилом полный доступ оставлен пользователю стека
+// (release) — иначе 403 уже на GetBucketPolicy, и Pulumi не сможет ни изменить, ни снять политику.
+new aws.s3.BucketPolicy("notebooks", {
+  bucket: notebooksBucketResource.id,
+  policy: pulumi.all([notebooksBucketResource.arn, serviceUser.id, notebooksUser.id])
+    .apply(([arn, stackUserId, backendUserId]) => JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Sid: "StackServiceUserFullAccess",
+          Effect: "Allow",
+          Principal: { AWS: [stackUserId] },
+          Action: "s3:*",
+          Resource: [arn, `${arn}/*`],
+        },
+        {
+          Sid: "BackendObjects",
+          Effect: "Allow",
+          Principal: { AWS: [backendUserId] },
+          Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+          Resource: `${arn}/*`,
+        },
+        {
+          Sid: "BackendList",
+          Effect: "Allow",
+          Principal: { AWS: [backendUserId] },
+          Action: "s3:ListBucket",
+          Resource: arn,
+        },
+      ],
+    })),
+}, { provider: s3 });
+
 // DNS: зона домена (infra:dnsZone) лежит в проекте infra:dnsProjectId, по умолчанию — в проекте стека.
 const appDomain = cfg.get("domain");
 const withDot = (d: string) => (d.endsWith(".") ? d : `${d}.`);
@@ -398,3 +469,7 @@ export const serviceUserName = serviceUser.name;
 export const serviceUserPassword = pulumi.secret(password.result);
 export const s3AccessKey = s3Credentials.accessKey;
 export const s3SecretKey = pulumi.secret(s3Credentials.secretKey);
+// Ключ Go API к бакету ноутбуков; endpoint и регион — s3Endpoint и infra:s3Pool
+export const notebooksBucket = notebooksBucketResource.bucket;
+export const notebooksAccessKey = notebooksCredentials.accessKey;
+export const notebooksSecretKey = pulumi.secret(notebooksCredentials.secretKey);

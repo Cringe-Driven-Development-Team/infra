@@ -22,3 +22,4 @@ config:
   infra:s3Pool: ru-7
   infra:s3Bucket: cellestial-release-0
   infra:s3PublicRead: "false"
+  infra:notebooksBucket: cellestial-notebooks-0

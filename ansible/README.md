@@ -69,6 +69,14 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 |---|---|
 | `vault_postgres_password` | `postgres_password` |
 | `vault_jwt_secret` | `jwt_secret` |
+| `vault_notebooks_s3_access_key` | `notebooks_s3_access_key` |
+| `vault_notebooks_s3_secret_key` | `notebooks_s3_secret_key` |
+
+`notebooks_s3_*` — S3-ключ Go API к приватному бакету ноутбуков, значения — выходы Pulumi
+`notebooksAccessKey` и `notebooksSecretKey` (`pulumi stack output <имя> --show-secrets`, оба секретные;
+`pulumi/README.md`, «Бакет ноутбуков»). Ключ перевыпущен (пересоздан стек или пользователь) — обновить
+оба значения через `ansible-vault edit`. В `.env` Go API они попадут через роль `app`
+([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)).
 
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
@@ -98,7 +106,7 @@ ansible-vault edit inventory/group_vars/all/vault.yml    # $EDITOR, при со�
 ```
 
 Только `edit`: `decrypt` → правка → `encrypt` оставляет на диске открытый текст, который легко
-закоммитить. Значения секретов — `openssl rand -base64 32`.
+закоммитить. Значения секретов — `openssl rand -base64 32` (кроме `notebooks_s3_*` — они из Pulumi).
 
 ### CI
 
