@@ -162,12 +162,14 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 
 `infra:avatarsBucket` — аватарки пользователей, читают все, пишет Go API:
 
-- тип бакета `public` (`BucketAccess`): объект доступен без авторизации по
-  `https://<avatarsPublicDomain>/<ключ>` (`<uuid>.selstorage.ru`). Источником CDN не служит;
+- тип бакета `public` (`BucketAccess`): объект доступен без авторизации **только** по
+  `https://<avatarsPublicDomain>/<ключ>` (`<uuid>.selstorage.ru`); через S3 API
+  (`<s3Endpoint>/<бакет>/<ключ>`) анонимный запрос получает `403`. Источником CDN не служит;
 - отдельного пользователя нет: пишет пользователь бэка `infra:notebooksUserName` тем же ключом
   (`notebooksAccessKey`, `notebooksSecretKey`);
 - политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject` (без листинга);
-  пользователю стека — `s3:*`; всем — `GetObject`;
+  пользователю стека — `s3:*`; всем — `GetObject` (правило `PublicRead`: анонимного чтения через
+  S3 API оно не открывает, оставлено, пока не проверено, что домен `selstorage.ru` отдаёт объекты без него);
 - `protect: true`, без `forceDestroy`, как у ноутбуков: `pulumi destroy` без `--exclude-protected`
   падает на плане. Удалить осознанно — опустошить бакет и
   `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.
@@ -218,5 +220,9 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 | `invalid character '<' looking for beginning of value` | DNS API Selectel временно отвечает `500` HTML — подождать и повторить `pulumi up` |
 | Ошибка создания бакета провайдером aws | Проверить `infra:s3Pool`: endpoint `s3.<pool>.storage.selcloud.ru` должен существовать |
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
+
+Правка кода dynamic-ресурсов (`selectel-storage.ts`) попадает в стейт только через `pulumi up`:
+`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess` показывает такую правку как
+`update` (тип бакета выставляется повторно тем же значением).
 
 Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.

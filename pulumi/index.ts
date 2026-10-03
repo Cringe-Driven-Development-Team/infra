@@ -422,8 +422,10 @@ const avatarsAccess = new BucketAccess("avatars", {
 }, { dependsOn: [avatarsBucketResource] });
 
 // Пишет аватарки тот же пользователь Go API, что и ноутбуки (ключ notebooksAccessKey); листинг ему
-// не нужен. Политика отключает роли проекта, поэтому пользователю стека явно оставлен полный доступ,
-// а чтение объектов всем продублировано правилом PublicRead — для запросов через S3 API.
+// не нужен. Политика отключает роли проекта, поэтому пользователю стека явно оставлен полный доступ.
+// Публичный адрес аватарки — только https://<avatarsPublicDomain>/<ключ>: анонимное чтение через
+// S3 API (endpoint пула, path- и virtual-hosted-style) отвечает 403 и с правилом PublicRead. Правило
+// оставлено: не проверено, отдаёт ли <uuid>.selstorage.ru объекты при политике без него.
 new aws.s3.BucketPolicy("avatars", {
   bucket: avatarsBucketResource.id,
   policy: pulumi.all([avatarsBucketResource.arn, serviceUser.id, notebooksUser.id])
