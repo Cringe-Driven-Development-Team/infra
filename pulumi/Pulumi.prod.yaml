@@ -18,9 +18,11 @@ config:
   infra:domain: cellestial.ru
   infra:dnsZone: cellestial.ru.
   infra:dnsProjectId: 93af1a9f31094257be483e9b24663a5f
+  infra:cdn: "true"
   infra:cdnDomain: cdn.cellestial.ru
+  infra:avatarsDomain: avatars.cellestial.ru
   infra:s3Pool: ru-7
-  infra:s3Bucket: cellestial-release-0
+  infra:s3Bucket: cellestial-frontend-releases-0
   infra:s3PublicRead: "false"
   infra:notebooksBucket: cellestial-notebooks-0
   infra:avatarsBucket: cellestial-avatars-0

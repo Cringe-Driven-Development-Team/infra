@@ -9,6 +9,11 @@ ansible_ssh_private_key_file: "{{ deploy_key_path }}"
 # Домен VPS (A-запись под управлением Pulumi: infra:domain)
 app_domain: cellestial.ru
 
+# Публичный домен бакета релизов клиента (cd pulumi && pulumi stack output s3PublicDomain):
+# Caddy проксирует с него корневой index.html. После пересоздания стека сверить — домен меняется
+# вместе с бакетом.
+frontend_s3_domain: 4f974504-d606-43c5-8fa4-cdbc2a15cd42.selstorage.ru
+
 # Пользователи в группе docker (эквивалент root на хосте)
 docker_users:
   - "{{ deploy_user }}"
@@ -26,11 +31,12 @@ notebooks_s3_access_key: "{{ vault_notebooks_s3_access_key }}"
 notebooks_s3_secret_key: "{{ vault_notebooks_s3_secret_key }}"
 
 # Несекретные параметры S3 для Go API — значения из Pulumi (cd pulumi && pulumi stack output).
-# После пересоздания стека сверить: публичный домен аватарок меняется вместе с бакетом.
 s3_endpoint: https://s3.ru-7.storage.selcloud.ru   # выход s3Endpoint
 s3_region: ru-7                                    # infra:s3Pool, он же регион подписи
 s3_force_path_style: true                          # S3-клиент бэка — path-style
 notebooks_bucket: cellestial-notebooks-0           # выход notebooksBucket
 avatars_bucket: cellestial-avatars-0               # выход avatarsBucket
-# Публичный URL аватарки — https://<avatars_public_domain>/<ключ> (выход avatarsPublicDomain)
-avatars_public_domain: 6d3ca53b-592c-4af6-97b8-756c47690941.selstorage.ru
+# Публичный URL аватарки — https://<avatars_public_domain>/<ключ>: свой домен бакета (выход
+# avatarsCustomDomain), при пересоздании стека не меняется. Сертификат домена выпущен в панели;
+# технический <uuid>.selstorage.ru — выход avatarsPublicDomain.
+avatars_public_domain: avatars.cellestial.ru

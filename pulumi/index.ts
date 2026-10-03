@@ -4,7 +4,7 @@ import * as openstack from "@pulumi/openstack";
 import * as selectel from "@pulumi/selectel";
 import * as aws from "@pulumi/aws";
 import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./bootstrap/selectel-s3";
-import { BucketAccess, CdnResource, checkCdnName } from "./selectel-storage";
+import { BucketAccess, BucketDomain, CdnDomain, CdnResource, checkCdnName } from "./selectel-storage";
 
 const cfg = new pulumi.Config();
 const selectelCfg = new pulumi.Config("selectel");
@@ -56,9 +56,16 @@ const notebooksBucketName = cfg.require("notebooksBucket");
 const avatarsBucketName = cfg.require("avatarsBucket");
 // Тип бакета Selectel: public (по умолчанию) — чтение объектов без авторизации, источник для CDN.
 const s3Public = cfg.getBoolean("s3Public") ?? true;
-// Поддомен CDN (например cdn.cellestial.ru): Pulumi создаёт для него зону DNS и CDN-ресурс,
-// привязка домена к CDN-ресурсу — в панели.
-const cdnDomain = cfg.get("cdnDomain");
+// CDN-ресурс с бакетом источником; технический домен — <id>.selcdn.net.
+const cdnEnabled = cfg.getBoolean("cdn") ?? false;
+// Свои домены CDN-ресурса и бакета аватарок (например cdn.cellestial.ru, avatars.cellestial.ru) и их
+// привязка (CdnDomain, BucketDomain): у CDN — CNAME в зоне infra:dnsZone, у аватарок — своя зона DNS.
+// Сертификаты доменов выпускают в панели. У бакета релизов своего домена нет.
+const cdnCustomDomainName = cfg.get("cdnDomain");
+const avatarsCustomDomainName = cfg.get("avatarsDomain");
+if (cdnCustomDomainName && !cdnEnabled) {
+  throw new Error("infra:cdnDomain задан без infra:cdn: домен привязывается к CDN-ресурсу");
+}
 
 const renamedFromStudy = { aliases: [{ name: "study" }] };
 
@@ -466,7 +473,7 @@ const dnsProvider = new selectel.Provider("dns", {
   authRegion: selectelCfg.get("authRegion"),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain
+const parentZone = appDomain || cdnCustomDomainName
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -483,21 +490,61 @@ if (appDomain && parentZone) {
   }, { ...withDns, deleteBeforeReplace: true });
 }
 
-// cdn.<домен>: зона DNS и CDN-ресурс с публичным бакетом источником. Зона — только зона:
-// NS-делегирование из родительской Selectel ставит сам, а привязку домена к CDN-ресурсу (записи в
-// зоне и сертификат) делают в панели.
-// Зона-поддомен — в проекте родительской зоны (infra:dnsProjectId), не в проекте стека: проект стека
-// пересоздаётся с новым id, и в нём POST зоны-поддомена падает с root_zone_already_belongs_to_another_user.
+// CDN-ресурс с публичным бакетом источником; чанки клиент грузит с cdnDefaultDomain или со своего
+// домена infra:cdnDomain.
 let cdn: CdnResource | undefined;
-if (cdnDomain) {
-  // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
-  new selectel.DomainsZoneV2("cdn", { name: withDot(cdnDomain), projectId: dnsProjectId },
-    { ...withDns, deleteBeforeReplace: true });
+if (cdnEnabled) {
   cdn = new CdnResource("cdn", {
     projectId: project.id,
     name: checkCdnName(cfg.get("cdnName") ?? `${name}-cdn`),
     originHost: bucketAccess.publicDomain,
   });
+  if (cdnCustomDomainName) {
+    // Запись внутри зоны, не зона-поддомен: домен, который не CNAME на cdnDomain, CDN API не сохраняет,
+    // а на вершине зоны CNAME невозможен.
+    const record = new selectel.DomainsRrsetV2("cdn", {
+      zoneId: parentZone!.id,
+      projectId: dnsProjectId,
+      name: withDot(cdnCustomDomainName),
+      type: "CNAME",
+      ttl: 300,
+      records: [{ content: cdn.cdnDomain.apply(withDot) }],
+    }, { ...withDns, deleteBeforeReplace: true });
+    new CdnDomain("cdn", {
+      projectId: project.id,
+      resourceId: cdn.id,
+      domain: cdnCustomDomainName,
+    }, { dependsOn: [record] });
+  }
+}
+
+// Свой домен бакета аватарок — отдельная зона DNS (не запись в infra:dnsZone). Зона — в проекте
+// родительской зоны: в проекте стека Selectel отвечает root_zone_already_belongs_to_another_user.
+// NS-делегирование из родительской зоны Selectel ставит сам, своей NS-записи не нужно.
+// На вершине зоны CNAME невозможен, поэтому ALIAS — на актуальный публичный домен бакета
+// <uuid>.selstorage.ru (avatarsPublicDomain): он меняется вместе с бакетом, запись идёт за ним.
+if (avatarsCustomDomainName) {
+  // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
+  const avatarsZone = new selectel.DomainsZoneV2("avatars", {
+    name: withDot(avatarsCustomDomainName),
+    projectId: dnsProjectId,
+  }, { ...withDns, deleteBeforeReplace: true });
+  const record = new selectel.DomainsRrsetV2("avatars-alias", {
+    zoneId: avatarsZone.id,
+    projectId: dnsProjectId,
+    name: withDot(avatarsCustomDomainName),
+    type: "ALIAS",
+    ttl: 300,
+    records: [{ content: avatarsAccess.publicDomain.apply(withDot) }],
+  }, { ...withDns, deleteBeforeReplace: true });
+  // Привязка через API проверяет CNAME и ALIAS не принимает (domain_cname_invalid): уже привязанный
+  // домен BucketDomain не трогает, а заново привязать домен-зону можно только в панели.
+  new BucketDomain("avatars", {
+    projectId: project.id,
+    pool: s3Pool,
+    bucket: avatarsBucketResource.bucket,
+    domain: avatarsCustomDomainName,
+  }, { dependsOn: [record, avatarsAccess] });
 }
 
 export const projectId = project.id;
@@ -508,7 +555,9 @@ export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;
 export const s3Bucket = bucket.bucket;
 export const s3PublicDomain = bucketAccess.publicDomain;
-export const cdnCustomDomain = cdnDomain ?? null;
+// Свой домен CDN-ресурса (у аватарок — avatarsCustomDomain); HTTPS на них — после выпуска
+// сертификатов в панели
+export const cdnCustomDomain = cdnCustomDomainName ?? null;
 export const cdnResourceId = cdn?.id ?? null;
 export const cdnDefaultDomain = cdn?.cdnDomain ?? null;
 export const serviceUserName = serviceUser.name;
@@ -522,3 +571,4 @@ export const notebooksSecretKey = pulumi.secret(notebooksCredentials.secretKey);
 // Бакет аватарок: пишет тот же ключ Go API, публичный URL — https://<avatarsPublicDomain>/<ключ>
 export const avatarsBucket = avatarsBucketResource.bucket;
 export const avatarsPublicDomain = avatarsAccess.publicDomain;
+export const avatarsCustomDomain = avatarsCustomDomainName ?? null;

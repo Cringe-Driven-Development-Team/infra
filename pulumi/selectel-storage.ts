@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import { credentialsFromEnv, curl, projectToken, type Http, type HttpResult } from "./bootstrap/selectel-s3";
 
-// Тип бакета и CDN-ресурс — API Selectel, которых нет ни в провайдере selectel, ни в S3 API (ACL и
+// Тип бакета, CDN-ресурс и свои домены — API Selectel, которых нет ни в провайдере selectel, ни в S3 API (ACL и
 // Public Access Block Selectel не поддерживает). Здесь — функции API (тестируются с
 // подменой http, selectel-storage.test.ts) и dynamic-ресурсы Pulumi поверх них.
 // Все запросы — с project-токеном сервисного пользователя из selectel.env: токен идёт через stdin
@@ -149,6 +149,90 @@ export async function removeCdnResource(http: Http, token: string, id: string): 
 }
 
 // ---------------------------------------------------------------------------
+// Свои домены CDN-ресурса и бакета — CNAME в зоне DNS Selectel; записи создаёт index.ts, здесь —
+// привязка. Сертификаты своих доменов выпускают в панели, не здесь.
+// ---------------------------------------------------------------------------
+
+// Selectel сам проверяет CNAME и до этого домен не принимает: свежая запись — короткий повтор.
+// Это не ожидание распространения DNS: не успело — ошибка, повторный up.
+const bindWaiting = (w: Waiting) => ({
+  attempts: w.attempts ?? 18,
+  intervalMs: w.intervalMs ?? 10000,
+  sleep: w.sleep ?? defaultSleep,
+});
+
+async function patchCdnNames(http: Http, token: string, id: string, names: string[]) {
+  accepted(`Домены CDN-ресурса ${id}`, await request(http, token, "PATCH", `${cdnApi}/resources/${id}`, { names }));
+}
+
+// Домен, который ещё не CNAME на cdn_domain, CDN API отбрасывает молча, с тем же accept, — поэтому
+// после PATCH сверяем names через GET.
+export async function bindCdnDomain(http: Http, token: string, id: string, domain: string, w: Waiting = {}) {
+  const { attempts, intervalMs, sleep } = bindWaiting(w);
+  for (let i = 1; ; i++) {
+    const r = await getCdnResource(http, token, id);
+    if (r === undefined) throw new Error(`CDN-ресурса ${id} нет`);
+    if ((r.names ?? []).includes(domain)) return;
+    await patchCdnNames(http, token, id, [r.cdn_domain, domain]);
+    if (((await getCdnResource(http, token, id))?.names ?? []).includes(domain)) return;
+    if (i >= attempts) {
+      throw new Error(
+        `CDN-ресурс ${id} не принял домен ${domain} (${attempts} попыток): Selectel ещё не видит CNAME ` +
+          `${domain} → ${r.cdn_domain}. Повторите pulumi up.`,
+      );
+    }
+    await sleep(intervalMs);
+  }
+}
+
+export async function unbindCdnDomain(http: Http, token: string, id: string, domain: string) {
+  const r = await getCdnResource(http, token, id);
+  if (r === undefined || !(r.names ?? []).includes(domain)) return;
+  await patchCdnNames(http, token, id, (r.names as string[]).filter((n) => n !== domain));
+}
+
+export async function getBucketDomains(http: Http, token: string, pool: string, bucket: string): Promise<string[] | undefined> {
+  const res = await request(http, token, "GET", `${containerUrl(pool, bucket)}/domains`);
+  if (res.status === 404) return undefined;
+  if (!ok(res)) fail(`Домены бакета ${bucket}`, res);
+  return res.body.trim() === "" ? [] : json(`Домены бакета ${bucket}`, res).domains ?? [];
+}
+
+// Свой домен бакета — только CNAME на access.<пул>.storage.selcloud.ru (ALIAS и вершину зоны
+// Selectel отвергает); пока CNAME не виден — domain_lookup_failed / domain_cname_invalid.
+export async function bindBucketDomain(
+  http: Http, token: string, pool: string, bucket: string, domain: string, w: Waiting = {},
+) {
+  const { attempts, intervalMs, sleep } = bindWaiting(w);
+  if ((await getBucketDomains(http, token, pool, bucket))?.includes(domain)) return;
+  for (let i = 1; ; i++) {
+    const res = await request(http, token, "PUT", `${containerUrl(pool, bucket)}/domains`, { domain_name: domain });
+    if (ok(res)) return;
+    if (!/domain_lookup_failed|domain_cname_invalid/.test(res.body) || i >= attempts) {
+      fail(`Домен ${domain} бакета ${bucket} (попытка ${i})`, res);
+    }
+    await sleep(intervalMs);
+  }
+}
+
+// Отвязка в документации API не описана. DELETE по адресу домена уже отвечал без ошибки, оставив
+// домен привязанным, поэтому результат сверяем через GET и пробуем второй вид запроса — с доменом в теле.
+export async function unbindBucketDomain(http: Http, token: string, pool: string, bucket: string, domain: string) {
+  const bound = async () => (await getBucketDomains(http, token, pool, bucket))?.includes(domain) ?? false;
+  if (!(await bound())) return;
+  const url = `${containerUrl(pool, bucket)}/domains`;
+  await request(http, token, "DELETE", `${url}/${encodeURIComponent(domain)}`);
+  if (!(await bound())) return;
+  const res = await request(http, token, "DELETE", url, { domain_name: domain });
+  if (await bound()) {
+    throw new Error(
+      `Домен ${domain} остался привязан к бакету ${bucket} (HTTP ${res.status || "без ответа"}: ` +
+        `${res.body.slice(0, 200)}). Отвяжите его в панели: S3 → бакет → Домены — и повторите.`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Dynamic-ресурсы. Учётка — из окружения процесса провайдера (его запускает pulumi с тем же
 // окружением, что после source pulumi/bootstrap/env.sh), в стейт попадают только id и домены.
 // ---------------------------------------------------------------------------
@@ -209,7 +293,7 @@ export interface BucketAccessArgs {
 }
 
 // Тип бакета Selectel. Публичный — чтение объектов без авторизации через <uuid>.selstorage.ru;
-// только он годится источником CDN и для привязки своего домена (в панели).
+// только он годится источником CDN и для привязки своего домена (BucketDomain).
 export class BucketAccess extends pulumi.dynamic.Resource {
   declare public readonly publicDomain: pulumi.Output<string>;
   constructor(name: string, args: BucketAccessArgs, opts?: pulumi.CustomResourceOptions) {
@@ -263,10 +347,98 @@ export interface CdnResourceArgs {
   originHost: pulumi.Input<string>;
 }
 
-// HTTP CDN-ресурс Selectel. Свои домены и сертификат — в панели; cdnDomain (<id>.selcdn.net) — их цель.
+// HTTP CDN-ресурс Selectel. Свой домен — CdnDomain, его сертификат — в панели; cdnDomain (<id>.selcdn.net) — цель его CNAME.
 export class CdnResource extends pulumi.dynamic.Resource {
   declare public readonly cdnDomain: pulumi.Output<string>;
   constructor(name: string, args: CdnResourceArgs, opts?: pulumi.CustomResourceOptions) {
     super(cdnResourceProvider, name, { ...args, cdnDomain: undefined }, opts, "selectel-storage", "CdnResource");
+  }
+}
+
+interface CdnDomainInputs {
+  projectId: string;
+  resourceId: string;
+  domain: string;
+}
+
+const cdnDomainProvider: pulumi.dynamic.ResourceProvider<CdnDomainInputs> = {
+  async diff(_id, olds: any, news: CdnDomainInputs) {
+    const replaces = changed(olds, news, ["projectId", "resourceId", "domain"]);
+    const codeChanged = olds.__provider !== (news as any).__provider;
+    return { changes: replaces.length > 0 || codeChanged, replaces, deleteBeforeReplace: true };
+  },
+  async create(inputs: CdnDomainInputs) {
+    await bindCdnDomain(curl, await tokenFor(inputs.projectId), inputs.resourceId, inputs.domain);
+    return { id: `${inputs.resourceId}/${inputs.domain}`, outs: { ...inputs } };
+  },
+  async update(_id, _olds, news: CdnDomainInputs) {
+    return { outs: (await cdnDomainProvider.create(news)).outs };
+  },
+  async read(id, props: any) {
+    const r = await getCdnResource(curl, await tokenFor(props.projectId), props.resourceId);
+    if (r === undefined || !(r.names ?? []).includes(props.domain)) return { id: "", props: {} };
+    return { id, props };
+  },
+  async delete(_id, props: any) {
+    await unbindCdnDomain(curl, await tokenFor(props.projectId), props.resourceId, props.domain);
+  },
+};
+
+export interface CdnDomainArgs {
+  projectId: pulumi.Input<string>;
+  resourceId: pulumi.Input<string>;
+  domain: pulumi.Input<string>;
+}
+
+// Свой домен CDN-ресурса: домен в names ресурса. Домен — уже CNAME на cdnDomain ресурса (запись в
+// зоне создаётся раньше, dependsOn). Сертификат домена — в панели.
+export class CdnDomain extends pulumi.dynamic.Resource {
+  constructor(name: string, args: CdnDomainArgs, opts?: pulumi.CustomResourceOptions) {
+    super(cdnDomainProvider, name, args, opts, "selectel-storage", "CdnDomain");
+  }
+}
+
+interface BucketDomainInputs {
+  projectId: string;
+  pool: string;
+  bucket: string;
+  domain: string;
+}
+
+const bucketDomainProvider: pulumi.dynamic.ResourceProvider<BucketDomainInputs> = {
+  async diff(_id, olds: any, news: BucketDomainInputs) {
+    const replaces = changed(olds, news, ["projectId", "pool", "bucket", "domain"]);
+    const codeChanged = olds.__provider !== (news as any).__provider;
+    return { changes: replaces.length > 0 || codeChanged, replaces, deleteBeforeReplace: true };
+  },
+  async create(inputs: BucketDomainInputs) {
+    await bindBucketDomain(curl, await tokenFor(inputs.projectId), inputs.pool, inputs.bucket, inputs.domain);
+    return { id: `${inputs.projectId}/${inputs.bucket}/${inputs.domain}`, outs: { ...inputs } };
+  },
+  async update(_id, _olds, news: BucketDomainInputs) {
+    return { outs: (await bucketDomainProvider.create(news)).outs };
+  },
+  async read(id, props: any) {
+    const domains = await getBucketDomains(curl, await tokenFor(props.projectId), props.pool, props.bucket);
+    return domains?.includes(props.domain) ? { id, props } : { id: "", props: {} };
+  },
+  async delete(_id, props: any) {
+    await unbindBucketDomain(curl, await tokenFor(props.projectId), props.pool, props.bucket, props.domain);
+  },
+};
+
+export interface BucketDomainArgs {
+  projectId: pulumi.Input<string>;
+  pool: pulumi.Input<string>;
+  bucket: pulumi.Input<string>;
+  domain: pulumi.Input<string>;
+}
+
+// Свой домен публичного бакета. Привязка через API проходит, только пока домен — CNAME на
+// access.<пул>.storage.selcloud.ru; уже привязанный домен ресурс не трогает. Сертификат домена — в панели: без него хранилище отвечает на домене
+// своим сертификатом *.<пул>.storage.selcloud.ru, а HTTP перенаправляет на HTTPS.
+export class BucketDomain extends pulumi.dynamic.Resource {
+  constructor(name: string, args: BucketDomainArgs, opts?: pulumi.CustomResourceOptions) {
+    super(bucketDomainProvider, name, args, opts, "selectel-storage", "BucketDomain");
   }
 }
