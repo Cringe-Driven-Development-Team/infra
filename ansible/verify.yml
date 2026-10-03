@@ -14,20 +14,49 @@
           - groups['all'] | length == 1
         fail_msg: "Ожидалась одна VPS, в inventory: {{ groups['all'] }}"
 
-    - name: HTTPS на домене отвечает 200
+    # Caddy отдаёт корневой index.html бакета релизов клиента. До первой выкатки клиента файла
+    # в бакете нет, и хранилище отвечает 404 — стенд при этом настроен верно.
+    - name: HTTPS на домене отвечает
       ansible.builtin.uri:
         url: "https://{{ app_domain }}/"
-        status_code: 200
+        status_code: [200, 404]
         return_content: true
       register: https_ok
       until: https_ok is succeeded
       retries: 5
       delay: 5
 
-    - name: Проверить содержимое ответа
+    - name: Ответ пришёл из бакета релизов и не кэшируется
       ansible.builtin.assert:
-        that: https_ok.content | trim == 'ok'
-        fail_msg: "Домен {{ app_domain }} отвечает не тем, чем должен"
+        that:
+          - https_ok.cache_control | default('') == 'no-cache'
+          - https_ok.status == 404 or https_ok.content is search('<meta name="release"')
+        fail_msg: >-
+          Домен {{ app_domain }} отвечает не index.html клиента:
+          статус {{ https_ok.status }}, Cache-Control {{ https_ok.cache_control | default('нет') }}
+
+    - name: Клиент ещё не выкатан
+      ansible.builtin.debug:
+        msg: "В бакете нет index.html: {{ app_domain }} отвечает 404 до первой выкатки клиента"
+      when: https_ok.status == 404
+
+    # Прямой заход на маршрут SPA: тот же index.html, а не 404 от несуществующего ключа
+    - name: Вложенный маршрут отдаёт тот же ответ
+      ansible.builtin.uri:
+        url: "https://{{ app_domain }}/notebooks/verify"
+        status_code: [200, 404]
+        return_content: true
+      register: spa_route
+      failed_when: spa_route.status != https_ok.status or spa_route.content != https_ok.content
+
+    # Путь API не должен проваливаться в index.html клиента
+    - name: Путь API не отдаёт клиент
+      ansible.builtin.uri:
+        url: "https://{{ app_domain }}/api/v1/verify"
+        status_code: [200, 401, 403, 404, 503]
+        return_content: true
+      register: api_route
+      failed_when: api_route.content is search('<meta name="release"')
 
     - name: Выдать информацию о сертификате
       ansible.builtin.shell:
