@@ -221,6 +221,8 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   `reverse_proxy` на публичный домен бакета `frontend_s3_domain` (`pulumi stack output
   s3PublicDomain`) с `Host` бакета. `Cookie` и `Authorization` в хранилище не уходят, в ответе —
   `Cache-Control: no-cache`.
+- В бакет уходят только `GET` и `HEAD` и без query string запроса; остальные методы получают `405`.
+- `/api/v1/*` отвечает `503` с телом `API is not deployed`, пока Go API нет в Compose.
 - Чанки браузер грузит с CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
   настраивать не нужно: CDN-ресурс Selectel на запрос с `Origin` сам отвечает
   `Access-Control-Allow-Origin: *`. Проверка:
@@ -233,9 +235,13 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 ## Проверки verify.yml
 
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
-- `https://<app_domain>/` отдаёт `index.html` клиента из бакета релизов (`<meta name="release">`,
-  `Cache-Control: no-cache`); до первой выкатки клиента — `404` от хранилища, это не ошибка;
-- вложенный маршрут SPA (`/notebooks/…`) отдаёт тот же ответ, путь `/api/v1/*` клиент не отдаёт;
+- `https://<app_domain>/` отдаёт `index.html` клиента из бакета релизов с `Cache-Control: no-cache`,
+  в нём `<meta name="release">` — релиз `stable` из `current.json` бакета
+  (`https://<frontend_s3_domain>/current.json`). `404` от хранилища допустим, только пока
+  `current.json` нет — клиент ещё не выкатан. Домен бакета кэширует ответы на 60 секунд: сразу после
+  выкатки клиента проверка может отстать, повторить через минуту;
+- вложенный маршрут SPA (`/notebooks/…`) отдаёт тот же ответ, `POST` на него — `405`;
+- путь `/api/v1/*` отвечает `503` с телом `API is not deployed`;
 - сертификат от Let's Encrypt;
 - на публичном IP открыты 22/80/443 и закрыты 5432, 8080, 2375, 2376 (ловит порты Docker
   в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
