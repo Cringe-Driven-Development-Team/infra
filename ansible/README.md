@@ -69,6 +69,18 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 |---|---|
 | `vault_postgres_password` | `postgres_password` |
 | `vault_jwt_secret` | `jwt_secret` |
+| `vault_notebooks_s3_access_key` | `notebooks_s3_access_key` |
+| `vault_notebooks_s3_secret_key` | `notebooks_s3_secret_key` |
+
+`notebooks_s3_*` — S3-ключ Go API к приватному бакету ноутбуков, значения — выходы Pulumi
+`notebooksAccessKey` и `notebooksSecretKey` (`pulumi stack output <имя> --show-secrets`, оба секретные;
+`pulumi/README.md`, «Бакет ноутбуков»). Ключ перевыпущен (пересоздан стек или пользователь) — обновить
+оба значения через `ansible-vault edit`. В `.env` Go API они попадут через роль `app`
+([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)).
+
+Несекретные параметры S3 для бэка лежат открыто в `group_vars/all/vars.yml`: `s3_endpoint`,
+`s3_region`, `s3_force_path_style`, `notebooks_bucket`, `avatars_bucket`, `avatars_public_domain` —
+значения из `pulumi stack output` (после пересоздания стека сверить, домен аватарок меняется).
 
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
@@ -98,7 +110,7 @@ ansible-vault edit inventory/group_vars/all/vault.yml    # $EDITOR, при со�
 ```
 
 Только `edit`: `decrypt` → правка → `encrypt` оставляет на диске открытый текст, который легко
-закоммитить. Значения секретов — `openssl rand -base64 32`.
+закоммитить. Значения секретов — `openssl rand -base64 32` (кроме `notebooks_s3_*` — они из Pulumi).
 
 ### CI
 
@@ -142,9 +154,25 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 утёкшим паролем. Меняются сами секреты:
 
 1. новый пароль vault — как в «Смена пароля»;
-2. `ansible-vault edit` — новые значения всех секретов (`openssl rand -base64 32`);
-3. выкатить: пароль Postgres меняется и в самой БД, смена `jwt_secret` разлогинивает пользователей;
-4. обновить `ANSIBLE_VAULT_PASSWORD` в CI.
+2. `ansible-vault edit` — новые значения секретов (`openssl rand -base64 32`), **кроме**
+   `notebooks_s3_*`;
+3. S3-ключ Go API (`notebooks_s3_*`) случайной строкой не заменить: бэк получит `InvalidAccessKeyId`,
+   а утёкший ключ останется рабочим (чтение, запись и удаление ноутбуков и аватарок). Ключ
+   перевыпускается в Pulumi:
+
+   ```bash
+   cd ../pulumi
+   pulumi stack --show-urns | grep notebooks-s3     # URN ресурса IamS3CredentialsV1 "notebooks-s3"
+   pulumi up --replace '<URN notebooks-s3>'
+   pulumi stack output notebooksAccessKey --show-secrets
+   pulumi stack output notebooksSecretKey --show-secrets
+   ```
+
+   новые значения — в `vault.yml` через `ansible-vault edit`;
+4. выкатить: пароль Postgres меняется и в самой БД, смена `jwt_secret` разлогинивает пользователей;
+5. убедиться, что старый S3-ключ больше не действует: запрос с ним к бакету ноутбуков должен
+   вернуть `InvalidAccessKeyId`;
+6. обновить `ANSIBLE_VAULT_PASSWORD` в CI.
 
 ## Что настраивается
 

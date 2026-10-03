@@ -21,3 +21,16 @@ app_compose_dir: /opt/cellestial
 # Роли и шаблоны используют только открытые имена.
 postgres_password: "{{ vault_postgres_password }}"
 jwt_secret: "{{ vault_jwt_secret }}"
+# S3-ключ Go API к бакетам ноутбуков и аватарок (выходы Pulumi notebooksAccessKey / notebooksSecretKey)
+notebooks_s3_access_key: "{{ vault_notebooks_s3_access_key }}"
+notebooks_s3_secret_key: "{{ vault_notebooks_s3_secret_key }}"
+
+# Несекретные параметры S3 для Go API — значения из Pulumi (cd pulumi && pulumi stack output).
+# После пересоздания стека сверить: публичный домен аватарок меняется вместе с бакетом.
+s3_endpoint: https://s3.ru-7.storage.selcloud.ru   # выход s3Endpoint
+s3_region: ru-7                                    # infra:s3Pool, он же регион подписи
+s3_force_path_style: true                          # S3-клиент бэка — path-style
+notebooks_bucket: cellestial-notebooks-0           # выход notebooksBucket
+avatars_bucket: cellestial-avatars-0               # выход avatarsBucket
+# Публичный URL аватарки — https://<avatars_public_domain>/<ключ> (выход avatarsPublicDomain)
+avatars_public_domain: 6d3ca53b-592c-4af6-97b8-756c47690941.selstorage.ru

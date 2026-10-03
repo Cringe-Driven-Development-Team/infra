@@ -53,11 +53,13 @@ export async function getBucketType(http: Http, token: string, pool: string, buc
   return json(`Настройки бакета ${bucket}`, res).general?.type;
 }
 
-// Публичный домен <uuid>.selstorage.ru выдаётся бакету при переводе в public; у приватного — нет.
+// Публичный домен <uuid>.selstorage.ru выдаётся бакету при переводе в public; у приватного — нет:
+// на pubdomains Selectel отвечает ему 204 с пустым телом (read при pulumi refresh падал на разборе JSON).
 export async function getPublicDomain(http: Http, token: string, pool: string, bucket: string): Promise<string | undefined> {
   const res = await request(http, token, "GET", `${containerUrl(pool, bucket)}/pubdomains`);
-  if (res.status === 404) return undefined;
+  if (res.status === 404 || res.status === 204) return undefined;
   if (!ok(res)) fail(`Публичный домен бакета ${bucket}`, res);
+  if (res.body.trim() === "") return undefined;
   const list: { container: string; uuid: string }[] = json(`Публичный домен бакета ${bucket}`, res);
   const found = list.find((d) => d.container === bucket);
   return found ? `${found.uuid}.selstorage.ru` : undefined;
@@ -166,7 +168,10 @@ interface BucketAccessInputs {
 const bucketAccessProvider: pulumi.dynamic.ResourceProvider<BucketAccessInputs> = {
   async diff(_id, olds: BucketAccessInputs, news: BucketAccessInputs) {
     const replaces = changed(olds, news, ["projectId", "pool", "bucket"]);
-    const changes = replaces.length > 0 || olds.type !== news.type;
+    // Код провайдера лежит в стейте (__provider), refresh и delete исполняют его оттуда. Без этого
+    // сравнения правка провайдера в стейт не попадает: up видит «unchanged», refresh идёт старым кодом.
+    const codeChanged = (olds as any).__provider !== (news as any).__provider;
+    const changes = replaces.length > 0 || olds.type !== news.type || codeChanged;
     return { changes, replaces, deleteBeforeReplace: true };
   },
   async create(inputs: BucketAccessInputs) {

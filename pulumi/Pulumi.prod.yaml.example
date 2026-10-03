@@ -44,3 +44,8 @@ config:
   infra:s3Pool: ru-1
   infra:s3Bucket: "<глобально-уникальное-имя-бакета>"
   # infra:s3Public: false   # по умолчанию бакет публичный (<uuid>.selstorage.ru)
+  # Приватный бакет ноутбуков пользователей (тот же пул) и сервисный пользователь Go API к нему
+  infra:notebooksBucket: "<глобально-уникальное-имя-бакета>"
+  # infra:notebooksUserName: cellestialNotebooksUser   # уникально в аккаунте
+  # Публичный бакет аватарок (тот же пул); пишет тот же пользователь Go API
+  infra:avatarsBucket: "<глобально-уникальное-имя-бакета>"
