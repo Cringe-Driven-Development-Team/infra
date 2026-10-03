@@ -147,6 +147,10 @@ ansible-vault edit inventory/group_vars/all/vault.yml    # поправить (�
 - **Утечка пароля**: `rekey` не помогает — старый шифротекст остаётся в истории git и открывается
   утёкшим паролем. Меняются сами секреты: новый пароль vault, новые значения в `vault.yml`
   (`openssl rand -base64 32`), выкатка (пароль Postgres — и в самой БД), обновить секрет в CI.
+  S3-ключ Go API (`vault_notebooks_s3_*`) случайной строкой не заменить — он перевыпускается в Pulumi:
+  `pulumi up --replace '<URN notebooks-s3>'` (URN — из `pulumi stack --show-urns`), новые
+  `notebooksAccessKey` / `notebooksSecretKey` — в `vault.yml`, выкатка, затем проверить запросом, что
+  старый ключ больше не действует. По шагам — `ansible/README.md`, «Утечка пароля».
 
 ## 6. Проверки руками (DoD)
 

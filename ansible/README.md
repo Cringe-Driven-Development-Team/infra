@@ -150,9 +150,25 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 утёкшим паролем. Меняются сами секреты:
 
 1. новый пароль vault — как в «Смена пароля»;
-2. `ansible-vault edit` — новые значения всех секретов (`openssl rand -base64 32`);
-3. выкатить: пароль Postgres меняется и в самой БД, смена `jwt_secret` разлогинивает пользователей;
-4. обновить `ANSIBLE_VAULT_PASSWORD` в CI.
+2. `ansible-vault edit` — новые значения секретов (`openssl rand -base64 32`), **кроме**
+   `notebooks_s3_*`;
+3. S3-ключ Go API (`notebooks_s3_*`) случайной строкой не заменить: бэк получит `InvalidAccessKeyId`,
+   а утёкший ключ останется рабочим (чтение, запись и удаление ноутбуков и аватарок). Ключ
+   перевыпускается в Pulumi:
+
+   ```bash
+   cd ../pulumi
+   pulumi stack --show-urns | grep notebooks-s3     # URN ресурса IamS3CredentialsV1 "notebooks-s3"
+   pulumi up --replace '<URN notebooks-s3>'
+   pulumi stack output notebooksAccessKey --show-secrets
+   pulumi stack output notebooksSecretKey --show-secrets
+   ```
+
+   новые значения — в `vault.yml` через `ansible-vault edit`;
+4. выкатить: пароль Postgres меняется и в самой БД, смена `jwt_secret` разлогинивает пользователей;
+5. убедиться, что старый S3-ключ больше не действует: запрос с ним к бакету ноутбуков должен
+   вернуть `InvalidAccessKeyId`;
+6. обновить `ANSIBLE_VAULT_PASSWORD` в CI.
 
 ## Что настраивается
 
