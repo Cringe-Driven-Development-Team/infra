@@ -57,8 +57,9 @@ export async function getBucketType(http: Http, token: string, pool: string, buc
 // на pubdomains Selectel отвечает ему 204 с пустым телом (read при pulumi refresh падал на разборе JSON).
 export async function getPublicDomain(http: Http, token: string, pool: string, bucket: string): Promise<string | undefined> {
   const res = await request(http, token, "GET", `${containerUrl(pool, bucket)}/pubdomains`);
-  if (res.status === 404 || res.status === 204 || res.body.trim() === "") return undefined;
+  if (res.status === 404 || res.status === 204) return undefined;
   if (!ok(res)) fail(`Публичный домен бакета ${bucket}`, res);
+  if (res.body.trim() === "") return undefined;
   const list: { container: string; uuid: string }[] = json(`Публичный домен бакета ${bucket}`, res);
   const found = list.find((d) => d.container === bucket);
   return found ? `${found.uuid}.selstorage.ru` : undefined;
