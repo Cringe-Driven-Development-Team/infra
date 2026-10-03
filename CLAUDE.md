@@ -33,13 +33,16 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   запросы, через S3 API анонимный запрос получает `403` при любой политике.
 - При `infra:cdn: true` — CDN-ресурс `<infra:name>-cdn` с бакетом источником (dynamic-ресурс
   `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
-- Свои домены — **CNAME внутри зоны `cellestial.ru.`**, без зон-поддоменов, и привязка dynamic-ресурсами
-  (`pulumi/selectel-storage.ts`); сертификатов Pulumi не выпускает:
-  - `infra:cdnDomain` (`cdn.cellestial.ru`) → CNAME на `cdnDefaultDomain`, `CdnDomain`: домен в `names`
-    CDN-ресурса; выход `cdnCustomDomain`.
-  - `infra:avatarsDomain` (`avatars.cellestial.ru`) → CNAME на
-    `access.<infra:s3Pool>.storage.selcloud.ru`, `BucketDomain`: домен бакета аватарок
-    `infra:avatarsBucket`; выход `avatarsCustomDomain`.
+- Свои домены и их привязка dynamic-ресурсами (`pulumi/selectel-storage.ts`); сертификатов Pulumi не
+  выпускает:
+  - `infra:cdnDomain` (`cdn.cellestial.ru`) — **CNAME внутри зоны `cellestial.ru.`** на
+    `cdnDefaultDomain`, без зоны-поддомена; `CdnDomain`: домен в `names` CDN-ресурса; выход
+    `cdnCustomDomain`.
+  - `infra:avatarsDomain` (`avatars.cellestial.ru`) — **отдельная зона DNS** `avatars.cellestial.ru.` в
+    проекте `infra-shared` (`infra:dnsProjectId`) и в ней ALIAS на
+    `access.<infra:s3Pool>.storage.selcloud.ru`; `BucketDomain`: домен бакета аватарок
+    `infra:avatarsBucket`; выход `avatarsCustomDomain`. NS-делегирование из `cellestial.ru.` ставит
+    Selectel.
   - У бакета релизов своего домена нет (`s3.cellestial.ru` не делаем) — только `s3PublicDomain`.
 
 ### Руками в панели Selectel
@@ -58,9 +61,11 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 
 - NS-делегирование поддомена в `cellestial.ru.`: Selectel ставит его сам при создании зоны-поддомена,
   своя NS-запись — `this_rrset_is_already_exists`.
-- Зону-поддомен под свой домен (`cdn.`, `avatars.cellestial.ru`) и ALIAS: на вершине зоны CNAME
-  невозможен, ALIAS не принимают ни привязка домена бакета (`domain_cname_invalid`), ни CDN. Только
-  CNAME-запись в `cellestial.ru.`.
+- Зону-поддомен под `cdn.cellestial.ru`: на вершине зоны CNAME невозможен, а ALIAS CDN не принимает.
+  Только CNAME-запись в `cellestial.ru.`.
+- Привязку домена бакета через API при домене-зоне (`avatars.cellestial.ru`): Selectel проверяет CNAME и
+  на ALIAS отвечает `domain_cname_invalid`. `BucketDomain` уже привязанный домен не трогает; если
+  привязка слетела — вернуть её в панели (S3 → бакет → Домены), а не через `up`.
 - `names` в теле создания/изменения `CdnResource`: домен, который ещё не CNAME на CDN, API молча
   отбрасывает при `accept`. Привязка — отдельный `CdnDomain` после записи, со сверкой через `GET`.
 - Зону-поддомен в проекте стека (`project.id`): Selectel отвечает `root_zone_already_belongs_to_another_user`

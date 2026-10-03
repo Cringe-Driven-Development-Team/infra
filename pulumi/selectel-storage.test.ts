@@ -115,4 +115,26 @@ describe("домен бакета", () => {
     await unbindBucketDomain(http, "tok", "ru-7", "b", "s3.example.ru");
     expect(calls.map((c) => c.method)).toEqual(["GET"]);
   });
+
+  test("отвязка сверяется через GET: домен остался — второй запрос, потом ошибка с подсказкой про панель", async () => {
+    const { http, calls } = fakeHttp((method) =>
+      method === "GET" ? jsonRes({ domains: ["s3.example.ru"] }) : { status: 404, body: "" });
+    await expect(unbindBucketDomain(http, "tok", "ru-7", "b", "s3.example.ru")).rejects.toThrow(/остался привязан.*панели/s);
+    const deletes = calls.filter((c) => c.method === "DELETE");
+    expect(deletes.map((c) => c.url)).toEqual([
+      "https://api.ru-7.storage.selcloud.ru/v2/containers/b/domains/s3.example.ru",
+      "https://api.ru-7.storage.selcloud.ru/v2/containers/b/domains",
+    ]);
+  });
+
+  test("отвязка удалась первым запросом — второго нет", async () => {
+    let bound = true;
+    const { http, calls } = fakeHttp((method) => {
+      if (method === "GET") return jsonRes({ domains: bound ? ["s3.example.ru"] : [] });
+      bound = false;
+      return { status: 204, body: "" };
+    });
+    await unbindBucketDomain(http, "tok", "ru-7", "b", "s3.example.ru");
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
+  });
 });

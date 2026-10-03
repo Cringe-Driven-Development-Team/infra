@@ -58,9 +58,9 @@ const avatarsBucketName = cfg.require("avatarsBucket");
 const s3Public = cfg.getBoolean("s3Public") ?? true;
 // CDN-ресурс с бакетом источником; технический домен — <id>.selcdn.net.
 const cdnEnabled = cfg.getBoolean("cdn") ?? false;
-// Свои домены CDN-ресурса и бакета аватарок (например cdn.cellestial.ru, avatars.cellestial.ru):
-// CNAME в зоне infra:dnsZone и привязка (CdnDomain, BucketDomain). Сертификаты доменов выпускают в
-// панели. У бакета релизов своего домена нет.
+// Свои домены CDN-ресурса и бакета аватарок (например cdn.cellestial.ru, avatars.cellestial.ru) и их
+// привязка (CdnDomain, BucketDomain): у CDN — CNAME в зоне infra:dnsZone, у аватарок — своя зона DNS.
+// Сертификаты доменов выпускают в панели. У бакета релизов своего домена нет.
 const cdnCustomDomainName = cfg.get("cdnDomain");
 const avatarsCustomDomainName = cfg.get("avatarsDomain");
 if (cdnCustomDomainName && !cdnEnabled) {
@@ -473,7 +473,7 @@ const dnsProvider = new selectel.Provider("dns", {
   authRegion: selectelCfg.get("authRegion"),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || cdnCustomDomainName || avatarsCustomDomainName
+const parentZone = appDomain || cdnCustomDomainName
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -490,18 +490,6 @@ if (appDomain && parentZone) {
   }, { ...withDns, deleteBeforeReplace: true });
 }
 
-// CNAME своего домена в зоне infra:dnsZone — обычная запись внутри зоны, не зона-поддомен: у зоны на
-// вершине CNAME невозможен, а ALIAS не принимают ни CDN, ни привязка домена бакета.
-const cnameRecord = (logicalName: string, domainName: string, target: pulumi.Input<string>) =>
-  new selectel.DomainsRrsetV2(logicalName, {
-    zoneId: parentZone!.id,
-    projectId: dnsProjectId,
-    name: withDot(domainName),
-    type: "CNAME",
-    ttl: 300,
-    records: [{ content: pulumi.output(target).apply(withDot) }],
-  }, { ...withDns, deleteBeforeReplace: true });
-
 // CDN-ресурс с публичным бакетом источником; чанки клиент грузит с cdnDefaultDomain или со своего
 // домена infra:cdnDomain.
 let cdn: CdnResource | undefined;
@@ -512,8 +500,16 @@ if (cdnEnabled) {
     originHost: bucketAccess.publicDomain,
   });
   if (cdnCustomDomainName) {
-    // Домен, который ещё не CNAME на cdnDomain, CDN API не сохраняет: сначала запись, потом привязка
-    const record = cnameRecord("cdn", cdnCustomDomainName, cdn.cdnDomain);
+    // Запись внутри зоны, не зона-поддомен: домен, который не CNAME на cdnDomain, CDN API не сохраняет,
+    // а на вершине зоны CNAME невозможен.
+    const record = new selectel.DomainsRrsetV2("cdn", {
+      zoneId: parentZone!.id,
+      projectId: dnsProjectId,
+      name: withDot(cdnCustomDomainName),
+      type: "CNAME",
+      ttl: 300,
+      records: [{ content: cdn.cdnDomain.apply(withDot) }],
+    }, { ...withDns, deleteBeforeReplace: true });
     new CdnDomain("cdn", {
       projectId: project.id,
       resourceId: cdn.id,
@@ -522,10 +518,29 @@ if (cdnEnabled) {
   }
 }
 
-// Свой домен бакета аватарок: CNAME на access.<пул>.storage.selcloud.ru — адрес, по которому хранилище
-// пула отдаёт публичные бакеты по своим доменам (бакет выбирается по Host).
+// Свой домен бакета аватарок — отдельная зона DNS (не запись в infra:dnsZone). Зона — в проекте
+// родительской зоны: в проекте стека Selectel отвечает root_zone_already_belongs_to_another_user.
+// NS-делегирование из родительской зоны Selectel ставит сам, своей NS-записи не нужно.
+// На вершине зоны CNAME невозможен, поэтому ALIAS на access.<пул>.storage.selcloud.ru — адрес, по
+// которому хранилище пула отдаёт публичные бакеты по своим доменам (бакет выбирается по Host).
 if (avatarsCustomDomainName) {
-  const record = cnameRecord("avatars", avatarsCustomDomainName, `access.${s3Pool}.storage.selcloud.ru`);
+  // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
+  const avatarsZone = new selectel.DomainsZoneV2("avatars", {
+    name: withDot(avatarsCustomDomainName),
+    projectId: dnsProjectId,
+  // infra:avatarsZoneImport — имя уже существующей зоны: первый up берёт её в стейт, а не создаёт
+  // (вторую зону с тем же именем Selectel не даст). После импорта ключ из конфига убрать.
+  }, { ...withDns, deleteBeforeReplace: true, import: cfg.get("avatarsZoneImport") });
+  const record = new selectel.DomainsRrsetV2("avatars-alias", {
+    zoneId: avatarsZone.id,
+    projectId: dnsProjectId,
+    name: withDot(avatarsCustomDomainName),
+    type: "ALIAS",
+    ttl: 300,
+    records: [{ content: `access.${s3Pool}.storage.selcloud.ru.` }],
+  }, { ...withDns, deleteBeforeReplace: true });
+  // Привязка через API проверяет CNAME и ALIAS не принимает (domain_cname_invalid): уже привязанный
+  // домен BucketDomain не трогает, а заново привязать домен-зону можно только в панели.
   new BucketDomain("avatars", {
     projectId: project.id,
     pool: s3Pool,

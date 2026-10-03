@@ -206,17 +206,22 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 ## Свои домены
 
 `infra:cdnDomain` и `infra:avatarsDomain` — свои домены CDN-ресурса и бакета аватарок
-(`infra:avatarsBucket`); у бакета релизов своего домена нет. Оба — CNAME-записи внутри зоны `infra:dnsZone` (не зоны-поддомены), привязка — dynamic-ресурсы
-`CdnDomain` и `BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
+(`infra:avatarsBucket`); у бакета релизов своего домена нет. Привязка — dynamic-ресурсы `CdnDomain` и
+`BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
 
 | | CDN (`cdn.cellestial.ru`) | Бакет аватарок (`avatars.cellestial.ru`) |
 |---|---|---|
-| CNAME | `<id>.selcdn.net.` (`cdnDefaultDomain`) | `access.<infra:s3Pool>.storage.selcloud.ru.` |
+| DNS | CNAME в зоне `infra:dnsZone` на `<id>.selcdn.net.` | своя зона `avatars.cellestial.ru.` (проект `infra:dnsProjectId`), в ней ALIAS на `access.<infra:s3Pool>.storage.selcloud.ru.` |
 | Привязка | `PATCH /cdn/v3/resources/<id>` — `names`, сверка через `GET` | `PUT /v2/containers/<бакет>/domains` |
 | Сертификат (руками) | панель → CDN → ресурс → сертификаты | панель → S3 → SSL-сертификаты |
 
-- Selectel сам проверяет CNAME при привязке, поэтому на ней короткий повтор (до трёх минут); не успело —
-  `up` падает с понятной ошибкой, повторный `up` продолжает. Распространения DNS `up` не ждёт.
+- CDN: Selectel сам проверяет CNAME при привязке, поэтому на ней короткий повтор (до трёх минут); не
+  успело — `up` падает с понятной ошибкой, повторный `up` продолжает. Распространения DNS `up` не ждёт.
+- Аватарки: на вершине зоны CNAME невозможен, поэтому в зоне ALIAS. Привязка домена бакета через API
+  проверяет именно CNAME и на ALIAS отвечает `domain_cname_invalid`: `BucketDomain` не трогает уже
+  привязанный домен, а слетевшую привязку возвращают в панели (S3 → бакет → Домены).
+- Зона уже существует (создана руками) — первый `up` берёт её в стейт:
+  `pulumi config set infra:avatarsZoneImport avatars.cellestial.ru.`, после `up` ключ убрать.
 - `access.<пул>.storage.selcloud.ru` — адрес хранилища пула для своих доменов: бакет выбирается по
   `Host`. Проверка, что домен ведёт в бакет (до сертификата — с `-k`): ответ с заголовками
   `x-container-storage-policy-*`, как у технического домена; у непривязанного `Host` их нет.
@@ -226,7 +231,9 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
   curl -sI  "https://$(pulumi stack output avatarsPublicDomain)/x"
   ```
 - Без сертификата свой домен бакета по HTTPS отвечает сертификатом `*.<пул>.storage.selcloud.ru`, а
-  HTTP перенаправляет на HTTPS — Caddy и бэк остаются на технических доменах `<uuid>.selstorage.ru`.
+  HTTP перенаправляет на HTTPS — бэк остаётся на техническом домене `<uuid>.selstorage.ru`.
+- Отвязка домена бакета (`pulumi destroy`, смена домена) сверяется через `GET`; не вышло — ошибка с
+  подсказкой отвязать в панели.
 - Тесты функций API: `bun test selectel-storage.test.ts`.
 
 ## Передача в Ansible

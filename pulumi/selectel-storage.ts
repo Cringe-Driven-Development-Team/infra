@@ -215,10 +215,21 @@ export async function bindBucketDomain(
   }
 }
 
+// Отвязка в документации API не описана. DELETE по адресу домена уже отвечал без ошибки, оставив
+// домен привязанным, поэтому результат сверяем через GET и пробуем второй вид запроса — с доменом в теле.
 export async function unbindBucketDomain(http: Http, token: string, pool: string, bucket: string, domain: string) {
-  if (!(await getBucketDomains(http, token, pool, bucket))?.includes(domain)) return;
-  const res = await request(http, token, "DELETE", `${containerUrl(pool, bucket)}/domains/${encodeURIComponent(domain)}`);
-  if (!ok(res) && res.status !== 404) fail(`Отвязка домена ${domain} от бакета ${bucket}`, res);
+  const bound = async () => (await getBucketDomains(http, token, pool, bucket))?.includes(domain) ?? false;
+  if (!(await bound())) return;
+  const url = `${containerUrl(pool, bucket)}/domains`;
+  await request(http, token, "DELETE", `${url}/${encodeURIComponent(domain)}`);
+  if (!(await bound())) return;
+  const res = await request(http, token, "DELETE", url, { domain_name: domain });
+  if (await bound()) {
+    throw new Error(
+      `Домен ${domain} остался привязан к бакету ${bucket} (HTTP ${res.status || "без ответа"}: ` +
+        `${res.body.slice(0, 200)}). Отвяжите его в панели: S3 → бакет → Домены — и повторите.`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -423,8 +434,8 @@ export interface BucketDomainArgs {
   domain: pulumi.Input<string>;
 }
 
-// Свой домен публичного бакета. Домен — уже CNAME на access.<пул>.storage.selcloud.ru (запись в зоне
-// создаётся раньше, dependsOn). Сертификат домена — в панели: без него хранилище отвечает на домене
+// Свой домен публичного бакета. Привязка через API проходит, только пока домен — CNAME на
+// access.<пул>.storage.selcloud.ru; уже привязанный домен ресурс не трогает. Сертификат домена — в панели: без него хранилище отвечает на домене
 // своим сертификатом *.<пул>.storage.selcloud.ru, а HTTP перенаправляет на HTTPS.
 export class BucketDomain extends pulumi.dynamic.Resource {
   constructor(name: string, args: BucketDomainArgs, opts?: pulumi.CustomResourceOptions) {

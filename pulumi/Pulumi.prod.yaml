@@ -21,6 +21,7 @@ config:
   infra:cdn: "true"
   infra:cdnDomain: cdn.cellestial.ru
   infra:avatarsDomain: avatars.cellestial.ru
+  infra:avatarsZoneImport: avatars.cellestial.ru.
   infra:s3Pool: ru-7
   infra:s3Bucket: cellestial-release-0
   infra:s3PublicRead: "false"
