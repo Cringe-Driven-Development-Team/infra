@@ -218,36 +218,31 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 (`releases/{sha}/`), корневой `index.html` бакета — копия `index.html` текущего релиза.
 
 - Caddy на всех путях, кроме `/api/v1/*`, отдаёт этот `index.html`: `rewrite` на `/index.html` и
-  `reverse_proxy` на свой домен бакета `frontend_s3_domain` (`pulumi stack output
-  s3CustomDomain`) с этим же `Host`. `Cookie` и `Authorization` в хранилище не уходят, в ответе —
+  `reverse_proxy` на публичный домен бакета `frontend_s3_domain` (`pulumi stack output
+  s3PublicDomain`) с `Host` бакета. `Cookie` и `Authorization` в хранилище не уходят, в ответе —
   `Cache-Control: no-cache`.
 - В бакет уходят только `GET` и `HEAD` и без query string запроса; остальные методы получают `405`.
 - `/api/v1/*` отвечает `503` с телом `API is not deployed`, пока Go API нет в Compose.
-- Чанки браузер грузит со своего домена CDN `frontend_cdn_domain` (`pulumi stack output
-  cdnCustomDomain`; `<script type="module" crossorigin>`, запрос в режиме CORS). CORS
+- Чанки браузер грузит с CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
   настраивать не нужно: CDN-ресурс Selectel на запрос с `Origin` сам отвечает
   `Access-Control-Allow-Origin: *`. Проверка:
 
   ```bash
-  curl -sI -H 'Origin: https://cellestial.ru' "https://$(cd ../pulumi && pulumi stack output cdnCustomDomain)/index.html" \
+  curl -sI -H 'Origin: https://cellestial.ru' "https://$(cd ../pulumi && pulumi stack output cdnDefaultDomain)/index.html" \
     | grep -i access-control-allow-origin
   ```
-- Оба домена и их сертификаты ведёт Pulumi (`infra:s3Domain`, `infra:cdnDomain`). Выкатывать роль
-  `caddy` на новый `frontend_s3_domain` — только когда домен отвечает по HTTPS
-  (`curl -I https://s3.cellestial.ru/current.json`): иначе Caddy отвечает `502` на всех путях клиента.
 
 ## Проверки verify.yml
 
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
 - `https://<app_domain>/` отдаёт `index.html` клиента из бакета релизов с `Cache-Control: no-cache`,
   в нём `<meta name="release">` — релиз `stable` из `current.json` бакета
-  (`https://<frontend_s3_domain>/current.json`); тот же указатель отдаёт `frontend_cdn_domain`, с
-  `Access-Control-Allow-Origin` на запрос с `Origin`. `404` от хранилища допустим, только пока
+  (`https://<frontend_s3_domain>/current.json`). `404` от хранилища допустим, только пока
   `current.json` нет — клиент ещё не выкатан. Домен бакета кэширует ответы на 60 секунд: сразу после
   выкатки клиента проверка может отстать, повторить через минуту;
 - вложенный маршрут SPA (`/notebooks/…`) отдаёт тот же ответ, `POST` на него — `405`;
 - путь `/api/v1/*` отвечает `503` с телом `API is not deployed`;
-- сертификат от Let's Encrypt — у `app_domain`, `frontend_s3_domain` и `frontend_cdn_domain`;
+- сертификат от Let's Encrypt;
 - на публичном IP открыты 22/80/443 и закрыты 5432, 8080, 2375, 2376 (ловит порты Docker
   в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
 - ufw: active, `deny (incoming)`, разрешающих правил ровно `firewall_rules` из
@@ -256,4 +251,4 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   `kbdinteractiveauthentication no`, `allowtcpforwarding no`;
 - вне allowlist (22/80/443) на интерфейсах, отличных от loopback, ничего не слушает.
 
-CDN-ресурс, свои домены бакета и CDN и их сертификаты создаёт Pulumi (`pulumi/README.md`, «Свои домены»).
+CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi при `infra:s3PublicRead=true`).

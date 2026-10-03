@@ -33,36 +33,28 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   запросы, через S3 API анонимный запрос получает `403` при любой политике.
 - При `infra:cdn: true` — CDN-ресурс `<infra:name>-cdn` с бакетом источником (dynamic-ресурс
   `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
-- Свои домены — **CNAME внутри зоны `cellestial.ru.`**, без зон-поддоменов (`pulumi/selectel-storage.ts`):
-  - `infra:cdnDomain` (`cdn.cellestial.ru`) → CNAME на `cdnDefaultDomain`, dynamic-ресурс `CdnDomain`:
-    домен в `names` CDN-ресурса и заказ Let's Encrypt через CDN API; выход `cdnCertificateStatus`
-    (`accepted` → `processed`).
-  - `infra:s3Domain` (`s3.cellestial.ru`) → CNAME на `access.<infra:s3Pool>.storage.selcloud.ru`,
-    dynamic-ресурс `BucketDomain` у бакета `infra:s3Bucket`: привязка домена, выпуск Let's Encrypt
-    Selectel (`api.selectel.ru/certs/le`, DNS-01) и загрузка сертификата в хранилище (`/v2/ssl`);
-    выходы `s3CertificateStatus`, `s3CertificateUploadedVersion`.
-  - Готовности сертификатов `up` не ждёт: пока сертификат не выпущен, ресурс остаётся «к обновлению»,
-    следующий `pulumi up` доделывает. Selectel продлевает Let's Encrypt сам, но в хранилище новую версию
-    кладёт `pulumi refresh && pulumi up`.
+- Свой домен CDN `infra:cdnDomain` (`cdn.cellestial.ru`) — **CNAME внутри зоны `cellestial.ru.`** на
+  `cdnDefaultDomain`, без зоны-поддомена, и dynamic-ресурс `CdnDomain` (`pulumi/selectel-storage.ts`):
+  домен в `names` CDN-ресурса; выход `cdnCustomDomain`.
 
 ### Руками в панели Selectel
 
 - Первый сервисный пользователь аккаунта и его роли (`member`, `iam.admin` на аккаунт).
 - Личный доступ к стейту на человека — `pulumi/bootstrap/README.md`.
-- Домены и сертификаты CDN и бакета — не в панели: их ведёт Pulumi (см. выше), ручная привязка
-  разойдётся со стейтом.
+- Сертификат своего домена CDN (`cdn.cellestial.ru`): панель → CDN → ресурс → сертификаты, Let's
+  Encrypt. В код не добавлять: заказ через CDN API (`POST /cdn/v3/letsencrypt/<id>`) дважды завершался
+  `failed` без причины. Сам домен привязывает Pulumi — в панели его не трогать.
+- Своего домена у бакетов нет (`s3.cellestial.ru` не делаем): файлы — через
+  `https://<s3PublicDomain>/<ключ>`, Caddy и бэк ходят на технические домены `<uuid>.selstorage.ru`.
 
 ### Чего не делать в коде (уже падало)
 
 - NS-делегирование поддомена в `cellestial.ru.`: Selectel ставит его сам при создании зоны-поддомена,
   своя NS-запись — `this_rrset_is_already_exists`.
-- Зону-поддомен под `cdn.cellestial.ru`/`s3.cellestial.ru` и ALIAS: на вершине зоны CNAME невозможен,
-  ALIAS не принимают ни привязка домена бакета (`domain_cname_invalid`), ни CDN. Только CNAME-запись в
-  `cellestial.ru.`.
+- Зону-поддомен под `cdn.cellestial.ru` и ALIAS: на вершине зоны CNAME невозможен, ALIAS не принимают
+  ни привязка домена бакета (`domain_cname_invalid`), ни CDN. Только CNAME-запись в `cellestial.ru.`.
 - `names` в теле создания/изменения `CdnResource`: домен, который ещё не CNAME на CDN, API молча
   отбрасывает при `accept`. Привязка — отдельный `CdnDomain` после записи, со сверкой через `GET`.
-- Выпуск Let's Encrypt для домена бакета в проекте стека: `api.selectel.ru/certs/le/issue` отвечает
-  `400 domain not found` — зона `cellestial.ru.` в `infra-shared`, выпуск идёт с токеном этого проекта.
 - Зону-поддомен в проекте стека (`project.id`): Selectel отвечает `root_zone_already_belongs_to_another_user`
   (корень `cellestial.ru.` в `infra-shared`) — после `destroy` и нового проекта `up` падал на этом.
 - Зоны-поддомены при живой зоне-поддомене не заменять на CNAME в `cellestial.ru.` в одном `up`:

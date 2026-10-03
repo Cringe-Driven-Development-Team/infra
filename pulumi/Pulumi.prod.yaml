@@ -20,7 +20,6 @@ config:
   infra:dnsProjectId: 93af1a9f31094257be483e9b24663a5f
   infra:cdn: "true"
   infra:cdnDomain: cdn.cellestial.ru
-  infra:s3Domain: s3.cellestial.ru
   infra:s3Pool: ru-7
   infra:s3Bucket: cellestial-release-0
   infra:s3PublicRead: "false"

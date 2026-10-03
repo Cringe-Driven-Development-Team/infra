@@ -202,30 +202,18 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 Новый ключ шлюз S3 признаёт не сразу: первые секунды (иногда минуты) — `InvalidAccessKeyId`.
 
-## Свои домены
+## Свой домен CDN
 
-`infra:cdnDomain` и `infra:s3Domain` — свои домены CDN-ресурса и бакета релизов (`infra:s3Bucket`).
-Оба — CNAME-записи внутри зоны `infra:dnsZone` (не зоны-поддомены), привязка и сертификаты —
-dynamic-ресурсы `CdnDomain` и `BucketDomain` (`selectel-storage.ts`), панель не нужна.
+`infra:cdnDomain` (`cdn.cellestial.ru`) — свой домен CDN-ресурса: CNAME-запись внутри зоны
+`infra:dnsZone` (не зона-поддомен) на `cdnDefaultDomain` и dynamic-ресурс `CdnDomain`
+(`selectel-storage.ts`), который добавляет домен в `names` ресурса (`PATCH /cdn/v3/resources/<id>`) и
+сверяет результат через `GET`: домен, который ещё не CNAME на CDN, API молча отбрасывает.
 
-| | CDN | Бакет |
-|---|---|---|
-| CNAME | `<id>.selcdn.net.` (`cdnDefaultDomain`) | `access.<infra:s3Pool>.storage.selcloud.ru.` |
-| Привязка | `PATCH /cdn/v3/resources/<id>` — `names` | `PUT /v2/containers/<бакет>/domains` |
-| Сертификат | `POST /cdn/v3/letsencrypt/<id>` | `POST api.selectel.ru/certs/le/issue?dnsv2=true`, затем `/v2/ssl` хранилища |
-| Готов, когда | `cdnCertificateStatus` = `processed` | `s3CertificateStatus` = `ACTIVE` и `s3CertificateUploadedVersion` не пуст |
-
-- `pulumi up` не ждёт ни распространения DNS, ни выпуска сертификата. Selectel сам проверяет CNAME при
-  привязке, поэтому на ней короткий повтор (до трёх минут); не успело — `up` падает с понятной ошибкой,
-  повторный `up` продолжает.
-- Пока сертификат не выпущен, `preview` показывает `CdnDomain`/`BucketDomain` как `update` — так и
-  задумано: следующий `up` перечитывает статус, а у бакета загружает выпущенный сертификат в хранилище.
-- Let's Encrypt Selectel продлевает сам (за 30 дней до конца срока), но в хранилище новую версию не
-  кладёт: `pulumi refresh && pulumi up` — `BucketDomain` увидит новую версию и перезальёт.
-- Сертификат бакета выпускается в проекте зоны DNS (`infra:dnsProjectId`, переопределяется
-  `infra:s3CertProjectId`): в проекте стека Let's Encrypt Selectel отвечает `400 domain not found` —
-  зону домена он ищет в проекте токена. В хранилище проекта стека сертификат загружает `BucketDomain`; в
-  стейте лежат только id, версии и статус, закрытый ключ читается и сразу уходит в хранилище.
+- Selectel сам проверяет CNAME при привязке, поэтому на ней короткий повтор (до трёх минут); не успело —
+  `up` падает с понятной ошибкой, повторный `up` продолжает. Распространения DNS `up` не ждёт.
+- Сертификат домена выпускают руками: панель → CDN → ресурс → сертификаты, Let's Encrypt. До этого
+  `https://cdn.cellestial.ru` отвечает чужим сертификатом, по HTTP домен уже работает.
+- Своего домена у бакетов нет — только `<uuid>.selstorage.ru` (`s3PublicDomain`, `avatarsPublicDomain`).
 - Тесты функций API: `bun test selectel-storage.test.ts`.
 
 ## Передача в Ansible
@@ -249,7 +237,7 @@ dynamic-ресурсы `CdnDomain` и `BucketDomain` (`selectel-storage.ts`), п
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
 Правка кода dynamic-ресурсов (`selectel-storage.ts`) попадает в стейт только через `pulumi up`:
-`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess`, `CdnDomain` и `BucketDomain`
-показывают такую правку как `update` (те же значения выставляются повторно).
+`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess` и `CdnDomain` показывают такую
+правку как `update` (те же значения выставляются повторно).
 
 Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.

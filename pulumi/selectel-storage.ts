@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import { credentialsFromEnv, curl, projectToken, type Http, type HttpResult } from "./bootstrap/selectel-s3";
 
-// Тип бакета, CDN-ресурс, свои домены и их сертификаты — API Selectel, которых нет ни в провайдере selectel, ни в S3 API (ACL и
+// Тип бакета, CDN-ресурс и его свой домен — API Selectel, которых нет ни в провайдере selectel, ни в S3 API (ACL и
 // Public Access Block Selectel не поддерживает). Здесь — функции API (тестируются с
 // подменой http, selectel-storage.test.ts) и dynamic-ресурсы Pulumi поверх них.
 // Все запросы — с project-токеном сервисного пользователя из selectel.env: токен идёт через stdin
@@ -149,12 +149,12 @@ export async function removeCdnResource(http: Http, token: string, id: string): 
 }
 
 // ---------------------------------------------------------------------------
-// Свои домены: CDN-ресурса (CDN API v3) и бакета (API хранилища пула), сертификаты Let's Encrypt.
-// Оба домена — CNAME в зоне DNS Selectel; запись создаёт index.ts, здесь — привязка и сертификат.
+// Свой домен CDN-ресурса — CNAME в зоне DNS Selectel; запись создаёт index.ts, здесь — привязка.
+// Сертификат своего домена выпускают в панели (CDN → ресурс → Сертификаты), не здесь.
 // ---------------------------------------------------------------------------
 
 // Selectel сам проверяет CNAME и до этого домен не принимает: свежая запись — короткий повтор.
-// Это не ожидание распространения DNS и не ожидание сертификата: не успело — ошибка, повторный up.
+// Это не ожидание распространения DNS: не успело — ошибка, повторный up.
 const bindWaiting = (w: Waiting) => ({
   attempts: w.attempts ?? 18,
   intervalMs: w.intervalMs ?? 10000,
@@ -189,184 +189,6 @@ export async function unbindCdnDomain(http: Http, token: string, id: string, dom
   const r = await getCdnResource(http, token, id);
   if (r === undefined || !(r.names ?? []).includes(domain)) return;
   await patchCdnNames(http, token, id, (r.names as string[]).filter((n) => n !== domain));
-}
-
-// Статус заказа Let's Encrypt у CDN-ресурса: accepted → processed/failed; undefined — заказа нет
-// (без своего домена API отвечает 200 с телом {"status":450,"message":"Invalid Request"}).
-export async function cdnCertificateStatus(http: Http, token: string, id: string): Promise<string | undefined> {
-  const res = await request(http, token, "GET", `${cdnApi}/letsencrypt/${id}`);
-  if (!ok(res)) fail(`Сертификат CDN-ресурса ${id}`, res);
-  return json(`Сертификат CDN-ресурса ${id}`, res).data?.task_status;
-}
-
-// Заказ сертификата: отправили и вышли, готовности не ждём. Уже заказанный или выпущенный не трогаем.
-export async function orderCdnCertificate(http: Http, token: string, id: string): Promise<string> {
-  const current = await cdnCertificateStatus(http, token, id);
-  if (current === "accepted" || current === "processed") return current;
-  const what = `Заказ Let's Encrypt для CDN-ресурса ${id}`;
-  const res = await request(http, token, "POST", `${cdnApi}/letsencrypt/${id}`);
-  if (!ok(res)) fail(what, res);
-  const body = res.body.trim() === "" ? {} : json(what, res);
-  if (typeof body.status === "number" && body.status >= 400) {
-    throw new Error(`${what}: ${body.status} ${body.message ?? res.body.slice(0, 300)}`);
-  }
-  return (await cdnCertificateStatus(http, token, id)) ?? body.data?.task_status ?? "accepted";
-}
-
-const domainNames = (body: any): string[] =>
-  (body?.domains ?? []).map((d: any) => (typeof d === "string" ? d : d.domain_name ?? d.name));
-
-export async function getBucketDomains(http: Http, token: string, pool: string, bucket: string): Promise<string[] | undefined> {
-  const res = await request(http, token, "GET", `${containerUrl(pool, bucket)}/domains`);
-  if (res.status === 404) return undefined;
-  if (!ok(res)) fail(`Домены бакета ${bucket}`, res);
-  return res.body.trim() === "" ? [] : domainNames(json(`Домены бакета ${bucket}`, res));
-}
-
-// Свой домен бакета — только CNAME на access.<пул>.storage.selcloud.ru (ALIAS и вершину зоны
-// Selectel отвергает); пока CNAME не виден — domain_lookup_failed / domain_cname_invalid.
-export async function bindBucketDomain(
-  http: Http, token: string, pool: string, bucket: string, domain: string, w: Waiting = {},
-) {
-  const { attempts, intervalMs, sleep } = bindWaiting(w);
-  if ((await getBucketDomains(http, token, pool, bucket))?.includes(domain)) return;
-  for (let i = 1; ; i++) {
-    const res = await request(http, token, "PUT", `${containerUrl(pool, bucket)}/domains`, { domain_name: domain });
-    if (ok(res)) return;
-    if (!/domain_lookup_failed|domain_cname_invalid/.test(res.body) || i >= attempts) {
-      fail(`Домен ${domain} бакета ${bucket} (попытка ${i})`, res);
-    }
-    await sleep(intervalMs);
-  }
-}
-
-export async function unbindBucketDomain(http: Http, token: string, pool: string, bucket: string, domain: string) {
-  if (!(await getBucketDomains(http, token, pool, bucket))?.includes(domain)) return;
-  const res = await request(http, token, "DELETE", `${containerUrl(pool, bucket)}/domains/${encodeURIComponent(domain)}`);
-  if (!ok(res) && res.status !== 404) fail(`Отвязка домена ${domain} от бакета ${bucket}`, res);
-}
-
-// Let's Encrypt Selectel (api.selectel.ru/certs/le): проверка DNS-01, TXT-запись в зоне DNS-хостинга
-// Selectel ставит сам. Выпущенный сертификат лежит в менеджере сертификатов проекта (knox_cert_id).
-const leApi = "https://api.selectel.ru/certs/le";
-const certManagerApi = "https://cloud.api.selcloud.ru/certificate-manager/v1";
-
-export interface LeCertificate {
-  id: string;
-  name: string;
-  status: string;          // creating, active, renewing, invalid, error — API отдаёт строчными
-  version?: number;
-  knox_cert_id?: string;
-  expire_at?: string;
-  error_description?: string;
-}
-
-export async function findLeCertificate(http: Http, token: string, name: string): Promise<LeCertificate | undefined> {
-  const res = await request(http, token, "GET", `${leApi}/`);
-  if (!ok(res)) fail("Сертификаты Let's Encrypt", res);
-  return (json("Сертификаты Let's Encrypt", res).items ?? []).find((c: any) => c.name === name && !c.deleted_at);
-}
-
-export async function issueLeCertificate(http: Http, token: string, name: string, domain: string): Promise<LeCertificate> {
-  const what = `Выпуск Let's Encrypt для ${domain}`;
-  const res = await request(http, token, "POST", `${leApi}/issue?dnsv2=true`, { name, domains: [domain] });
-  if (!ok(res)) fail(what, res);
-  return json(what, res);
-}
-
-export async function deleteLeCertificate(http: Http, token: string, id: string) {
-  const res = await request(http, token, "DELETE", `${leApi}/${id}`);
-  if (!ok(res) && res.status !== 404) fail(`Удаление сертификата Let's Encrypt ${id}`, res);
-}
-
-// PEM из менеджера сертификатов: ca_chain — цепочка, private_key — ключ.
-async function certificatePem(http: Http, token: string, certId: string, part: "ca_chain" | "private_key"): Promise<string> {
-  const what = `Сертификат ${certId} (${part})`;
-  const res = await request(http, token, "GET", `${certManagerApi}/cert/${certId}/${part}`);
-  // Тело — ключ: в текст ошибки оно не попадает
-  if (!ok(res)) throw new Error(`${what}: HTTP ${res.status || "без ответа"}`);
-  const pem = res.body.trim();
-  if (!pem.startsWith("-----BEGIN")) throw new Error(`${what}: в ответе не PEM`);
-  return `${pem}\n`;
-}
-
-const sslUrl = (pool: string) => `https://api.${pool}.storage.selcloud.ru/v2/ssl`;
-
-// Сертификат своего домена в S3 — отдельный список сертификатов хранилища проекта; Selectel продлевает
-// Let's Encrypt сам, но в хранилище новую версию кладём мы. Ключ идёт через stdin curl.
-export async function uploadBucketCertificate(
-  http: Http, token: string, pool: string, name: string, certificate: string, privateKey: string,
-) {
-  // И токен, и тело с ключом — в конфиге curl из stdin (-K -): в списке процессов их нет.
-  const body = JSON.stringify({ name, certificate, private_key: privateKey }).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const res = await http(
-    ["-X", "POST", "-H", "Accept: application/json", "-H", "Content-Type: application/json", "-K", "-", sslUrl(pool)],
-    `header = "X-Auth-Token: ${token}"\ndata-binary = "${body}"\n`,
-  );
-  if (!ok(res)) fail(`Сертификат ${name} в хранилище ${pool}`, res);
-}
-
-export async function deleteBucketCertificate(http: Http, token: string, pool: string, name: string) {
-  const res = await request(http, token, "DELETE", `${sslUrl(pool)}/${encodeURIComponent(name)}`);
-  if (!ok(res) && res.status !== 404) fail(`Удаление сертификата ${name} из хранилища ${pool}`, res);
-}
-
-export interface BucketDomainSpec {
-  pool: string;
-  bucket: string;
-  domain: string;
-  certName: string;
-}
-
-export interface BucketDomainState {
-  leCertificateId: string;
-  certificateStatus: string;
-  issuedVersion: string;      // версия сертификата у Let's Encrypt Selectel
-  uploadedVersion: string;    // версия, загруженная в хранилище; "" — ещё не загружен
-  s3CertificateName: string;
-  expireAt: string;
-}
-
-// Домен бакета и его сертификат за один проход, без ожидания выпуска: сертификат ещё не ACTIVE —
-// в состоянии остаётся пустой uploadedVersion, и следующий up загружает его в хранилище.
-// storageToken — проект бакета, certToken — проект, где выпускается сертификат.
-export async function ensureBucketDomain(
-  http: Http, storageToken: string, certToken: string, s: BucketDomainSpec,
-  prev: Partial<BucketDomainState> = {}, w: Waiting = {},
-): Promise<BucketDomainState> {
-  await bindBucketDomain(http, storageToken, s.pool, s.bucket, s.domain, w);
-  // Статус сравниваем без регистра: документация пишет ACTIVE, API отвечает active
-  const status = (c: LeCertificate) => c.status.toUpperCase();
-  let le = await findLeCertificate(http, certToken, s.certName);
-  if (le && status(le) === "ERROR") {
-    await deleteLeCertificate(http, certToken, le.id);
-    le = undefined;
-  }
-  le ??= await issueLeCertificate(http, certToken, s.certName, s.domain);
-  const issuedVersion = String(le.version ?? "");
-  let uploadedVersion = prev.uploadedVersion ?? "";
-  let s3CertificateName = prev.s3CertificateName ?? "";
-  if (status(le) === "ACTIVE" && le.knox_cert_id && uploadedVersion !== issuedVersion) {
-    const name = `${s.certName}-v${issuedVersion}`;
-    await uploadBucketCertificate(
-      http, storageToken, s.pool, name,
-      await certificatePem(http, certToken, le.knox_cert_id, "ca_chain"),
-      await certificatePem(http, certToken, le.knox_cert_id, "private_key"),
-    );
-    if (s3CertificateName && s3CertificateName !== name) {
-      await deleteBucketCertificate(http, storageToken, s.pool, s3CertificateName);
-    }
-    uploadedVersion = issuedVersion;
-    s3CertificateName = name;
-  }
-  return {
-    leCertificateId: le.id,
-    certificateStatus: status(le),
-    issuedVersion,
-    uploadedVersion,
-    s3CertificateName,
-    expireAt: le.expire_at ?? "",
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -430,7 +252,7 @@ export interface BucketAccessArgs {
 }
 
 // Тип бакета Selectel. Публичный — чтение объектов без авторизации через <uuid>.selstorage.ru;
-// только он годится источником CDN и для привязки своего домена (BucketDomain).
+// только он годится источником CDN и для привязки своего домена (в панели).
 export class BucketAccess extends pulumi.dynamic.Resource {
   declare public readonly publicDomain: pulumi.Output<string>;
   constructor(name: string, args: BucketAccessArgs, opts?: pulumi.CustomResourceOptions) {
@@ -484,7 +306,7 @@ export interface CdnResourceArgs {
   originHost: pulumi.Input<string>;
 }
 
-// HTTP CDN-ресурс Selectel. Свой домен и сертификат — CdnDomain; cdnDomain (<id>.selcdn.net) — цель его CNAME.
+// HTTP CDN-ресурс Selectel. Свой домен — CdnDomain, его сертификат — в панели; cdnDomain (<id>.selcdn.net) — цель его CNAME.
 export class CdnResource extends pulumi.dynamic.Resource {
   declare public readonly cdnDomain: pulumi.Output<string>;
   constructor(name: string, args: CdnResourceArgs, opts?: pulumi.CustomResourceOptions) {
@@ -502,25 +324,19 @@ const cdnDomainProvider: pulumi.dynamic.ResourceProvider<CdnDomainInputs> = {
   async diff(_id, olds: any, news: CdnDomainInputs) {
     const replaces = changed(olds, news, ["projectId", "resourceId", "domain"]);
     const codeChanged = olds.__provider !== (news as any).__provider;
-    // Пока сертификат не выпущен, каждый up перечитывает статус заказа (и заказывает заново после failed)
-    const changes = replaces.length > 0 || codeChanged || olds.certificateStatus !== "processed";
-    return { changes, replaces, deleteBeforeReplace: true };
+    return { changes: replaces.length > 0 || codeChanged, replaces, deleteBeforeReplace: true };
   },
   async create(inputs: CdnDomainInputs) {
-    const token = await tokenFor(inputs.projectId);
-    await bindCdnDomain(curl, token, inputs.resourceId, inputs.domain);
-    const certificateStatus = await orderCdnCertificate(curl, token, inputs.resourceId);
-    return { id: `${inputs.resourceId}/${inputs.domain}`, outs: { ...inputs, certificateStatus } };
+    await bindCdnDomain(curl, await tokenFor(inputs.projectId), inputs.resourceId, inputs.domain);
+    return { id: `${inputs.resourceId}/${inputs.domain}`, outs: { ...inputs } };
   },
   async update(_id, _olds, news: CdnDomainInputs) {
     return { outs: (await cdnDomainProvider.create(news)).outs };
   },
   async read(id, props: any) {
-    const token = await tokenFor(props.projectId);
-    const r = await getCdnResource(curl, token, props.resourceId);
+    const r = await getCdnResource(curl, await tokenFor(props.projectId), props.resourceId);
     if (r === undefined || !(r.names ?? []).includes(props.domain)) return { id: "", props: {} };
-    const certificateStatus = (await cdnCertificateStatus(curl, token, props.resourceId)) ?? "";
-    return { id, props: { ...props, certificateStatus } };
+    return { id, props };
   },
   async delete(_id, props: any) {
     await unbindCdnDomain(curl, await tokenFor(props.projectId), props.resourceId, props.domain);
@@ -533,94 +349,10 @@ export interface CdnDomainArgs {
   domain: pulumi.Input<string>;
 }
 
-// Свой домен CDN-ресурса и сертификат Let's Encrypt к нему. Домен — уже CNAME на cdnDomain ресурса
-// (запись в зоне создаётся раньше, dependsOn). certificateStatus: accepted → processed.
+// Свой домен CDN-ресурса: домен в names ресурса. Домен — уже CNAME на cdnDomain ресурса (запись в
+// зоне создаётся раньше, dependsOn). Сертификат домена — в панели.
 export class CdnDomain extends pulumi.dynamic.Resource {
-  declare public readonly certificateStatus: pulumi.Output<string>;
   constructor(name: string, args: CdnDomainArgs, opts?: pulumi.CustomResourceOptions) {
-    super(cdnDomainProvider, name, { ...args, certificateStatus: undefined }, opts, "selectel-storage", "CdnDomain");
-  }
-}
-
-interface BucketDomainInputs extends BucketDomainSpec {
-  projectId: string;
-  certProjectId: string;
-}
-
-const bucketDomainState = (props: any): BucketDomainState => ({
-  leCertificateId: props.leCertificateId ?? "",
-  certificateStatus: props.certificateStatus ?? "",
-  issuedVersion: props.issuedVersion ?? "",
-  uploadedVersion: props.uploadedVersion ?? "",
-  s3CertificateName: props.s3CertificateName ?? "",
-  expireAt: props.expireAt ?? "",
-});
-
-const bucketDomainProvider: pulumi.dynamic.ResourceProvider<BucketDomainInputs> = {
-  async diff(_id, olds: any, news: BucketDomainInputs) {
-    const replaces = changed(olds, news, ["projectId", "certProjectId", "pool", "bucket", "domain", "certName"]);
-    const codeChanged = olds.__provider !== (news as any).__provider;
-    // Сертификат ещё не в хранилище или Selectel продлил его (issuedVersion обновляет refresh)
-    const stale = !olds.uploadedVersion || olds.uploadedVersion !== olds.issuedVersion;
-    return { changes: replaces.length > 0 || codeChanged || stale, replaces, deleteBeforeReplace: true };
-  },
-  async create(inputs: BucketDomainInputs) {
-    const state = await ensureBucketDomain(
-      curl, await tokenFor(inputs.projectId), await tokenFor(inputs.certProjectId), inputs,
-    );
-    return { id: `${inputs.projectId}/${inputs.bucket}/${inputs.domain}`, outs: { ...inputs, ...state } };
-  },
-  async update(_id, olds: any, news: BucketDomainInputs) {
-    const state = await ensureBucketDomain(
-      curl, await tokenFor(news.projectId), await tokenFor(news.certProjectId), news, bucketDomainState(olds),
-    );
-    return { outs: { ...news, ...state } };
-  },
-  async read(id, props: any) {
-    const domains = await getBucketDomains(curl, await tokenFor(props.projectId), props.pool, props.bucket);
-    if (!domains?.includes(props.domain)) return { id: "", props: {} };
-    const le = await findLeCertificate(curl, await tokenFor(props.certProjectId), props.certName);
-    return {
-      id,
-      props: {
-        ...props,
-        leCertificateId: le?.id ?? "",
-        certificateStatus: le?.status.toUpperCase() ?? "",
-        issuedVersion: String(le?.version ?? ""),
-        expireAt: le?.expire_at ?? "",
-      },
-    };
-  },
-  async delete(_id, props: any) {
-    const token = await tokenFor(props.projectId);
-    await unbindBucketDomain(curl, token, props.pool, props.bucket, props.domain);
-    if (props.s3CertificateName) await deleteBucketCertificate(curl, token, props.pool, props.s3CertificateName);
-    if (props.leCertificateId) await deleteLeCertificate(curl, await tokenFor(props.certProjectId), props.leCertificateId);
-  },
-};
-
-export interface BucketDomainArgs {
-  projectId: pulumi.Input<string>;
-  // Проект, в котором выпускается Let's Encrypt
-  certProjectId: pulumi.Input<string>;
-  pool: pulumi.Input<string>;
-  bucket: pulumi.Input<string>;
-  domain: pulumi.Input<string>;
-  certName: pulumi.Input<string>;
-}
-
-// Свой домен публичного бакета и сертификат Let's Encrypt к нему. Домен — уже CNAME на
-// access.<пул>.storage.selcloud.ru. Сертификат выпускается не мгновенно: пока certificateStatus не
-// ACTIVE, uploadedVersion пуст, и следующий up загружает сертификат в хранилище. В стейте — только
-// id, версии и статус; ключ читается и сразу уходит в хранилище.
-export class BucketDomain extends pulumi.dynamic.Resource {
-  declare public readonly certificateStatus: pulumi.Output<string>;
-  declare public readonly uploadedVersion: pulumi.Output<string>;
-  declare public readonly expireAt: pulumi.Output<string>;
-  constructor(name: string, args: BucketDomainArgs, opts?: pulumi.CustomResourceOptions) {
-    super(bucketDomainProvider, name, {
-      ...args, leCertificateId: undefined, certificateStatus: undefined, issuedVersion: undefined,
-      uploadedVersion: undefined, s3CertificateName: undefined, expireAt: undefined,
-    }, opts, "selectel-storage", "BucketDomain");
+    super(cdnDomainProvider, name, args, opts, "selectel-storage", "CdnDomain");
   }
 }
