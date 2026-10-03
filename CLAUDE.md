@@ -59,3 +59,8 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 - Не прерывать `pulumi` (Ctrl+C) во время записи стейта: `prod.json` в бакете остаётся пустым
   (`failed to load checkpoint: unexpected end of JSON input`). Лечение — до любой следующей записи
   скопировать `prod/.pulumi/stacks/infra/prod.json.bak` поверх `prod.json`.
+
+## Задачи и PR
+
+Задачи и PR ведём по [CONTRIBUTING.md](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md) организации. Завести задачу, разбить её на
+sub-issues, поставить на доску или открыть PR — скилл `cdd-tasks`.
