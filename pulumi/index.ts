@@ -58,15 +58,13 @@ const avatarsBucketName = cfg.require("avatarsBucket");
 const s3Public = cfg.getBoolean("s3Public") ?? true;
 // CDN-ресурс с бакетом источником; технический домен — <id>.selcdn.net.
 const cdnEnabled = cfg.getBoolean("cdn") ?? false;
-// Свои домены CDN-ресурса и бакета релизов (например cdn.cellestial.ru, s3.cellestial.ru): CNAME в
-// зоне infra:dnsZone и привязка (CdnDomain, BucketDomain). Сертификаты доменов выпускают в панели.
+// Свои домены CDN-ресурса и бакета аватарок (например cdn.cellestial.ru, avatars.cellestial.ru):
+// CNAME в зоне infra:dnsZone и привязка (CdnDomain, BucketDomain). Сертификаты доменов выпускают в
+// панели. У бакета релизов своего домена нет.
 const cdnCustomDomainName = cfg.get("cdnDomain");
-const s3CustomDomainName = cfg.get("s3Domain");
+const avatarsCustomDomainName = cfg.get("avatarsDomain");
 if (cdnCustomDomainName && !cdnEnabled) {
   throw new Error("infra:cdnDomain задан без infra:cdn: домен привязывается к CDN-ресурсу");
-}
-if (s3CustomDomainName && !s3Public) {
-  throw new Error("infra:s3Domain задан при infra:s3Public=false: свой домен бывает только у публичного бакета");
 }
 
 const renamedFromStudy = { aliases: [{ name: "study" }] };
@@ -475,7 +473,7 @@ const dnsProvider = new selectel.Provider("dns", {
   authRegion: selectelCfg.get("authRegion"),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || cdnCustomDomainName || s3CustomDomainName
+const parentZone = appDomain || cdnCustomDomainName || avatarsCustomDomainName
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -524,16 +522,16 @@ if (cdnEnabled) {
   }
 }
 
-// Свой домен бакета релизов: CNAME на access.<пул>.storage.selcloud.ru — адрес, по которому хранилище
+// Свой домен бакета аватарок: CNAME на access.<пул>.storage.selcloud.ru — адрес, по которому хранилище
 // пула отдаёт публичные бакеты по своим доменам (бакет выбирается по Host).
-if (s3CustomDomainName) {
-  const record = cnameRecord("s3", s3CustomDomainName, `access.${s3Pool}.storage.selcloud.ru`);
-  new BucketDomain("product-releases", {
+if (avatarsCustomDomainName) {
+  const record = cnameRecord("avatars", avatarsCustomDomainName, `access.${s3Pool}.storage.selcloud.ru`);
+  new BucketDomain("avatars", {
     projectId: project.id,
     pool: s3Pool,
-    bucket: bucket.bucket,
-    domain: s3CustomDomainName,
-  }, { dependsOn: [record, bucketAccess] });
+    bucket: avatarsBucketResource.bucket,
+    domain: avatarsCustomDomainName,
+  }, { dependsOn: [record, avatarsAccess] });
 }
 
 export const projectId = project.id;
@@ -544,8 +542,8 @@ export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;
 export const s3Bucket = bucket.bucket;
 export const s3PublicDomain = bucketAccess.publicDomain;
-// Свои домены бакета релизов и CDN-ресурса; HTTPS на них — после выпуска сертификатов в панели
-export const s3CustomDomain = s3CustomDomainName ?? null;
+// Свой домен CDN-ресурса (у аватарок — avatarsCustomDomain); HTTPS на них — после выпуска
+// сертификатов в панели
 export const cdnCustomDomain = cdnCustomDomainName ?? null;
 export const cdnResourceId = cdn?.id ?? null;
 export const cdnDefaultDomain = cdn?.cdnDomain ?? null;
@@ -560,3 +558,4 @@ export const notebooksSecretKey = pulumi.secret(notebooksCredentials.secretKey);
 // Бакет аватарок: пишет тот же ключ Go API, публичный URL — https://<avatarsPublicDomain>/<ключ>
 export const avatarsBucket = avatarsBucketResource.bucket;
 export const avatarsPublicDomain = avatarsAccess.publicDomain;
+export const avatarsCustomDomain = avatarsCustomDomainName ?? null;

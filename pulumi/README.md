@@ -175,7 +175,8 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
   падает на плане. Удалить осознанно — опустошить бакет и
   `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.
 
-Выходы: `avatarsBucket`, `avatarsPublicDomain`.
+Выходы: `avatarsBucket`, `avatarsPublicDomain`, `avatarsCustomDomain` (свой домен — «Свои домены»; до
+выпуска сертификата в панели бэк отдаёт ссылки на `avatarsPublicDomain`).
 
 Проверка доступа (после `source bootstrap/env.sh`):
 
@@ -204,11 +205,11 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 ## Свои домены
 
-`infra:cdnDomain` и `infra:s3Domain` — свои домены CDN-ресурса и бакета релизов (`infra:s3Bucket`).
-Оба — CNAME-записи внутри зоны `infra:dnsZone` (не зоны-поддомены), привязка — dynamic-ресурсы
+`infra:cdnDomain` и `infra:avatarsDomain` — свои домены CDN-ресурса и бакета аватарок
+(`infra:avatarsBucket`); у бакета релизов своего домена нет. Оба — CNAME-записи внутри зоны `infra:dnsZone` (не зоны-поддомены), привязка — dynamic-ресурсы
 `CdnDomain` и `BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
 
-| | CDN (`cdn.cellestial.ru`) | Бакет (`s3.cellestial.ru`) |
+| | CDN (`cdn.cellestial.ru`) | Бакет аватарок (`avatars.cellestial.ru`) |
 |---|---|---|
 | CNAME | `<id>.selcdn.net.` (`cdnDefaultDomain`) | `access.<infra:s3Pool>.storage.selcloud.ru.` |
 | Привязка | `PATCH /cdn/v3/resources/<id>` — `names`, сверка через `GET` | `PUT /v2/containers/<бакет>/domains` |
@@ -221,8 +222,8 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
   `x-container-storage-policy-*`, как у технического домена; у непривязанного `Host` их нет.
 
   ```bash
-  curl -skI "https://$(pulumi stack output s3CustomDomain)/index.html"
-  curl -sI  "https://$(pulumi stack output s3PublicDomain)/index.html"
+  curl -skI "https://$(pulumi stack output avatarsCustomDomain)/x"
+  curl -sI  "https://$(pulumi stack output avatarsPublicDomain)/x"
   ```
 - Без сертификата свой домен бакета по HTTPS отвечает сертификатом `*.<пул>.storage.selcloud.ru`, а
   HTTP перенаправляет на HTTPS — Caddy и бэк остаются на технических доменах `<uuid>.selstorage.ru`.

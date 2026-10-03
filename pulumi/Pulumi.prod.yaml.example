@@ -38,9 +38,9 @@ config:
   # CDN-ресурс с бакетом источником (нужен infra:s3Public); домен — выход cdnDefaultDomain
   infra:cdn: "true"
   # infra:cdnName: "<имя CDN-ресурса>"   # по умолчанию <infra:name>-cdn
-  # Свои домены CDN-ресурса и бакета релизов: CNAME в зоне infra:dnsZone и привязка; сертификаты — в панели
+  # Свои домены CDN-ресурса и бакета аватарок: CNAME в зоне infra:dnsZone и привязка; сертификаты — в панели
   # infra:cdnDomain: cdn.cellestial.ru
-  # infra:s3Domain: s3.cellestial.ru
+  # infra:avatarsDomain: avatars.cellestial.ru
 
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1

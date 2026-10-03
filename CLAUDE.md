@@ -37,27 +37,30 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   (`pulumi/selectel-storage.ts`); сертификатов Pulumi не выпускает:
   - `infra:cdnDomain` (`cdn.cellestial.ru`) → CNAME на `cdnDefaultDomain`, `CdnDomain`: домен в `names`
     CDN-ресурса; выход `cdnCustomDomain`.
-  - `infra:s3Domain` (`s3.cellestial.ru`) → CNAME на `access.<infra:s3Pool>.storage.selcloud.ru`,
-    `BucketDomain`: домен бакета релизов `infra:s3Bucket`; выход `s3CustomDomain`.
+  - `infra:avatarsDomain` (`avatars.cellestial.ru`) → CNAME на
+    `access.<infra:s3Pool>.storage.selcloud.ru`, `BucketDomain`: домен бакета аватарок
+    `infra:avatarsBucket`; выход `avatarsCustomDomain`.
+  - У бакета релизов своего домена нет (`s3.cellestial.ru` не делаем) — только `s3PublicDomain`.
 
 ### Руками в панели Selectel
 
 - Первый сервисный пользователь аккаунта и его роли (`member`, `iam.admin` на аккаунт).
 - Личный доступ к стейту на человека — `pulumi/bootstrap/README.md`.
 - Сертификаты своих доменов: `cdn.cellestial.ru` — панель → CDN → ресурс → сертификаты;
-  `s3.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
+  `avatars.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
   (`POST /cdn/v3/letsencrypt/<id>`) дважды завершался `failed` без причины. Сами домены привязывает
   Pulumi — в панели их не трогать.
-- Пока у `s3.cellestial.ru` нет сертификата, по HTTPS он отвечает сертификатом
-  `*.ru-7.storage.selcloud.ru`, а HTTP перенаправляет на HTTPS: Caddy и бэк ходят на технические домены
-  `<uuid>.selstorage.ru` (`s3PublicDomain`, `avatarsPublicDomain`), на свой домен их не переключать.
+- Пока у `avatars.cellestial.ru` нет сертификата, по HTTPS он отвечает сертификатом
+  `*.ru-7.storage.selcloud.ru`, а HTTP перенаправляет на HTTPS: бэк отдаёт ссылки на технический
+  `avatarsPublicDomain`, на свой домен его переключать после выпуска сертификата.
 
 ### Чего не делать в коде (уже падало)
 
 - NS-делегирование поддомена в `cellestial.ru.`: Selectel ставит его сам при создании зоны-поддомена,
   своя NS-запись — `this_rrset_is_already_exists`.
-- Зону-поддомен под `cdn.cellestial.ru`/`s3.cellestial.ru` и ALIAS: на вершине зоны CNAME невозможен, ALIAS не принимают
-  ни привязка домена бакета (`domain_cname_invalid`), ни CDN. Только CNAME-запись в `cellestial.ru.`.
+- Зону-поддомен под свой домен (`cdn.`, `avatars.cellestial.ru`) и ALIAS: на вершине зоны CNAME
+  невозможен, ALIAS не принимают ни привязка домена бакета (`domain_cname_invalid`), ни CDN. Только
+  CNAME-запись в `cellestial.ru.`.
 - `names` в теле создания/изменения `CdnResource`: домен, который ещё не CNAME на CDN, API молча
   отбрасывает при `accept`. Привязка — отдельный `CdnDomain` после записи, со сверкой через `GET`.
 - Зону-поддомен в проекте стека (`project.id`): Selectel отвечает `root_zone_already_belongs_to_another_user`
