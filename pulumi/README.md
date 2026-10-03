@@ -135,7 +135,9 @@ AWS_ACCESS_KEY_ID="$S3_AK" AWS_SECRET_ACCESS_KEY="$S3_SK" \
 curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 ```
 
-`pulumi destroy` удаляет бакет вместе с объектами (`forceDestroy: true`).
+При сносе стека бакет удаляется вместе с объектами (`forceDestroy: true`). Сам `pulumi destroy` без
+флагов упадёт на защищённых бакетах ноутбуков и аватарок и не удалит ничего — нужен
+`pulumi destroy --exclude-protected` (`RUNBOOK.md`, п.7).
 
 ## Бакет ноутбуков
 
@@ -147,8 +149,9 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 - политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject`, `ListBucket` только
   здесь; пользователю стека — `s3:*` (с политикой роли проекта не действуют, без этого правила Pulumi
   получил бы `403` на `GetBucketPolicy`). В `infra:s3Bucket` пользователя бэка нет — там `AccessDenied`;
-- `protect: true`, без `forceDestroy`: `pulumi destroy` на бакете остановится. Удалить осознанно —
-  опустошить бакет и `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'`.
+- `protect: true`, без `forceDestroy`: `pulumi destroy` с защищённым бакетом в стейте падает на плане
+  и не удаляет ничего (снос остального — `--exclude-protected`). Удалить осознанно — опустошить бакет
+  и `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'`.
 
 Выходы: `notebooksBucket`, `notebooksAccessKey`, `notebooksSecretKey` (оба ключа — только с
 `--show-secrets`). Endpoint и регион те же: `s3Endpoint`, `infra:s3Pool`. Ключи переносятся в
@@ -165,7 +168,8 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
   (`notebooksAccessKey`, `notebooksSecretKey`);
 - политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject` (без листинга);
   пользователю стека — `s3:*`; всем — `GetObject`;
-- `protect: true`, без `forceDestroy`, как у ноутбуков. Удалить осознанно — опустошить бакет и
+- `protect: true`, без `forceDestroy`, как у ноутбуков: `pulumi destroy` без `--exclude-protected`
+  падает на плане. Удалить осознанно — опустошить бакет и
   `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.
 
 Выходы: `avatarsBucket`, `avatarsPublicDomain`.

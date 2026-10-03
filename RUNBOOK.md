@@ -186,14 +186,24 @@ CDN: зону `cdn.cellestial.ru.` и CDN-ресурс с бакетом ист�
 
 ## 7. Снос всего
 
+Бакеты ноутбуков и аватарок защищены (`protect: true`, без `forceDestroy`). Pulumi проверяет `protect`
+при построении плана: обычный `pulumi destroy` упадёт с `unable to delete resource … marked for
+protection` и **не удалит ничего** — VPS, сеть и бакет релизов останутся и продолжат тарифицироваться.
+
+Снести всё, кроме данных пользователей:
+
 ```bash
-cd pulumi && pulumi destroy    # бакет релизов удалится с объектами (forceDestroy: true)
+cd pulumi && pulumi destroy --exclude-protected   # бакет релизов удалится с объектами (forceDestroy: true)
+pulumi stack --show-urns                          # проверить, что осталось в стейте
 ```
 
-Бакеты ноутбуков и аватарок защищены (`protect: true`, без `forceDestroy`): `destroy` на них
-остановится, а с ними останется и проект. Снести и их — сначала сохранить или удалить объекты, затем
-`pulumi state unprotect` для `urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks` и
-`urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars` и повторить `destroy`.
+Снести совсем — сохранить или удалить объекты обоих бакетов, затем:
+
+```bash
+pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'
+pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'
+pulumi destroy
+```
 
 ## Частые грабли
 
