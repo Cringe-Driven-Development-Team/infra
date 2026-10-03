@@ -528,9 +528,7 @@ if (avatarsCustomDomainName) {
   const avatarsZone = new selectel.DomainsZoneV2("avatars", {
     name: withDot(avatarsCustomDomainName),
     projectId: dnsProjectId,
-  // infra:avatarsZoneImport — имя уже существующей зоны: первый up берёт её в стейт, а не создаёт
-  // (вторую зону с тем же именем Selectel не даст). После импорта ключ из конфига убрать.
-  }, { ...withDns, deleteBeforeReplace: true, import: cfg.get("avatarsZoneImport") });
+  }, { ...withDns, deleteBeforeReplace: true });
   const record = new selectel.DomainsRrsetV2("avatars-alias", {
     zoneId: avatarsZone.id,
     projectId: dnsProjectId,

@@ -42,7 +42,6 @@ config:
   # infra:cdnDomain: cdn.cellestial.ru
   # Свой домен бакета аватарок: отдельная зона DNS с ALIAS на хранилище; сертификат — в панели
   # infra:avatarsDomain: avatars.cellestial.ru
-  # infra:avatarsZoneImport: avatars.cellestial.ru.   # только если зона уже есть: взять её в стейт; потом убрать
 
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1
