@@ -78,6 +78,10 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 оба значения через `ansible-vault edit`. В `.env` Go API они попадут через роль `app`
 ([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)).
 
+Несекретные параметры S3 для бэка лежат открыто в `group_vars/all/vars.yml`: `s3_endpoint`,
+`s3_region`, `s3_force_path_style`, `notebooks_bucket`, `avatars_bucket`, `avatars_public_domain` —
+значения из `pulumi stack output` (после пересоздания стека сверить, домен аватарок меняется).
+
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
 
