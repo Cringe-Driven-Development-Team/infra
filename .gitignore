@@ -15,7 +15,6 @@ cellestial-*.json
 
 # Ansible
 ansible/clouds.yaml
-**/vault.yml
 *.retry
 
 # Misc

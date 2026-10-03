@@ -366,13 +366,16 @@ if (appDomain && parentZone) {
   }, { ...withDns, deleteBeforeReplace: true });
 }
 
-// cdn.<домен>: зона DNS и CDN-ресурс с публичным бакетом источником. Зона — только зона, в проекте
-// стека (рядом с CDN), не в проекте родительской зоны: NS-делегирование из родительской Selectel
-// ставит сам, а привязку домена к CDN-ресурсу (записи в зоне и сертификат) делают в панели.
+// cdn.<домен>: зона DNS и CDN-ресурс с публичным бакетом источником. Зона — только зона:
+// NS-делегирование из родительской Selectel ставит сам, а привязку домена к CDN-ресурсу (записи в
+// зоне и сертификат) делают в панели.
+// Зона-поддомен — в проекте родительской зоны (infra:dnsProjectId), не в проекте стека: проект стека
+// пересоздаётся с новым id, и в нём POST зоны-поддомена падает с root_zone_already_belongs_to_another_user.
 let cdn: CdnResource | undefined;
 if (cdnDomain) {
   // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
-  new selectel.DomainsZoneV2("cdn", { name: withDot(cdnDomain), projectId: project.id }, { deleteBeforeReplace: true });
+  new selectel.DomainsZoneV2("cdn", { name: withDot(cdnDomain), projectId: dnsProjectId },
+    { ...withDns, deleteBeforeReplace: true });
   cdn = new CdnResource("cdn", {
     projectId: project.id,
     name: checkCdnName(cfg.get("cdnName") ?? `${name}-cdn`),

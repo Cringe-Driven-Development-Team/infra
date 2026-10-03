@@ -98,9 +98,16 @@ pulumi stack output   # projectId, publicIp, s3Endpoint, s3Bucket, s3AccessKey, 
 
 ```bash
 cd ansible
-. ./env.sh                                    # OS_* из selectel.env + projectId/pool прод-стека
+# Пароль vault (взять лично у Дениса или менторов) — один раз, в файл вне репо:
+(umask 077; printf '%s\n' '<пароль vault>' > ~/.config/cdd-vault-pass)
+
+. ./env.sh                                    # OS_* из selectel.env + projectId/pool прод-стека,
+                                              # ANSIBLE_VAULT_PASSWORD_FILE=~/.config/cdd-vault-pass
 # или вместо env.sh: cp clouds.yaml.example clouds.yaml и руками username/password/user_domain_name
-# из п.1.1, project_id = `pulumi stack output projectId`, region_name ru-9 (оба сразу — нельзя)
+# из п.1.1, project_id = `pulumi stack output projectId`, region_name ru-9 (оба сразу — нельзя);
+# тогда и export ANSIBLE_VAULT_PASSWORD_FILE=~/.config/cdd-vault-pass — руками
+
+ansible-vault view inventory/group_vars/all/vault.yml   # пароль подходит: видны vault_postgres_password, vault_jwt_secret
 
 ansible-inventory -i inventory --graph        # должен появиться 1 хост: gateway
 # ключи всех, кто заходит на стенд, — в files/authorized_keys/*.pub (коммитятся в репо;
@@ -115,6 +122,24 @@ ansible-playbook verify.yml                   # проверки DoD
 `site.yml` вход под root закрыт, тогда `ansible-playbook bootstrap.yml --limit gateway`. Сервер,
 пересозданный Pulumi'ем (смена ключей в `infra:sshPublicKeys`), сохраняет диск — ему хватает
 `site.yml`. Подробнее — `ansible/README.md`, «Запуск».
+
+### Секреты (ansible-vault)
+
+Секреты выкатки — в `ansible/inventory/group_vars/all/vault.yml`, зашифрованы и закоммичены (репо
+публичный). Пароль нужен любому playbook'у (`bootstrap.yml`, `site.yml`, `verify.yml`): файл лежит в
+`group_vars/all`. Подробности и шаг для CI — `ansible/README.md`, «Секреты».
+
+```bash
+ansible-vault view inventory/group_vars/all/vault.yml    # посмотреть
+ansible-vault edit inventory/group_vars/all/vault.yml    # поправить (не decrypt → encrypt)
+```
+
+- **Смена пароля**: `ansible-vault rekey --new-vault-password-file <новый файл>
+  inventory/group_vars/all/vault.yml`, заменить `~/.config/cdd-vault-pass`, закоммитить `vault.yml`,
+  обновить секрет `ANSIBLE_VAULT_PASSWORD` в CI, раздать новый пароль лично.
+- **Утечка пароля**: `rekey` не помогает — старый шифротекст остаётся в истории git и открывается
+  утёкшим паролем. Меняются сами секреты: новый пароль vault, новые значения в `vault.yml`
+  (`openssl rand -base64 32`), выкатка (пароль Postgres — и в самой БД), обновить секрет в CI.
 
 ## 6. Проверки руками (DoD)
 
@@ -162,6 +187,7 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 
 | Симптом | Причина |
 |---|---|
+| `root_zone_already_belongs_to_another_user` при создании зоны `cdn.` | Зона-поддомен создаётся не в проекте родительской зоны — должна быть в `infra:dnsProjectId` (`CLAUDE.md`) |
 | `pulumi whoami` падает с `no EC2 IMDS role found` | Не выполнен `source pulumi/bootstrap/env.sh` (нет личного ключа стейта `AWS_*`) — п.2 |
 | `pulumi stack select prod`: стек не найден | Команда запущена не из `pulumi/` (бэкенд берётся из `Pulumi.yaml` каталога) или задана `PULUMI_BACKEND_URL` — `pulumi whoami -v` должен показать `s3://cdd-infra-state/prod…` — п.2 |
 | `409 already_exists` | Имя занято в общем аккаунте → сменить `infra:name` / `infra:serviceUserName` / `infra:s3Bucket` |
@@ -169,4 +195,6 @@ cd pulumi && pulumi destroy    # бакет удалится с объектам
 | `ExternalGatewayForFloatingIPNotFound` | Уже обработан (`dependsOn`), повторить `pulumi up` |
 | `Host key verification failed` / `REMOTE HOST IDENTIFICATION HAS CHANGED` | Сервер пересоздан (новые host keys на том же адресе), `accept-new` старую запись не заменит: `ssh-keygen -R $(pulumi stack output publicIp)` |
 | `Too many authentication failures` | ssh перебрал ключи агента раньше ключа стенда (`MaxAuthTries 4`). В `ansible.cfg` уже `IdentitiesOnly=yes`; при ручном ssh добавлять `-o IdentitiesOnly=yes` |
+| `Attempting to decrypt but no vault secrets found` | Не задан `ANSIBLE_VAULT_PASSWORD_FILE` (не выполнен `. ./env.sh`) — п.5 |
+| `The vault password file … was not found` / `Decryption failed` | Нет `~/.config/cdd-vault-pass` или в нём не тот пароль — взять лично у Дениса или менторов |
 | Caddy не получает сертификат | A-запись ещё не указала на `publicIp` — `dig cellestial.ru`, подождать TTL 300s |
