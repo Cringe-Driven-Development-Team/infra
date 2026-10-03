@@ -56,9 +56,8 @@ const notebooksBucketName = cfg.require("notebooksBucket");
 const avatarsBucketName = cfg.require("avatarsBucket");
 // Тип бакета Selectel: public (по умолчанию) — чтение объектов без авторизации, источник для CDN.
 const s3Public = cfg.getBoolean("s3Public") ?? true;
-// Поддомен CDN (например cdn.cellestial.ru): Pulumi создаёт для него зону DNS и CDN-ресурс,
-// привязка домена к CDN-ресурсу — в панели.
-const cdnDomain = cfg.get("cdnDomain");
+// CDN-ресурс с бакетом источником; раздаёт на своём домене <id>.selcdn.net, своего домена нет.
+const cdnEnabled = cfg.getBoolean("cdn") ?? false;
 
 const renamedFromStudy = { aliases: [{ name: "study" }] };
 
@@ -483,16 +482,10 @@ if (appDomain && parentZone) {
   }, { ...withDns, deleteBeforeReplace: true });
 }
 
-// cdn.<домен>: зона DNS и CDN-ресурс с публичным бакетом источником. Зона — только зона:
-// NS-делегирование из родительской Selectel ставит сам, а привязку домена к CDN-ресурсу (записи в
-// зоне и сертификат) делают в панели.
-// Зона-поддомен — в проекте родительской зоны (infra:dnsProjectId), не в проекте стека: проект стека
-// пересоздаётся с новым id, и в нём POST зоны-поддомена падает с root_zone_already_belongs_to_another_user.
+// CDN-ресурс с публичным бакетом источником. Зоны DNS и своего домена у него нет: клиент грузит
+// чанки с cdnDefaultDomain.
 let cdn: CdnResource | undefined;
-if (cdnDomain) {
-  // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
-  new selectel.DomainsZoneV2("cdn", { name: withDot(cdnDomain), projectId: dnsProjectId },
-    { ...withDns, deleteBeforeReplace: true });
+if (cdnEnabled) {
   cdn = new CdnResource("cdn", {
     projectId: project.id,
     name: checkCdnName(cfg.get("cdnName") ?? `${name}-cdn`),
@@ -508,7 +501,6 @@ export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;
 export const s3Bucket = bucket.bucket;
 export const s3PublicDomain = bucketAccess.publicDomain;
-export const cdnCustomDomain = cdnDomain ?? null;
 export const cdnResourceId = cdn?.id ?? null;
 export const cdnDefaultDomain = cdn?.cdnDomain ?? null;
 export const serviceUserName = serviceUser.name;

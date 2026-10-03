@@ -35,9 +35,8 @@ config:
   infra:domain: cellestial.ru
   infra:dnsZone: cellestial.ru.
   # infra:dnsProjectId: "<id проекта зоны>"   # по умолчанию — проект стека
-  # Поддомен CDN: Pulumi создаёт его зону DNS и CDN-ресурс с бакетом источником (нужен
-  # infra:s3Public); привязка домена к CDN-ресурсу — в панели.
-  infra:cdnDomain: cdn.cellestial.ru
+  # CDN-ресурс с бакетом источником (нужен infra:s3Public); домен — выход cdnDefaultDomain
+  infra:cdn: "true"
   # infra:cdnName: "<имя CDN-ресурса>"   # по умолчанию <infra:name>-cdn
 
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru

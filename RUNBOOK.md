@@ -185,8 +185,9 @@ for p in 22 80 443;   do nc -z -G3 "$IP" $p && echo "$p open"; done
 for p in 5432 8080 2375 2376; do nc -z -G3 "$IP" $p && echo "$p OPEN — так не надо"; done
 ```
 
-CDN: зону `cdn.cellestial.ru.` и CDN-ресурс с бакетом источником создаёт Pulumi (`infra:cdnDomain`),
-привязку домена к ресурсу и сертификат — руками в панели. Что автоматом, а что руками — `CLAUDE.md`.
+CDN: CDN-ресурс с бакетом источником создаёт Pulumi (`infra:cdn: true`), своего домена и зоны DNS у
+него нет — файлы отдаются с `pulumi stack output cdnDefaultDomain`. Что автоматом, а что руками —
+`CLAUDE.md`.
 
 ## 7. Снос всего
 
@@ -213,7 +214,6 @@ pulumi destroy
 
 | Симптом | Причина |
 |---|---|
-| `root_zone_already_belongs_to_another_user` при создании зоны `cdn.` | Зона-поддомен создаётся не в проекте родительской зоны — должна быть в `infra:dnsProjectId` (`CLAUDE.md`) |
 | `pulumi whoami` падает с `no EC2 IMDS role found` | Не выполнен `source pulumi/bootstrap/env.sh` (нет личного ключа стейта `AWS_*`) — п.2 |
 | `pulumi stack select prod`: стек не найден | Команда запущена не из `pulumi/` (бэкенд берётся из `Pulumi.yaml` каталога) или задана `PULUMI_BACKEND_URL` — `pulumi whoami -v` должен показать `s3://cdd-infra-state/prod…` — п.2 |
 | `409 already_exists` | Имя занято в общем аккаунте → сменить `infra:name` / `infra:serviceUserName` / `infra:s3Bucket` |

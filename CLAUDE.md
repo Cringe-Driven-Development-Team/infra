@@ -31,22 +31,16 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   Анонимное чтение по ключу — `https://<avatarsPublicDomain>/<ключ>`, его даёт тип бакета. Правило
   `PublicRead` в политику не возвращать: политика Selectel действует только на авторизованные
   запросы, через S3 API анонимный запрос получает `403` при любой политике.
-- При заданном `infra:cdnDomain`:
-  - зона DNS `cdn.cellestial.ru.` — **только зона, без записей**, в проекте родительской зоны
-    `infra-shared` (`infra:dnsProjectId`, провайдер `dns`);
-  - CDN-ресурс `<infra:name>-cdn` с бакетом источником, **без своего домена** (dynamic-ресурс
-    `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
+- При `infra:cdn: true` — CDN-ресурс `<infra:name>-cdn` с бакетом источником, **без своего домена
+  и без зоны DNS** (dynamic-ресурс `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain`
+  (`<id>.selcdn.net`) — с него клиент грузит чанки.
 
 ### Руками в панели Selectel
 
 - Первый сервисный пользователь аккаунта и его роли (`member`, `iam.admin` на аккаунт).
 - Личный доступ к стейту на человека — `pulumi/bootstrap/README.md`.
-- **Привязка `cdn.cellestial.ru` к CDN-ресурсу**: CDN → ресурс `<infra:name>-cdn` → персональный
-  домен `cdn.cellestial.ru` (DNS Selectel) → выпустить Let's Encrypt. Записи в зоне
-  `cdn.cellestial.ru.` ставит панель. После пересоздания стека (новый проект, зона и CDN-ресурс) —
-  повторить.
-- Своего домена у бакета нет (`s3.cellestial.ru` не делаем): файлы — через CDN или
-  `https://<s3PublicDomain>/<ключ>`.
+- Своих доменов у CDN и бакета нет (`cdn.cellestial.ru`, `s3.cellestial.ru` не делаем): файлы —
+  через `https://<cdnDefaultDomain>/<ключ>` или `https://<s3PublicDomain>/<ключ>`.
 
 ### Чего не делать в коде (уже падало)
 
