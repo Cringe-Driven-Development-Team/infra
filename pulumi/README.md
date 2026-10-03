@@ -162,14 +162,15 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 
 `infra:avatarsBucket` — аватарки пользователей, читают все, пишет Go API:
 
-- тип бакета `public` (`BucketAccess`): объект доступен без авторизации **только** по
-  `https://<avatarsPublicDomain>/<ключ>` (`<uuid>.selstorage.ru`); через S3 API
-  (`<s3Endpoint>/<бакет>/<ключ>`) анонимный запрос получает `403`. Источником CDN не служит;
+- тип бакета `public` (`BucketAccess`): объект читается без авторизации по ключу —
+  `https://<avatarsPublicDomain>/<ключ>` (`<uuid>.selstorage.ru`). Через S3 API
+  (`<s3Endpoint>/<бакет>/<ключ>`) анонимный запрос получает `403`: политика бакета в Selectel
+  действует только на авторизованные запросы, анонимного чтения она не открывает. Источником CDN
+  не служит;
 - отдельного пользователя нет: пишет пользователь бэка `infra:notebooksUserName` тем же ключом
   (`notebooksAccessKey`, `notebooksSecretKey`);
 - политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject` (без листинга);
-  пользователю стека — `s3:*`; всем — `GetObject` (правило `PublicRead`: анонимного чтения через
-  S3 API оно не открывает, оставлено, пока не проверено, что домен `selstorage.ru` отдаёт объекты без него);
+  пользователю стека — `s3:*`. Правила для всех (`PublicRead`) нет — анонимное чтение даёт тип бакета;
 - `protect: true`, без `forceDestroy`, как у ноутбуков: `pulumi destroy` без `--exclude-protected`
   падает на плане. Удалить осознанно — опустошить бакет и
   `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.

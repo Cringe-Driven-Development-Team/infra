@@ -27,9 +27,10 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   `notebooksSecretKey`; доступ ему даёт только политика этого бакета (в ней же `s3:*` пользователю стека).
 - Бакет аватарок `infra:avatarsBucket`, **публичный** (`BucketAccess` с `type: "public"`, не источник
   CDN), `protect: true` и без `forceDestroy`. Пишет тот же пользователь Go API (политика бакета:
-  объекты — ему, `s3:*` — пользователю стека, `GetObject` — всем); выходы `avatarsBucket`,
-  `avatarsPublicDomain`. Анонимное чтение — только с `https://<avatarsPublicDomain>/<ключ>`: через
-  S3 API оно отвечает `403` и с правилом `PublicRead` (правило без проверки не убирать).
+  объекты — ему, `s3:*` — пользователю стека); выходы `avatarsBucket`, `avatarsPublicDomain`.
+  Анонимное чтение по ключу — `https://<avatarsPublicDomain>/<ключ>`, его даёт тип бакета. Правило
+  `PublicRead` в политику не возвращать: политика Selectel действует только на авторизованные
+  запросы, через S3 API анонимный запрос получает `403` при любой политике.
 - При заданном `infra:cdnDomain`:
   - зона DNS `cdn.cellestial.ru.` — **только зона, без записей**, в проекте родительской зоны
     `infra-shared` (`infra:dnsProjectId`, провайдер `dns`);

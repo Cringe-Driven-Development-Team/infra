@@ -423,9 +423,10 @@ const avatarsAccess = new BucketAccess("avatars", {
 
 // Пишет аватарки тот же пользователь Go API, что и ноутбуки (ключ notebooksAccessKey); листинг ему
 // не нужен. Политика отключает роли проекта, поэтому пользователю стека явно оставлен полный доступ.
-// Публичный адрес аватарки — только https://<avatarsPublicDomain>/<ключ>: анонимное чтение через
-// S3 API (endpoint пула, path- и virtual-hosted-style) отвечает 403 и с правилом PublicRead. Правило
-// оставлено: не проверено, отдаёт ли <uuid>.selstorage.ru объекты при политике без него.
+// Анонимное чтение по ключу — https://<avatarsPublicDomain>/<ключ>: его даёт тип бакета public, а не
+// политика. Политика Selectel действует только на авторизованные запросы (Principal "*" — «все
+// авторизованные»), поэтому правила PublicRead здесь нет: через S3 API (endpoint пула) анонимный
+// запрос получает 403 при любой политике.
 new aws.s3.BucketPolicy("avatars", {
   bucket: avatarsBucketResource.id,
   policy: pulumi.all([avatarsBucketResource.arn, serviceUser.id, notebooksUser.id])
@@ -444,13 +445,6 @@ new aws.s3.BucketPolicy("avatars", {
           Effect: "Allow",
           Principal: { AWS: [backendUserId] },
           Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-          Resource: `${arn}/*`,
-        },
-        {
-          Sid: "PublicRead",
-          Effect: "Allow",
-          Principal: { AWS: ["*"] },
-          Action: "s3:GetObject",
           Resource: `${arn}/*`,
         },
       ],
