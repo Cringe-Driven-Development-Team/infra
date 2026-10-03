@@ -10,7 +10,13 @@
 	# Клиент — SPA: на любом пути отдаётся корневой index.html бакета релизов, маршрут разбирает
 	# роутер в браузере. Чанки браузер берёт с CDN напрямую, через Caddy они не идут.
 	handle {
-		rewrite * /index.html
+		# в бакет уходят только чтения: методы пользователя хранилищу не нужны
+		@not_read not method GET HEAD
+		header @not_read Allow "GET, HEAD"
+		respond @not_read 405
+
+		# «?» в конце сбрасывает query string запроса: в бакет идёт ровно /index.html
+		rewrite * /index.html?
 		reverse_proxy https://{{ frontend_s3_domain }} {
 			# публичный домен бакета выбирает бакет по Host
 			header_up Host {upstream_hostport}
