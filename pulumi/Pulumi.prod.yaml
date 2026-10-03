@@ -23,3 +23,4 @@ config:
   infra:s3Bucket: cellestial-release-0
   infra:s3PublicRead: "false"
   infra:notebooksBucket: cellestial-notebooks-0
+  infra:avatarsBucket: cellestial-avatars-0

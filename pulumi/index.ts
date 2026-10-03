@@ -52,6 +52,8 @@ const s3BucketName = cfg.require("s3Bucket");
 const s3EndpointUrl = `https://s3.${s3Pool}.storage.selcloud.ru`;
 // Приватный бакет ноутбуков пользователей (.ipynb) — в том же пуле; доступ только у Go API.
 const notebooksBucketName = cfg.require("notebooksBucket");
+// Публичный бакет аватарок пользователей — в том же пуле; пишет Go API, читают все.
+const avatarsBucketName = cfg.require("avatarsBucket");
 // Тип бакета Selectel: public (по умолчанию) — чтение объектов без авторизации, источник для CDN.
 const s3Public = cfg.getBoolean("s3Public") ?? true;
 // Поддомен CDN (например cdn.cellestial.ru): Pulumi создаёт для него зону DNS и CDN-ресурс,
@@ -405,6 +407,54 @@ new aws.s3.BucketPolicy("notebooks", {
     })),
 }, { provider: s3 });
 
+// Бакет аватарок пользователей. Как и ноутбуки — данные пользователей: protect и без forceDestroy.
+const avatarsBucketResource = new aws.s3.Bucket("avatars", {
+  bucket: avatarsBucketName,
+}, { provider: s3, protect: true });
+
+// Тип public: аватарки отдаются без авторизации с домена <uuid>.selstorage.ru (выход
+// avatarsPublicDomain). Источником CDN бакет не служит.
+const avatarsAccess = new BucketAccess("avatars", {
+  projectId: project.id,
+  pool: s3Pool,
+  bucket: avatarsBucketResource.bucket,
+  type: "public",
+}, { dependsOn: [avatarsBucketResource] });
+
+// Пишет аватарки тот же пользователь Go API, что и ноутбуки (ключ notebooksAccessKey); листинг ему
+// не нужен. Политика отключает роли проекта, поэтому пользователю стека явно оставлен полный доступ,
+// а чтение объектов всем продублировано правилом PublicRead — для запросов через S3 API.
+new aws.s3.BucketPolicy("avatars", {
+  bucket: avatarsBucketResource.id,
+  policy: pulumi.all([avatarsBucketResource.arn, serviceUser.id, notebooksUser.id])
+    .apply(([arn, stackUserId, backendUserId]) => JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Sid: "StackServiceUserFullAccess",
+          Effect: "Allow",
+          Principal: { AWS: [stackUserId] },
+          Action: "s3:*",
+          Resource: [arn, `${arn}/*`],
+        },
+        {
+          Sid: "BackendObjects",
+          Effect: "Allow",
+          Principal: { AWS: [backendUserId] },
+          Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+          Resource: `${arn}/*`,
+        },
+        {
+          Sid: "PublicRead",
+          Effect: "Allow",
+          Principal: { AWS: ["*"] },
+          Action: "s3:GetObject",
+          Resource: `${arn}/*`,
+        },
+      ],
+    })),
+}, { provider: s3 });
+
 // DNS: зона домена (infra:dnsZone) лежит в проекте infra:dnsProjectId, по умолчанию — в проекте стека.
 const appDomain = cfg.get("domain");
 const withDot = (d: string) => (d.endsWith(".") ? d : `${d}.`);
@@ -473,3 +523,6 @@ export const s3SecretKey = pulumi.secret(s3Credentials.secretKey);
 export const notebooksBucket = notebooksBucketResource.bucket;
 export const notebooksAccessKey = notebooksCredentials.accessKey;
 export const notebooksSecretKey = pulumi.secret(notebooksCredentials.secretKey);
+// Бакет аватарок: пишет тот же ключ Go API, публичный URL — https://<avatarsPublicDomain>/<ключ>
+export const avatarsBucket = avatarsBucketResource.bucket;
+export const avatarsPublicDomain = avatarsAccess.publicDomain;

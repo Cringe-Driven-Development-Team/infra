@@ -25,6 +25,10 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   CDN), `protect: true` и без `forceDestroy` — данные пользователей. Сервисный пользователь Go API
   (`infra:notebooksUserName`, роль `s3.bucket.user`) и его S3-ключ — выходы `notebooksAccessKey`,
   `notebooksSecretKey`; доступ ему даёт только политика этого бакета (в ней же `s3:*` пользователю стека).
+- Бакет аватарок `infra:avatarsBucket`, **публичный** (`BucketAccess` с `type: "public"`, не источник
+  CDN), `protect: true` и без `forceDestroy`. Пишет тот же пользователь Go API (политика бакета:
+  объекты — ему, `s3:*` — пользователю стека, `GetObject` — всем); выходы `avatarsBucket`,
+  `avatarsPublicDomain`.
 - При заданном `infra:cdnDomain`:
   - зона DNS `cdn.cellestial.ru.` — **только зона, без записей**, в проекте родительской зоны
     `infra-shared` (`infra:dnsProjectId`, провайдер `dns`);

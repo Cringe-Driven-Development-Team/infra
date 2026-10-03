@@ -77,6 +77,8 @@ pulumi config set infra:s3Bucket <имя-бакета>
 # Приватный бакет ноутбуков (.ipynb) в том же пуле и сервисный пользователь Go API
 pulumi config set infra:notebooksBucket <имя-бакета>
 # pulumi config set infra:notebooksUserName cellestialNotebooksUser   # по умолчанию; уникально в аккаунте
+# Публичный бакет аватарок в том же пуле
+pulumi config set infra:avatarsBucket <имя-бакета>
 ```
 
 `pool`, `zone` и `volumeType` — из одного региона VPS (`ru-9` / `ru-9a` / `fast.ru-9a`).
@@ -138,6 +140,21 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 `ansible/inventory/group_vars/all/vault.yml` (`vault_notebooks_s3_access_key`,
 `vault_notebooks_s3_secret_key`) через `ansible-vault edit` — `ansible/README.md`, «Секреты».
 
+## Бакет аватарок
+
+`infra:avatarsBucket` — аватарки пользователей, читают все, пишет Go API:
+
+- тип бакета `public` (`BucketAccess`): объект доступен без авторизации по
+  `https://<avatarsPublicDomain>/<ключ>` (`<uuid>.selstorage.ru`). Источником CDN не служит;
+- отдельного пользователя нет: пишет пользователь бэка `infra:notebooksUserName` тем же ключом
+  (`notebooksAccessKey`, `notebooksSecretKey`);
+- политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject` (без листинга);
+  пользователю стека — `s3:*`; всем — `GetObject`;
+- `protect: true`, без `forceDestroy`, как у ноутбуков. Удалить осознанно — опустошить бакет и
+  `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.
+
+Выходы: `avatarsBucket`, `avatarsPublicDomain`.
+
 Проверка доступа (после `source bootstrap/env.sh`):
 
 ```bash
@@ -183,4 +200,4 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 | Ошибка создания бакета провайдером aws | Проверить `infra:s3Pool`: endpoint `s3.<pool>.storage.selcloud.ru` должен существовать |
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
-Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.
+Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.

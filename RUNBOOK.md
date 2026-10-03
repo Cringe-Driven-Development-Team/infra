@@ -84,6 +84,7 @@ pulumi config set infra:dnsProjectId '<project id из п.1.2>'
 pulumi config set infra:s3Pool   ru-7
 pulumi config set infra:s3Bucket '<имя бакета релизов, глобально уникальное>'
 pulumi config set infra:notebooksBucket '<имя приватного бакета ноутбуков, глобально уникальное>'
+pulumi config set infra:avatarsBucket '<имя публичного бакета аватарок, глобально уникальное>'
 pulumi config set infra:s3PublicRead true   # публичное чтение объектов (политика бакета), нужно для DoD
 ```
 
@@ -92,7 +93,7 @@ pulumi config set infra:s3PublicRead true   # публичное чтение о
 ```bash
 pulumi preview        # должно быть: 1 server, 1 volume, сеть, бакет, rrset, ...
 pulumi up             # подтвердить, ~5-10 минут
-pulumi stack output   # projectId, publicIp, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, domain, notebooks*
+pulumi stack output   # projectId, publicIp, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, domain, notebooks*, avatars*
 ```
 
 Ключ Go API к бакету ноутбуков (`notebooksAccessKey`, `notebooksSecretKey`, оба — с `--show-secrets`)
@@ -189,9 +190,10 @@ CDN: зону `cdn.cellestial.ru.` и CDN-ресурс с бакетом ист�
 cd pulumi && pulumi destroy    # бакет релизов удалится с объектами (forceDestroy: true)
 ```
 
-Бакет ноутбуков защищён (`protect: true`, без `forceDestroy`): `destroy` на нём остановится, а с ним
-останется и проект. Снести и его — сначала сохранить или удалить объекты, затем
-`pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'` и повторить `destroy`.
+Бакеты ноутбуков и аватарок защищены (`protect: true`, без `forceDestroy`): `destroy` на них
+остановится, а с ними останется и проект. Снести и их — сначала сохранить или удалить объекты, затем
+`pulumi state unprotect` для `urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks` и
+`urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars` и повторить `destroy`.
 
 ## Частые грабли
 
