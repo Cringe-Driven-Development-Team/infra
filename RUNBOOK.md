@@ -185,9 +185,19 @@ for p in 22 80 443;   do nc -z -G3 "$IP" $p && echo "$p open"; done
 for p in 5432 8080 2375 2376; do nc -z -G3 "$IP" $p && echo "$p OPEN — так не надо"; done
 ```
 
-CDN: CDN-ресурс с бакетом источником создаёт Pulumi (`infra:cdn: true`), своего домена и зоны DNS у
-него нет — файлы отдаются с `pulumi stack output cdnDefaultDomain`. Что автоматом, а что руками —
-`CLAUDE.md`.
+CDN: CDN-ресурс с бакетом источником создаёт Pulumi (`infra:cdn: true`) — файлы отдаются с
+`pulumi stack output cdnDefaultDomain`. Свои домены (`infra:cdnDomain`, `infra:s3Domain`) — CNAME в зоне
+`cellestial.ru.`, привязку и Let's Encrypt тоже делает Pulumi; сертификаты выпускаются не сразу:
+
+```bash
+pulumi stack output cdnCertificateStatus          # accepted → processed
+pulumi stack output s3CertificateStatus           # CREATING → ACTIVE
+pulumi stack output s3CertificateUploadedVersion  # пусто — сертификат ещё не в хранилище: pulumi up
+curl -I "https://$(pulumi stack output cdnCustomDomain)/current.json"   # 200
+curl -I "https://$(pulumi stack output s3CustomDomain)/current.json"    # 200
+```
+
+Что автоматом, а что руками — `CLAUDE.md`, подробности — `pulumi/README.md`, «Свои домены».
 
 ## 7. Снос всего
 

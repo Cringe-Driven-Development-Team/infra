@@ -105,7 +105,7 @@ A-запись домена находится под управлением Pul
 | аватарки | `infra:avatarsBucket` | аватарки пользователей, бэкенд | публичный | нет | Go API (`notebooksAccessKey`) |
 | ноутбуки | `infra:notebooksBucket` | `.ipynb` пользователей, бэкенд | приватный | нет | Go API (`notebooksAccessKey`) |
 
-- Фронт отдаётся через CDN (`cdnDefaultDomain`) или напрямую с
+- Фронт отдаётся через CDN (`cdnDefaultDomain`, свой домен — `cdnCustomDomain`) или напрямую с
   `https://<s3PublicDomain>/<ключ>`; проверка — ниже, «Проверка S3».
 - Аватарки отдаются напрямую с `https://<avatarsPublicDomain>/<ключ>` — «Бакет аватарок».
 - Ноутбуки читает и пишет только Go API своим ключом — «Бакет ноутбуков».
@@ -202,6 +202,30 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 Новый ключ шлюз S3 признаёт не сразу: первые секунды (иногда минуты) — `InvalidAccessKeyId`.
 
+## Свои домены
+
+`infra:cdnDomain` и `infra:s3Domain` — свои домены CDN-ресурса и бакета релизов (`infra:s3Bucket`).
+Оба — CNAME-записи внутри зоны `infra:dnsZone` (не зоны-поддомены), привязка и сертификаты —
+dynamic-ресурсы `CdnDomain` и `BucketDomain` (`selectel-storage.ts`), панель не нужна.
+
+| | CDN | Бакет |
+|---|---|---|
+| CNAME | `<id>.selcdn.net.` (`cdnDefaultDomain`) | `access.<infra:s3Pool>.storage.selcloud.ru.` |
+| Привязка | `PATCH /cdn/v3/resources/<id>` — `names` | `PUT /v2/containers/<бакет>/domains` |
+| Сертификат | `POST /cdn/v3/letsencrypt/<id>` | `POST api.selectel.ru/certs/le/issue?dnsv2=true`, затем `/v2/ssl` хранилища |
+| Готов, когда | `cdnCertificateStatus` = `processed` | `s3CertificateStatus` = `ACTIVE` и `s3CertificateUploadedVersion` не пуст |
+
+- `pulumi up` не ждёт ни распространения DNS, ни выпуска сертификата. Selectel сам проверяет CNAME при
+  привязке, поэтому на ней короткий повтор (до трёх минут); не успело — `up` падает с понятной ошибкой,
+  повторный `up` продолжает.
+- Пока сертификат не выпущен, `preview` показывает `CdnDomain`/`BucketDomain` как `update` — так и
+  задумано: следующий `up` перечитывает статус, а у бакета загружает выпущенный сертификат в хранилище.
+- Let's Encrypt Selectel продлевает сам (за 30 дней до конца срока), но в хранилище новую версию не
+  кладёт: `pulumi refresh && pulumi up` — `BucketDomain` увидит новую версию и перезальёт.
+- Сертификат бакета выпускается в проекте `infra:s3CertProjectId` (по умолчанию — проект стека); в
+  стейте лежат только id, версии и статус, закрытый ключ читается и сразу уходит в хранилище.
+- Тесты функций API: `bun test selectel-storage.test.ts`.
+
 ## Передача в Ansible
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт
@@ -223,7 +247,7 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
 Правка кода dynamic-ресурсов (`selectel-storage.ts`) попадает в стейт только через `pulumi up`:
-`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess` показывает такую правку как
-`update` (тип бакета выставляется повторно тем же значением).
+`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess`, `CdnDomain` и `BucketDomain`
+показывают такую правку как `update` (те же значения выставляются повторно).
 
 Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.
