@@ -31,30 +31,43 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   Анонимное чтение по ключу — `https://<avatarsPublicDomain>/<ключ>`, его даёт тип бакета. Правило
   `PublicRead` в политику не возвращать: политика Selectel действует только на авторизованные
   запросы, через S3 API анонимный запрос получает `403` при любой политике.
-- При заданном `infra:cdnDomain`:
-  - зона DNS `cdn.cellestial.ru.` — **только зона, без записей**, в проекте родительской зоны
-    `infra-shared` (`infra:dnsProjectId`, провайдер `dns`);
-  - CDN-ресурс `<infra:name>-cdn` с бакетом источником, **без своего домена** (dynamic-ресурс
-    `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
+- При `infra:cdn: true` — CDN-ресурс `<infra:name>-cdn` с бакетом источником (dynamic-ресурс
+  `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
+- Свои домены и их привязка dynamic-ресурсами (`pulumi/selectel-storage.ts`); сертификатов Pulumi не
+  выпускает:
+  - `infra:cdnDomain` (`cdn.cellestial.ru`) — **CNAME внутри зоны `cellestial.ru.`** на
+    `cdnDefaultDomain`, без зоны-поддомена; `CdnDomain`: домен в `names` CDN-ресурса; выход
+    `cdnCustomDomain`.
+  - `infra:avatarsDomain` (`avatars.cellestial.ru`) — **отдельная зона DNS** `avatars.cellestial.ru.` в
+    проекте `infra-shared` (`infra:dnsProjectId`) и в ней ALIAS на публичный
+    домен бакета `<uuid>.selstorage.ru` (`avatarsPublicDomain`); `BucketDomain`: домен бакета аватарок
+    `infra:avatarsBucket`; выход `avatarsCustomDomain`. NS-делегирование из `cellestial.ru.` ставит
+    Selectel.
+  - У бакета релизов своего домена нет (`s3.cellestial.ru` не делаем) — только `s3PublicDomain`.
 
 ### Руками в панели Selectel
 
 - Первый сервисный пользователь аккаунта и его роли (`member`, `iam.admin` на аккаунт).
 - Личный доступ к стейту на человека — `pulumi/bootstrap/README.md`.
-- **Привязка `cdn.cellestial.ru` к CDN-ресурсу**: CDN → ресурс `<infra:name>-cdn` → персональный
-  домен `cdn.cellestial.ru` (DNS Selectel) → выпустить Let's Encrypt. Записи в зоне
-  `cdn.cellestial.ru.` ставит панель. После пересоздания стека (новый проект, зона и CDN-ресурс) —
-  повторить.
-- Своего домена у бакета нет (`s3.cellestial.ru` не делаем): файлы — через CDN или
-  `https://<s3PublicDomain>/<ключ>`.
+- Сертификаты своих доменов: `cdn.cellestial.ru` — панель → CDN → ресурс → сертификаты;
+  `avatars.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
+  (`POST /cdn/v3/letsencrypt/<id>`) дважды завершался `failed` без причины. Сами домены привязывает
+  Pulumi — в панели их не трогать.
+- Бэк отдаёт ссылки на аватарки через `avatars.cellestial.ru` (`avatars_public_domain` в Ansible).
+  Без сертификата домен по HTTPS отвечает сертификатом `*.ru-7.storage.selcloud.ru`, а HTTP
+  перенаправляет на HTTPS — после пересоздания стека сначала сертификат в панели, потом выкатка бэка.
 
 ### Чего не делать в коде (уже падало)
 
 - NS-делегирование поддомена в `cellestial.ru.`: Selectel ставит его сам при создании зоны-поддомена,
   своя NS-запись — `this_rrset_is_already_exists`.
-- CNAME/ALIAS для `cdn.cellestial.ru` и `names` у CDN-ресурса: CNAME на вершине зоны невозможен,
-  ALIAS не принимают ни привязка домена бакета (`domain_cname_invalid`), ни CDN, а домен, который ещё
-  не указывает на CDN, API молча отбрасывает — это делает панель.
+- Зону-поддомен под `cdn.cellestial.ru`: на вершине зоны CNAME невозможен, а ALIAS CDN не принимает.
+  Только CNAME-запись в `cellestial.ru.`.
+- Привязку домена бакета через API при домене-зоне (`avatars.cellestial.ru`): Selectel проверяет CNAME и
+  на ALIAS отвечает `domain_cname_invalid`. `BucketDomain` уже привязанный домен не трогает; если
+  привязка слетела — вернуть её в панели (S3 → бакет → Домены), а не через `up`.
+- `names` в теле создания/изменения `CdnResource`: домен, который ещё не CNAME на CDN, API молча
+  отбрасывает при `accept`. Привязка — отдельный `CdnDomain` после записи, со сверкой через `GET`.
 - Зону-поддомен в проекте стека (`project.id`): Selectel отвечает `root_zone_already_belongs_to_another_user`
   (корень `cellestial.ru.` в `infra-shared`) — после `destroy` и нового проекта `up` падал на этом.
 - Зоны-поддомены при живой зоне-поддомене не заменять на CNAME в `cellestial.ru.` в одном `up`:
