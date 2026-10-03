@@ -19,9 +19,11 @@ pulumi stack export --show-secrets -s "$STACK" > "$STATE"
 CREDS="$(python3 - "$STATE" <<'PY'
 import json, sys
 res = json.load(open(sys.argv[1]))["deployment"]["resources"]
-cred = next((r for r in res if r["type"].endswith("IamS3CredentialsV1")), None)
+# В стейте два IamS3CredentialsV1: ключ стека (product-s3) и ключ Go API (notebooks-s3) — берём по имени
+cred = next((r for r in res
+             if r["type"].endswith("IamS3CredentialsV1") and r["urn"].endswith("::product-s3")), None)
 if not cred:
-    sys.exit("В стейте нет IamS3CredentialsV1")
+    sys.exit("В стейте нет IamS3CredentialsV1 product-s3")
 out = cred.get("outputs", {})
 
 def unwrap(v):
