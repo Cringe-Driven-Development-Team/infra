@@ -175,8 +175,8 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
   падает на плане. Удалить осознанно — опустошить бакет и
   `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.
 
-Выходы: `avatarsBucket`, `avatarsPublicDomain`, `avatarsCustomDomain` (свой домен — «Свои домены»; до
-выпуска сертификата в панели бэк отдаёт ссылки на `avatarsPublicDomain`).
+Выходы: `avatarsBucket`, `avatarsPublicDomain`, `avatarsCustomDomain` (свой домен — «Свои домены»; его
+бэк и отдаёт в ссылках на аватарки).
 
 Проверка доступа (после `source bootstrap/env.sh`):
 
@@ -231,7 +231,8 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
   curl -sI  "https://$(pulumi stack output avatarsPublicDomain)/x"
   ```
 - Без сертификата свой домен бакета по HTTPS отвечает сертификатом `*.<пул>.storage.selcloud.ru`, а
-  HTTP перенаправляет на HTTPS — бэк остаётся на техническом домене `<uuid>.selstorage.ru`.
+  HTTP перенаправляет на HTTPS. Бэк отдаёт ссылки на аватарки через свой домен
+  (`avatars_public_domain` в Ansible) — сертификат должен быть выпущен до выкатки бэка.
 - Отвязка домена бакета (`pulumi destroy`, смена домена) сверяется через `GET`; не вышло — ошибка с
   подсказкой отвязать в панели.
 - Тесты функций API: `bun test selectel-storage.test.ts`.

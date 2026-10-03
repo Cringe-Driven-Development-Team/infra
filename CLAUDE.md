@@ -53,9 +53,9 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   `avatars.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
   (`POST /cdn/v3/letsencrypt/<id>`) дважды завершался `failed` без причины. Сами домены привязывает
   Pulumi — в панели их не трогать.
-- Пока у `avatars.cellestial.ru` нет сертификата, по HTTPS он отвечает сертификатом
-  `*.ru-7.storage.selcloud.ru`, а HTTP перенаправляет на HTTPS: бэк отдаёт ссылки на технический
-  `avatarsPublicDomain`, на свой домен его переключать после выпуска сертификата.
+- Бэк отдаёт ссылки на аватарки через `avatars.cellestial.ru` (`avatars_public_domain` в Ansible).
+  Без сертификата домен по HTTPS отвечает сертификатом `*.ru-7.storage.selcloud.ru`, а HTTP
+  перенаправляет на HTTPS — после пересоздания стека сначала сертификат в панели, потом выкатка бэка.
 
 ### Чего не делать в коде (уже падало)
 
