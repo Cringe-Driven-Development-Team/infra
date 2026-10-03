@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Http, HttpResult } from "./bootstrap/selectel-s3";
-import { bindCdnDomain, unbindCdnDomain } from "./selectel-storage";
+import {
+  bindBucketDomain, bindCdnDomain, getBucketDomains, unbindBucketDomain, unbindCdnDomain,
+} from "./selectel-storage";
 
 type Route = (method: string, url: string, stdin: string) => HttpResult | undefined;
 
@@ -66,6 +68,51 @@ describe("unbindCdnDomain", () => {
   test("ресурса или домена уже нет — запросов на изменение нет", async () => {
     const { http, calls } = fakeHttp(() => ({ status: 404, body: "" }));
     await unbindCdnDomain(http, "tok", "r1", "cdn.example.ru");
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+  });
+});
+
+describe("домен бакета", () => {
+  test("getBucketDomains: 404 — бакета нет, пустое тело — доменов нет", async () => {
+    expect(await getBucketDomains(fakeHttp(() => ({ status: 404, body: "" })).http, "tok", "ru-7", "b")).toBeUndefined();
+    expect(await getBucketDomains(fakeHttp(() => ({ status: 204, body: "" })).http, "tok", "ru-7", "b")).toEqual([]);
+    expect(await getBucketDomains(fakeHttp(() => jsonRes({ domains: ["s3.example.ru"] })).http, "tok", "ru-7", "b"))
+      .toEqual(["s3.example.ru"]);
+  });
+
+  test("домен уже привязан — PUT не шлётся", async () => {
+    const { http, calls } = fakeHttp(() => jsonRes({ domains: ["s3.example.ru"] }));
+    await bindBucketDomain(http, "tok", "ru-7", "b", "s3.example.ru", noWait);
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+  });
+
+  test("повторяет, пока Selectel не увидит CNAME", async () => {
+    let puts = 0;
+    const { http, calls } = fakeHttp((method) => {
+      if (method === "GET") return jsonRes({ domains: [] });
+      return ++puts < 3 ? jsonRes({ error: "domain_cname_invalid" }, 422) : { status: 204, body: "" };
+    });
+    await bindBucketDomain(http, "tok", "ru-7", "b", "s3.example.ru", noWait);
+    expect(puts).toBe(3);
+    const put = calls.find((c) => c.method === "PUT")!;
+    expect(put.url).toBe("https://api.ru-7.storage.selcloud.ru/v2/containers/b/domains");
+    expect(JSON.parse(put.args[put.args.indexOf("--data-raw") + 1])).toEqual({ domain_name: "s3.example.ru" });
+  });
+
+  test("другая ошибка — сразу, без повторов", async () => {
+    let puts = 0;
+    const { http } = fakeHttp((method) => {
+      if (method === "GET") return jsonRes({ domains: [] });
+      puts++;
+      return jsonRes({ error: "forbidden" }, 403);
+    });
+    await expect(bindBucketDomain(http, "tok", "ru-7", "b", "s3.example.ru", noWait)).rejects.toThrow(/403.*forbidden/);
+    expect(puts).toBe(1);
+  });
+
+  test("отвязка не привязанного домена — без DELETE", async () => {
+    const { http, calls } = fakeHttp(() => jsonRes({ domains: [] }));
+    await unbindBucketDomain(http, "tok", "ru-7", "b", "s3.example.ru");
     expect(calls.map((c) => c.method)).toEqual(["GET"]);
   });
 });

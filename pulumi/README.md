@@ -202,18 +202,30 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 Новый ключ шлюз S3 признаёт не сразу: первые секунды (иногда минуты) — `InvalidAccessKeyId`.
 
-## Свой домен CDN
+## Свои домены
 
-`infra:cdnDomain` (`cdn.cellestial.ru`) — свой домен CDN-ресурса: CNAME-запись внутри зоны
-`infra:dnsZone` (не зона-поддомен) на `cdnDefaultDomain` и dynamic-ресурс `CdnDomain`
-(`selectel-storage.ts`), который добавляет домен в `names` ресурса (`PATCH /cdn/v3/resources/<id>`) и
-сверяет результат через `GET`: домен, который ещё не CNAME на CDN, API молча отбрасывает.
+`infra:cdnDomain` и `infra:s3Domain` — свои домены CDN-ресурса и бакета релизов (`infra:s3Bucket`).
+Оба — CNAME-записи внутри зоны `infra:dnsZone` (не зоны-поддомены), привязка — dynamic-ресурсы
+`CdnDomain` и `BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
+
+| | CDN (`cdn.cellestial.ru`) | Бакет (`s3.cellestial.ru`) |
+|---|---|---|
+| CNAME | `<id>.selcdn.net.` (`cdnDefaultDomain`) | `access.<infra:s3Pool>.storage.selcloud.ru.` |
+| Привязка | `PATCH /cdn/v3/resources/<id>` — `names`, сверка через `GET` | `PUT /v2/containers/<бакет>/domains` |
+| Сертификат (руками) | панель → CDN → ресурс → сертификаты | панель → S3 → SSL-сертификаты |
 
 - Selectel сам проверяет CNAME при привязке, поэтому на ней короткий повтор (до трёх минут); не успело —
   `up` падает с понятной ошибкой, повторный `up` продолжает. Распространения DNS `up` не ждёт.
-- Сертификат домена выпускают руками: панель → CDN → ресурс → сертификаты, Let's Encrypt. До этого
-  `https://cdn.cellestial.ru` отвечает чужим сертификатом, по HTTP домен уже работает.
-- Своего домена у бакетов нет — только `<uuid>.selstorage.ru` (`s3PublicDomain`, `avatarsPublicDomain`).
+- `access.<пул>.storage.selcloud.ru` — адрес хранилища пула для своих доменов: бакет выбирается по
+  `Host`. Проверка, что домен ведёт в бакет (до сертификата — с `-k`): ответ с заголовками
+  `x-container-storage-policy-*`, как у технического домена; у непривязанного `Host` их нет.
+
+  ```bash
+  curl -skI "https://$(pulumi stack output s3CustomDomain)/index.html"
+  curl -sI  "https://$(pulumi stack output s3PublicDomain)/index.html"
+  ```
+- Без сертификата свой домен бакета по HTTPS отвечает сертификатом `*.<пул>.storage.selcloud.ru`, а
+  HTTP перенаправляет на HTTPS — Caddy и бэк остаются на технических доменах `<uuid>.selstorage.ru`.
 - Тесты функций API: `bun test selectel-storage.test.ts`.
 
 ## Передача в Ansible
@@ -237,7 +249,7 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
 Правка кода dynamic-ресурсов (`selectel-storage.ts`) попадает в стейт только через `pulumi up`:
-`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess` и `CdnDomain` показывают такую
+`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess`, `CdnDomain` и `BucketDomain` показывают такую
 правку как `update` (те же значения выставляются повторно).
 
 Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.

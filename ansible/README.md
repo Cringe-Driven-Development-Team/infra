@@ -251,4 +251,4 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   `kbdinteractiveauthentication no`, `allowtcpforwarding no`;
 - вне allowlist (22/80/443) на интерфейсах, отличных от loopback, ничего не слушает.
 
-CDN-ресурс и его свой домен создаёт Pulumi, сертификат домена — в панели (`pulumi/README.md`, «Свой домен CDN»).
+CDN-ресурс и свои домены CDN и бакета создаёт Pulumi, сертификаты доменов — в панели (`pulumi/README.md`, «Свои домены»).

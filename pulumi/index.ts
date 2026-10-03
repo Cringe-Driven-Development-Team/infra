@@ -4,7 +4,7 @@ import * as openstack from "@pulumi/openstack";
 import * as selectel from "@pulumi/selectel";
 import * as aws from "@pulumi/aws";
 import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./bootstrap/selectel-s3";
-import { BucketAccess, CdnDomain, CdnResource, checkCdnName } from "./selectel-storage";
+import { BucketAccess, BucketDomain, CdnDomain, CdnResource, checkCdnName } from "./selectel-storage";
 
 const cfg = new pulumi.Config();
 const selectelCfg = new pulumi.Config("selectel");
@@ -58,11 +58,15 @@ const avatarsBucketName = cfg.require("avatarsBucket");
 const s3Public = cfg.getBoolean("s3Public") ?? true;
 // CDN-ресурс с бакетом источником; технический домен — <id>.selcdn.net.
 const cdnEnabled = cfg.getBoolean("cdn") ?? false;
-// Свой домен CDN-ресурса (например cdn.cellestial.ru): CNAME в зоне infra:dnsZone и привязка к
-// ресурсу (CdnDomain). Сертификат домена выпускают в панели.
+// Свои домены CDN-ресурса и бакета релизов (например cdn.cellestial.ru, s3.cellestial.ru): CNAME в
+// зоне infra:dnsZone и привязка (CdnDomain, BucketDomain). Сертификаты доменов выпускают в панели.
 const cdnCustomDomainName = cfg.get("cdnDomain");
+const s3CustomDomainName = cfg.get("s3Domain");
 if (cdnCustomDomainName && !cdnEnabled) {
   throw new Error("infra:cdnDomain задан без infra:cdn: домен привязывается к CDN-ресурсу");
+}
+if (s3CustomDomainName && !s3Public) {
+  throw new Error("infra:s3Domain задан при infra:s3Public=false: свой домен бывает только у публичного бакета");
 }
 
 const renamedFromStudy = { aliases: [{ name: "study" }] };
@@ -471,7 +475,7 @@ const dnsProvider = new selectel.Provider("dns", {
   authRegion: selectelCfg.get("authRegion"),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || cdnCustomDomainName
+const parentZone = appDomain || cdnCustomDomainName || s3CustomDomainName
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -488,6 +492,18 @@ if (appDomain && parentZone) {
   }, { ...withDns, deleteBeforeReplace: true });
 }
 
+// CNAME своего домена в зоне infra:dnsZone — обычная запись внутри зоны, не зона-поддомен: у зоны на
+// вершине CNAME невозможен, а ALIAS не принимают ни CDN, ни привязка домена бакета.
+const cnameRecord = (logicalName: string, domainName: string, target: pulumi.Input<string>) =>
+  new selectel.DomainsRrsetV2(logicalName, {
+    zoneId: parentZone!.id,
+    projectId: dnsProjectId,
+    name: withDot(domainName),
+    type: "CNAME",
+    ttl: 300,
+    records: [{ content: pulumi.output(target).apply(withDot) }],
+  }, { ...withDns, deleteBeforeReplace: true });
+
 // CDN-ресурс с публичным бакетом источником; чанки клиент грузит с cdnDefaultDomain или со своего
 // домена infra:cdnDomain.
 let cdn: CdnResource | undefined;
@@ -499,21 +515,25 @@ if (cdnEnabled) {
   });
   if (cdnCustomDomainName) {
     // Домен, который ещё не CNAME на cdnDomain, CDN API не сохраняет: сначала запись, потом привязка
-    // Запись внутри зоны, не зона-поддомен: у зоны на вершине CNAME невозможен, а ALIAS CDN не принимает.
-    const record = new selectel.DomainsRrsetV2("cdn", {
-      zoneId: parentZone!.id,
-      projectId: dnsProjectId,
-      name: withDot(cdnCustomDomainName),
-      type: "CNAME",
-      ttl: 300,
-      records: [{ content: cdn.cdnDomain.apply(withDot) }],
-    }, { ...withDns, deleteBeforeReplace: true });
+    const record = cnameRecord("cdn", cdnCustomDomainName, cdn.cdnDomain);
     new CdnDomain("cdn", {
       projectId: project.id,
       resourceId: cdn.id,
       domain: cdnCustomDomainName,
     }, { dependsOn: [record] });
   }
+}
+
+// Свой домен бакета релизов: CNAME на access.<пул>.storage.selcloud.ru — адрес, по которому хранилище
+// пула отдаёт публичные бакеты по своим доменам (бакет выбирается по Host).
+if (s3CustomDomainName) {
+  const record = cnameRecord("s3", s3CustomDomainName, `access.${s3Pool}.storage.selcloud.ru`);
+  new BucketDomain("product-releases", {
+    projectId: project.id,
+    pool: s3Pool,
+    bucket: bucket.bucket,
+    domain: s3CustomDomainName,
+  }, { dependsOn: [record, bucketAccess] });
 }
 
 export const projectId = project.id;
@@ -524,7 +544,8 @@ export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;
 export const s3Bucket = bucket.bucket;
 export const s3PublicDomain = bucketAccess.publicDomain;
-// Свой домен CDN-ресурса; HTTPS на нём — после выпуска сертификата в панели
+// Свои домены бакета релизов и CDN-ресурса; HTTPS на них — после выпуска сертификатов в панели
+export const s3CustomDomain = s3CustomDomainName ?? null;
 export const cdnCustomDomain = cdnCustomDomainName ?? null;
 export const cdnResourceId = cdn?.id ?? null;
 export const cdnDefaultDomain = cdn?.cdnDomain ?? null;
