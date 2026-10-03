@@ -39,8 +39,8 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
     `cdnDefaultDomain`, без зоны-поддомена; `CdnDomain`: домен в `names` CDN-ресурса; выход
     `cdnCustomDomain`.
   - `infra:avatarsDomain` (`avatars.cellestial.ru`) — **отдельная зона DNS** `avatars.cellestial.ru.` в
-    проекте `infra-shared` (`infra:dnsProjectId`) и в ней ALIAS на
-    `access.<infra:s3Pool>.storage.selcloud.ru`; `BucketDomain`: домен бакета аватарок
+    проекте `infra-shared` (`infra:dnsProjectId`) и в ней ALIAS на публичный
+    домен бакета `<uuid>.selstorage.ru` (`avatarsPublicDomain`); `BucketDomain`: домен бакета аватарок
     `infra:avatarsBucket`; выход `avatarsCustomDomain`. NS-делегирование из `cellestial.ru.` ставит
     Selectel.
   - У бакета релизов своего домена нет (`s3.cellestial.ru` не делаем) — только `s3PublicDomain`.

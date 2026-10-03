@@ -521,8 +521,8 @@ if (cdnEnabled) {
 // Свой домен бакета аватарок — отдельная зона DNS (не запись в infra:dnsZone). Зона — в проекте
 // родительской зоны: в проекте стека Selectel отвечает root_zone_already_belongs_to_another_user.
 // NS-делегирование из родительской зоны Selectel ставит сам, своей NS-записи не нужно.
-// На вершине зоны CNAME невозможен, поэтому ALIAS на access.<пул>.storage.selcloud.ru — адрес, по
-// которому хранилище пула отдаёт публичные бакеты по своим доменам (бакет выбирается по Host).
+// На вершине зоны CNAME невозможен, поэтому ALIAS — на актуальный публичный домен бакета
+// <uuid>.selstorage.ru (avatarsPublicDomain): он меняется вместе с бакетом, запись идёт за ним.
 if (avatarsCustomDomainName) {
   // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
   const avatarsZone = new selectel.DomainsZoneV2("avatars", {
@@ -535,7 +535,7 @@ if (avatarsCustomDomainName) {
     name: withDot(avatarsCustomDomainName),
     type: "ALIAS",
     ttl: 300,
-    records: [{ content: `access.${s3Pool}.storage.selcloud.ru.` }],
+    records: [{ content: avatarsAccess.publicDomain.apply(withDot) }],
   }, { ...withDns, deleteBeforeReplace: true });
   // Привязка через API проверяет CNAME и ALIAS не принимает (domain_cname_invalid): уже привязанный
   // домен BucketDomain не трогает, а заново привязать домен-зону можно только в панели.

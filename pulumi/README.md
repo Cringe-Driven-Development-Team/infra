@@ -211,7 +211,7 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 | | CDN (`cdn.cellestial.ru`) | Бакет аватарок (`avatars.cellestial.ru`) |
 |---|---|---|
-| DNS | CNAME в зоне `infra:dnsZone` на `<id>.selcdn.net.` | своя зона `avatars.cellestial.ru.` (проект `infra:dnsProjectId`), в ней ALIAS на `access.<infra:s3Pool>.storage.selcloud.ru.` |
+| DNS | CNAME в зоне `infra:dnsZone` на `<id>.selcdn.net.` | своя зона `avatars.cellestial.ru.` (проект `infra:dnsProjectId`), в ней ALIAS на публичный домен бакета `<uuid>.selstorage.ru.` (`avatarsPublicDomain`) |
 | Привязка | `PATCH /cdn/v3/resources/<id>` — `names`, сверка через `GET` | `PUT /v2/containers/<бакет>/domains` |
 | Сертификат (руками) | панель → CDN → ресурс → сертификаты | панель → S3 → SSL-сертификаты |
 
@@ -222,8 +222,8 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
   привязанный домен, а слетевшую привязку возвращают в панели (S3 → бакет → Домены).
 - Зону создаёт Pulumi. Созданную руками зону с тем же именем перед `up` удалить: вторую зону с этим
   именем Selectel не даст.
-- `access.<пул>.storage.selcloud.ru` — адрес хранилища пула для своих доменов: бакет выбирается по
-  `Host`. Проверка, что домен ведёт в бакет (до сертификата — с `-k`): ответ с заголовками
+- ALIAS ведёт на тот же адрес хранилища, что и технический домен бакета; бакет хранилище выбирает по
+  `Host`, поэтому домен должен быть привязан к бакету. Проверка, что домен ведёт в бакет (до сертификата — с `-k`): ответ с заголовками
   `x-container-storage-policy-*`, как у технического домена; у непривязанного `Host` их нет.
 
   ```bash
