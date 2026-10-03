@@ -60,6 +60,18 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   (`failed to load checkpoint: unexpected end of JSON input`). Лечение — до любой следующей записи
   скопировать `prod/.pulumi/stacks/infra/prod.json.bak` поверх `prod.json`.
 
+## Скиллы
+
+Плагины маркетплейса `cdd` включены в `.claude/settings.json`. До первой команды или правки по теме
+вызови скилл — в нём записано то, на чём здесь уже падали:
+
+- Selectel — API и токены, S3 и политики бакетов, DNS, CDN: `selectel-ops`.
+- Pulumi — программа и dynamic-ресурсы: `pulumi-typescript`; операции со стеком и стейтом: `pulumi-cli`.
+- `ansible/` и vault: `ansible-org`.
+
+Скилл не заменяет проверку: факты про стенд сверяй с кодом и самим стендом. Напоминание о скиллах
+добавляет хук `.claude/hooks/devops-skills.sh` (тест — `bash .claude/hooks/devops-skills_test.sh`).
+
 ## Задачи и PR
 
 Задачи и PR ведём по [CONTRIBUTING.md](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md) организации. Завести задачу, разбить её на
