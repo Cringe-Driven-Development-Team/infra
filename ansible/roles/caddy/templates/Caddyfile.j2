@@ -1,10 +1,13 @@
 # Managed by Ansible. Caddy сам получает и продлевает сертификат Let's Encrypt
 # для домена из первой строки (A-запись должна указывать на этот сервер).
 {{ app_domain }} {
-	# Go API появится в проекте Compose с задачей деплоя бэка: здесь будет reverse_proxy api:8080.
-	# До тех пор запросы к API не должны получать index.html клиента.
+	# До первой выкатки API отвечает заглушкой, затем работает во внутренней сети Compose.
 	handle /api/v1/* {
+{% if caddy_api_enabled | default(caddy_app_environment.stat.exists) %}
+		reverse_proxy api:8080
+{% else %}
 		respond "API is not deployed" 503
+{% endif %}
 	}
 
 	# Клиент — SPA: на любом пути отдаётся корневой index.html бакета релизов, маршрут разбирает

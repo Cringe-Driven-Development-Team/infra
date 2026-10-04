@@ -83,15 +83,27 @@
         method: POST
         status_code: 405
 
-    # Go API в Compose ещё нет: путь API не должен проваливаться в index.html клиента. Задача деплоя
-    # бэка заменит проверку вместе с правилом в Caddy.
-    - name: Путь API отвечает 503
+    - name: Detect a backend deployment on the VPS
+      ansible.builtin.stat:
+        path: "{{ app_compose_dir }}/.env"
+      delegate_to: "{{ groups['gateway'][0] }}"
+      become: true
+      register: verify_backend_environment
+
+    - name: Check the API route before or after deployment
       ansible.builtin.uri:
-        url: "https://{{ app_domain }}/api/v1/verify"
-        status_code: 503
+        url: "https://{{ app_domain }}/api/v1/users/me"
+        status_code: "{{ 401 if verify_backend_environment.stat.exists else 503 }}"
         return_content: true
       register: api_route
-      failed_when: api_route.status != 503 or api_route.content != 'API is not deployed'
+
+    - name: Confirm the expected API response
+      ansible.builtin.assert:
+        that:
+          - >-
+            (api_route.json is defined) if verify_backend_environment.stat.exists
+            else (api_route.content == 'API is not deployed')
+        fail_msg: The API route must return API JSON after deployment, or the initial placeholder.
 
     - name: Выдать информацию о сертификате
       ansible.builtin.shell:

@@ -1,0 +1,56 @@
+---
+- name: Validate the deployment inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Write the application environment from Vault
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_compose_dir }}/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Write the full application Compose project
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ app_compose_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Pull the API with temporary registry authentication
+  ansible.builtin.import_tasks: pull-api.yml
+
+- name: Pull missing public service images after GHCR logout
+  community.docker.docker_compose_v2_pull:
+    project_src: "{{ app_compose_dir }}"
+    services:
+      - caddy
+      - postgres
+    policy: missing
+
+- name: Start the application and wait for healthchecks
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_compose_dir }}"
+    state: present
+    pull: never
+    wait: true
+    wait_timeout: "{{ app_wait_timeout }}"
+
+- name: Enable the API route in Caddy
+  ansible.builtin.template:
+    src: "{{ role_path }}/../caddy/templates/Caddyfile.j2"
+    dest: "{{ app_compose_dir }}/caddy/Caddyfile"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: >-
+      docker run --rm -v %s:/tmp/Caddyfile:ro {{ caddy_image }}
+      caddy validate --config /tmp/Caddyfile --adapter caddyfile
+  vars:
+    caddy_api_enabled: true
+  notify: Reload caddy
+
+- name: Apply the Caddy route before the public probe
+  ansible.builtin.meta: flush_handlers

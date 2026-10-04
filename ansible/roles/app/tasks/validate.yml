@@ -1,0 +1,55 @@
+---
+- name: Check the requested backend tag
+  ansible.builtin.assert:
+    that:
+      - backend_image_tag is defined
+      - backend_image_tag is string
+      - backend_image_tag is match('^sha-[0-9a-f]{7,40}$')
+    fail_msg: An explicit sha-<commit> tag is required, including for rollback.
+
+- name: Check whether controller GHCR credentials are present
+  ansible.builtin.set_fact:
+    app_ghcr_credentials_present:
+      GHCR_USERNAME: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | trim | length > 0 }}"
+      GHCR_TOKEN: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') | trim | length > 0 }}"
+  no_log: true
+
+- name: Require controller GHCR credentials
+  ansible.builtin.assert:
+    that:
+      - app_ghcr_credentials_present[item]
+    fail_msg: "Set {{ item }} in the environment of the machine running Ansible."
+    quiet: true
+  loop:
+    - GHCR_USERNAME
+    - GHCR_TOKEN
+
+- name: Check application secrets
+  ansible.builtin.assert:
+    that:
+      - postgres_password | length > 0
+      - jwt_secret | length > 0
+      - postgres_password.splitlines() | length == 1
+      - jwt_secret.splitlines() | length == 1
+    fail_msg: Application secrets must be nonempty single-line values.
+  no_log: true
+
+- name: Check S3 credentials
+  ansible.builtin.assert:
+    that:
+      - notebooks_s3_access_key | length > 0
+      - notebooks_s3_secret_key | length > 0
+      - notebooks_s3_access_key.splitlines() | length == 1
+      - notebooks_s3_secret_key.splitlines() | length == 1
+    fail_msg: S3 credentials must be nonempty single-line values.
+  no_log: true
+
+- name: Check S3 configuration
+  ansible.builtin.assert:
+    that:
+      - s3_region | length > 0
+      - s3_endpoint is match('^https://[^ /]+$')
+      - notebooks_bucket | length > 0
+      - avatars_bucket | length > 0
+      - avatars_public_domain is match('^[a-zA-Z0-9.-]+$')
+    fail_msg: Set S3 configuration in inventory/group_vars/all/vars.yml.
