@@ -80,7 +80,8 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 
 Несекретные параметры S3 для бэка лежат открыто в `group_vars/all/vars.yml`: `s3_endpoint`,
 `s3_region`, `s3_force_path_style`, `notebooks_bucket`, `avatars_bucket`, `avatars_public_domain` —
-значения из `pulumi stack output` (после пересоздания стека сверить, домен аватарок меняется).
+значения из `pulumi stack output`; `avatars_public_domain` — свой домен бакета аватарок (выход
+`avatarsCustomDomain`), сертификат к нему выпускается в панели.
 
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
@@ -183,7 +184,7 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 | ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
 | firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
-| caddy | все | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`, сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
+| caddy | все | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: `/api/v1/*` — Go API (пока `503`), остальные пути — `index.html` клиента из бакета релизов (`frontend_s3_domain`); сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
 ## Проект Compose
 
@@ -212,10 +213,37 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   (в `DOCKER-USER` порт уже после DNAT — порт контейнера; у Caddy он те же 80/443).
   Такое правило не переживает перезагрузку — после reboot его нужно вернуть (или завести в Ansible).
 
+## Клиент
+
+Клиент выкатывает CI фронта, Ansible в выкатке не участвует: сборка лежит в бакете релизов
+(`releases/{sha}/`), корневой `index.html` бакета — копия `index.html` текущего релиза.
+
+- Caddy на всех путях, кроме `/api/v1/*`, отдаёт этот `index.html`: `rewrite` на `/index.html` и
+  `reverse_proxy` на публичный домен бакета `frontend_s3_domain` (`pulumi stack output
+  s3PublicDomain`) с `Host` бакета. `Cookie` и `Authorization` в хранилище не уходят, в ответе —
+  `Cache-Control: no-cache`.
+- В бакет уходят только `GET` и `HEAD` и без query string запроса; остальные методы получают `405`.
+- `/api/v1/*` отвечает `503` с телом `API is not deployed`, пока Go API нет в Compose.
+- Чанки браузер грузит с CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
+  настраивать не нужно: CDN-ресурс Selectel на запрос с `Origin` сам отвечает
+  `Access-Control-Allow-Origin: *`. Проверка:
+
+  ```bash
+  curl -sI -H 'Origin: https://cellestial.ru' "https://$(cd ../pulumi && pulumi stack output cdnDefaultDomain)/index.html" \
+    | grep -i access-control-allow-origin
+  ```
+
 ## Проверки verify.yml
 
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
-- `https://<app_domain>/` отвечает 200, содержимое `ok`, сертификат от Let's Encrypt;
+- `https://<app_domain>/` отдаёт `index.html` клиента из бакета релизов с `Cache-Control: no-cache`,
+  в нём `<meta name="release">` — релиз `stable` из `current.json` бакета
+  (`https://<frontend_s3_domain>/current.json`). `404` от хранилища допустим, только пока
+  `current.json` нет — клиент ещё не выкатан. Домен бакета кэширует ответы на 60 секунд: сразу после
+  выкатки клиента проверка может отстать, повторить через минуту;
+- вложенный маршрут SPA (`/notebooks/…`) отдаёт тот же ответ, `POST` на него — `405`;
+- путь `/api/v1/*` отвечает `503` с телом `API is not deployed`;
+- сертификат от Let's Encrypt;
 - на публичном IP открыты 22/80/443 и закрыты 5432, 8080, 2375, 2376 (ловит порты Docker
   в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
 - ufw: active, `deny (incoming)`, разрешающих правил ровно `firewall_rules` из
@@ -224,4 +252,4 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   `kbdinteractiveauthentication no`, `allowtcpforwarding no`;
 - вне allowlist (22/80/443) на интерфейсах, отличных от loopback, ничего не слушает.
 
-CDN для бакета S3 настраивается вручную вне этого стека (публичное чтение объектов включает Pulumi при `infra:s3PublicRead=true`).
+CDN-ресурс и свои домены CDN и бакета создаёт Pulumi, сертификаты доменов — в панели (`pulumi/README.md`, «Свои домены»).

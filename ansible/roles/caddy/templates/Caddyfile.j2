@@ -1,5 +1,30 @@
 # Managed by Ansible. Caddy сам получает и продлевает сертификат Let's Encrypt
 # для домена из первой строки (A-запись должна указывать на этот сервер).
 {{ app_domain }} {
-	respond "ok" 200
+	# Go API появится в проекте Compose с задачей деплоя бэка: здесь будет reverse_proxy api:8080.
+	# До тех пор запросы к API не должны получать index.html клиента.
+	handle /api/v1/* {
+		respond "API is not deployed" 503
+	}
+
+	# Клиент — SPA: на любом пути отдаётся корневой index.html бакета релизов, маршрут разбирает
+	# роутер в браузере. Чанки браузер берёт с CDN напрямую, через Caddy они не идут.
+	handle {
+		# в бакет уходят только чтения: методы пользователя хранилищу не нужны
+		@not_read not method GET HEAD
+		header @not_read Allow "GET, HEAD"
+		respond @not_read 405
+
+		# «?» в конце сбрасывает query string запроса: в бакет идёт ровно /index.html
+		rewrite * /index.html?
+		reverse_proxy https://{{ frontend_s3_domain }} {
+			# публичный домен бакета выбирает бакет по Host
+			header_up Host {upstream_hostport}
+			# cookie сессии и токен пользователя хранилищу не нужны
+			header_up -Cookie
+			header_up -Authorization
+			# index.html — указатель на релиз: браузер сверяет его при каждом заходе
+			header_down Cache-Control no-cache
+		}
+	}
 }
