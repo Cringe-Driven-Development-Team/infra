@@ -313,7 +313,8 @@ GHCR credentials для `site.yml` не нужны, API он не скачива
 S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `AWS_ENDPOINT_URL_S3`, `S3_NOTEBOOKS_BUCKET`, `S3_AVATARS_BUCKET`,
 `S3_AVATARS_PUBLIC_URL`. Источники — `group_vars/all/vars.yml` и существующий Vault.
-Текущий Go API ещё не читает эти параметры; интеграция хранилища — отдельная задача.
+Go API хранит файлы блокнотов в `S3_NOTEBOOKS_BUCKET`, используя параметры `AWS_*`.
+Параметры аватарок передаются конфигурацией, но текущий API их ещё не читает.
 
 Проверка после выкатки:
 
