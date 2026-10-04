@@ -12,7 +12,7 @@ app_domain: cellestial.ru
 # Домен CDN бакета релизов клиента (cd pulumi && pulumi stack output cdnCustomDomain): Caddy
 # проксирует с него корневой index.html, с него же браузер грузит чанки. При пересоздании стека
 # и бакета не меняется. Сертификат домена выпущен в панели.
-frontend_cdn_domain: cdn.cellestial.ru
+frontend_cdn_domain: 9a05c2b1-0469-4c78-b3e7-87e5ca5d0d0b.selstorage.ru
 
 # Пользователи в группе docker (эквивалент root на хосте)
 docker_users:
