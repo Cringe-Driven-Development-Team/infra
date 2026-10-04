@@ -1,0 +1,41 @@
+---
+- name: Deploy backend to the single VPS
+  hosts: gateway
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Require exactly one deployment host
+      ansible.builtin.assert:
+        that:
+          - groups['gateway'] | length == 1
+          - ansible_play_hosts_all | length == 1
+        fail_msg: Supply backend_image_tag=sha-<commit> and an inventory with one gateway.
+      tags: validation
+
+    - name: Validate before changing the server
+      ansible.builtin.import_tasks: roles/app/tasks/validate.yml
+      tags: validation
+
+    - name: Gather server facts
+      ansible.builtin.setup:
+  roles:
+    - caddy
+    - app
+  post_tasks:
+    - name: Check the API through public Caddy
+      ansible.builtin.uri:
+        url: "https://{{ app_domain }}/api/v1/users/me"
+        status_code: 401
+        return_content: true
+      delegate_to: localhost
+      become: false
+      register: backend_api_probe
+      until: backend_api_probe is succeeded
+      retries: 6
+      delay: 5
+
+    - name: Confirm that the API returned JSON
+      ansible.builtin.assert:
+        that:
+          - backend_api_probe.json is defined
+        fail_msg: Caddy did not return an API JSON response.

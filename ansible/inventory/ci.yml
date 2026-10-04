@@ -1,0 +1,8 @@
+---
+# Static inventory: no OpenStack credentials or Pulumi state in deployment CI.
+all:
+  children:
+    gateway:
+      hosts:
+        cellestial:
+          ansible_host: cellestial.ru

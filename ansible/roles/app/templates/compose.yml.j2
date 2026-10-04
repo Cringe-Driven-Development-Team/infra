@@ -1,0 +1,76 @@
+# Managed by Ansible (role app). Preserve the existing cellestial Caddy volumes.
+name: cellestial
+
+services:
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - app
+
+  api:
+    image: {{ app_backend_image }}:${BACKEND_IMAGE_TAG:?backend tag is required}
+    restart: unless-stopped
+    environment:
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-8080}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:?postgres user is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?postgres password is required}
+      POSTGRES_DB: ${POSTGRES_DB:?postgres database is required}
+      JWT_SECRET: ${JWT_SECRET:?jwt secret is required}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
+      COOKIE_SECURE: "true"
+      AWS_REGION: ${AWS_REGION:?S3 configuration is required}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?S3 configuration is required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?S3 configuration is required}
+      AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3:?S3 configuration is required}
+      S3_NOTEBOOKS_BUCKET: ${S3_NOTEBOOKS_BUCKET:?S3 configuration is required}
+      S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET:?S3 configuration is required}
+      S3_AVATARS_PUBLIC_URL: ${S3_AVATARS_PUBLIC_URL:?S3 configuration is required}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 20
+    networks:
+      - app
+
+  postgres:
+    image: {{ app_postgres_image }}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?postgres user is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?postgres password is required}
+      POSTGRES_DB: ${POSTGRES_DB:?postgres database is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 12
+    networks:
+      - app
+
+networks:
+  app: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  postgres_data: {}

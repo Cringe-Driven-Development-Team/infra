@@ -101,11 +101,11 @@ A-запись домена находится под управлением Pul
 
 | Бакет | Конфиг | Для чего | Тип | CDN | Кто пишет |
 |---|---|---|---|---|---|
-| фронт | `infra:s3Bucket` | статика фронтенда (релизы) | публичный | да, источник CDN-ресурса (`infra:cdnDomain`) | пользователь стека (`s3AccessKey`) |
+| фронт | `infra:s3Bucket` | статика фронтенда (релизы) | публичный | да, источник CDN-ресурса (`infra:cdn`) | пользователь стека (`s3AccessKey`) |
 | аватарки | `infra:avatarsBucket` | аватарки пользователей, бэкенд | публичный | нет | Go API (`notebooksAccessKey`) |
 | ноутбуки | `infra:notebooksBucket` | `.ipynb` пользователей, бэкенд | приватный | нет | Go API (`notebooksAccessKey`) |
 
-- Фронт отдаётся через CDN (`cdn.cellestial.ru`, `cdnDefaultDomain`) или напрямую с
+- Фронт отдаётся через CDN (`cdnDefaultDomain`, свой домен — `cdnCustomDomain`) или напрямую с
   `https://<s3PublicDomain>/<ключ>`; проверка — ниже, «Проверка S3».
 - Аватарки отдаются напрямую с `https://<avatarsPublicDomain>/<ключ>` — «Бакет аватарок».
 - Ноутбуки читает и пишет только Go API своим ключом — «Бакет ноутбуков».
@@ -175,7 +175,8 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
   падает на плане. Удалить осознанно — опустошить бакет и
   `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.
 
-Выходы: `avatarsBucket`, `avatarsPublicDomain`.
+Выходы: `avatarsBucket`, `avatarsPublicDomain`, `avatarsCustomDomain` (свой домен — «Свои домены»; его
+бэк и отдаёт в ссылках на аватарки).
 
 Проверка доступа (после `source bootstrap/env.sh`):
 
@@ -202,6 +203,40 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 Новый ключ шлюз S3 признаёт не сразу: первые секунды (иногда минуты) — `InvalidAccessKeyId`.
 
+## Свои домены
+
+`infra:cdnDomain` и `infra:avatarsDomain` — свои домены CDN-ресурса и бакета аватарок
+(`infra:avatarsBucket`); у бакета релизов своего домена нет. Привязка — dynamic-ресурсы `CdnDomain` и
+`BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
+
+| | CDN (`cdn.cellestial.ru`) | Бакет аватарок (`avatars.cellestial.ru`) |
+|---|---|---|
+| DNS | CNAME в зоне `infra:dnsZone` на `<id>.selcdn.net.` | своя зона `avatars.cellestial.ru.` (проект `infra:dnsProjectId`), в ней ALIAS на публичный домен бакета `<uuid>.selstorage.ru.` (`avatarsPublicDomain`) |
+| Привязка | `PATCH /cdn/v3/resources/<id>` — `names`, сверка через `GET` | `PUT /v2/containers/<бакет>/domains` |
+| Сертификат (руками) | панель → CDN → ресурс → сертификаты | панель → S3 → SSL-сертификаты |
+
+- CDN: Selectel сам проверяет CNAME при привязке, поэтому на ней короткий повтор (до трёх минут); не
+  успело — `up` падает с понятной ошибкой, повторный `up` продолжает. Распространения DNS `up` не ждёт.
+- Аватарки: на вершине зоны CNAME невозможен, поэтому в зоне ALIAS. Привязка домена бакета через API
+  проверяет именно CNAME и на ALIAS отвечает `domain_cname_invalid`: `BucketDomain` не трогает уже
+  привязанный домен, а слетевшую привязку возвращают в панели (S3 → бакет → Домены).
+- Зону создаёт Pulumi. Созданную руками зону с тем же именем перед `up` удалить: вторую зону с этим
+  именем Selectel не даст.
+- ALIAS ведёт на тот же адрес хранилища, что и технический домен бакета; бакет хранилище выбирает по
+  `Host`, поэтому домен должен быть привязан к бакету. Проверка, что домен ведёт в бакет (до сертификата — с `-k`): ответ с заголовками
+  `x-container-storage-policy-*`, как у технического домена; у непривязанного `Host` их нет.
+
+  ```bash
+  curl -skI "https://$(pulumi stack output avatarsCustomDomain)/x"
+  curl -sI  "https://$(pulumi stack output avatarsPublicDomain)/x"
+  ```
+- Без сертификата свой домен бакета по HTTPS отвечает сертификатом `*.<пул>.storage.selcloud.ru`, а
+  HTTP перенаправляет на HTTPS. Бэк отдаёт ссылки на аватарки через свой домен
+  (`avatars_public_domain` в Ansible) — сертификат должен быть выпущен до выкатки бэка.
+- Отвязка домена бакета (`pulumi destroy`, смена домена) сверяется через `GET`; не вышло — ошибка с
+  подсказкой отвязать в панели.
+- Тесты функций API: `bun test selectel-storage.test.ts`.
+
 ## Передача в Ansible
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт
@@ -223,7 +258,7 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
 
 Правка кода dynamic-ресурсов (`selectel-storage.ts`) попадает в стейт только через `pulumi up`:
-`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess` показывает такую правку как
-`update` (тип бакета выставляется повторно тем же значением).
+`refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess`, `CdnDomain` и `BucketDomain` показывают такую
+правку как `update` (те же значения выставляются повторно).
 
 Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.

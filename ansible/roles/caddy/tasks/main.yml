@@ -27,6 +27,11 @@
 
 # Каталог caddy/ монтируется в контейнер целиком, а не один файл: template заменяет файл
 # атомарно (новый inode), и bind-mount отдельного файла продолжал бы видеть старую версию.
+- name: Detect an existing backend deployment
+  ansible.builtin.stat:
+    path: "{{ app_compose_dir }}/.env"
+  register: caddy_app_environment
+
 - name: Caddyfile
   ansible.builtin.template:
     src: Caddyfile.j2
@@ -46,9 +51,12 @@
     owner: root
     group: root
     mode: "0644"
+  when: not caddy_app_environment.stat.exists
 
-- name: Поднять проект Compose
+- name: Поднять Caddy
   community.docker.docker_compose_v2:
     project_src: "{{ app_compose_dir }}"
     state: present
     pull: missing
+    services: [caddy]
+    dependencies: false
