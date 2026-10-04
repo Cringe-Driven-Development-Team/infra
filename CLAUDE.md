@@ -45,7 +45,7 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
     `cdnCustomDomain`.
   - `infra:staticDomain` (`static.cellestial.ru`) — так же, **CNAME внутри зоны `cellestial.ru.`** на
     `staticCdnDefaultDomain`; `CdnDomain`: домен в `names` CDN-ресурса статики; выход
-    `staticCustomDomain`. Сертификат не выпущен — домен отвечает только по HTTP.
+    `staticCustomDomain`. Сертификат выпущен в панели — домен отвечает по HTTPS.
   - `infra:avatarsDomain` (`avatars.cellestial.ru`) — **отдельная зона DNS** `avatars.cellestial.ru.` в
     проекте `infra-shared` (`infra:dnsProjectId`) и в ней ALIAS на публичный
     домен бакета `<uuid>.selstorage.ru` (`avatarsPublicDomain`); `BucketDomain`: домен бакета аватарок
@@ -58,7 +58,8 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 
 - Первый сервисный пользователь аккаунта и его роли (`member`, `iam.admin` на аккаунт).
 - Личный доступ к стейту на человека — `pulumi/bootstrap/README.md`.
-- Сертификаты своих доменов: `cdn.cellestial.ru` — панель → CDN → ресурс → сертификаты;
+- Сертификаты своих доменов: `cdn.cellestial.ru` и `static.cellestial.ru` — панель → CDN → ресурс →
+  сертификаты (у каждого домена свой CDN-ресурс);
   `avatars.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
   (`POST /cdn/v3/letsencrypt/<id>`) дважды завершался `failed` без причины. Сами домены привязывает
   Pulumi — в панели их не трогать.
