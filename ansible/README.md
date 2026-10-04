@@ -184,7 +184,7 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 | ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
 | firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
-| caddy | все | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: `/api/v1/*` — Go API (пока `503`), остальные пути — `index.html` клиента из бакета релизов с CDN (`frontend_cdn_domain`); сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
+| caddy | все | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: `/api/v1/*` — Go API (пока `503`), остальные пути — `index.html` клиента из бакета релизов (`frontend_s3_domain`); сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
 ## Проект Compose
 
@@ -219,18 +219,17 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 (`releases/{sha}/`), корневой `index.html` бакета — копия `index.html` текущего релиза.
 
 - Caddy на всех путях, кроме `/api/v1/*`, отдаёт этот `index.html`: `rewrite` на `/index.html` и
-  `reverse_proxy` на домен CDN `frontend_cdn_domain` (`cdn.cellestial.ru`, `pulumi stack output
-  cdnCustomDomain`) с `Host` этого домена. `Cookie` и `Authorization` в CDN не уходят, в ответе —
-  `Cache-Control: no-cache`. Домен при пересоздании стека и бакета не меняется; его сертификат
-  выпускается в панели — без него Caddy отвечает `502`.
-- В CDN уходят только `GET` и `HEAD` и без query string запроса; остальные методы получают `405`.
+  `reverse_proxy` на публичный домен бакета `frontend_s3_domain` (`pulumi stack output
+  s3PublicDomain`) с `Host` бакета. `Cookie` и `Authorization` в хранилище не уходят, в ответе —
+  `Cache-Control: no-cache`.
+- В бакет уходят только `GET` и `HEAD` и без query string запроса; остальные методы получают `405`.
 - `/api/v1/*` отвечает `503` с телом `API is not deployed`, пока Go API нет в Compose.
-- Чанки браузер грузит с того же домена CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
+- Чанки браузер грузит с CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
   настраивать не нужно: CDN-ресурс Selectel на запрос с `Origin` сам отвечает
   `Access-Control-Allow-Origin: *`. Проверка:
 
   ```bash
-  curl -sI -H 'Origin: https://cellestial.ru' "https://$(cd ../pulumi && pulumi stack output cdnCustomDomain)/index.html" \
+  curl -sI -H 'Origin: https://cellestial.ru' "https://$(cd ../pulumi && pulumi stack output cdnDefaultDomain)/index.html" \
     | grep -i access-control-allow-origin
   ```
 
@@ -239,9 +238,9 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
 - `https://<app_domain>/` отдаёт `index.html` клиента из бакета релизов с `Cache-Control: no-cache`,
   в нём `<meta name="release">` — релиз `stable` из `current.json` бакета
-  (`https://<frontend_cdn_domain>/current.json`). `404` от хранилища допустим, только пока
-  `current.json` нет — клиент ещё не выкатан. CDN кэширует ответы: сразу после выкатки клиента
-  проверка может отстать — повторить позже или сбросить кэш CDN-ресурса;
+  (`https://<frontend_s3_domain>/current.json`). `404` от хранилища допустим, только пока
+  `current.json` нет — клиент ещё не выкатан. Домен бакета кэширует ответы на 60 секунд: сразу после
+  выкатки клиента проверка может отстать, повторить через минуту;
 - вложенный маршрут SPA (`/notebooks/…`) отдаёт тот же ответ, `POST` на него — `405`;
 - путь `/api/v1/*` отвечает `503` с телом `API is not deployed`;
 - сертификат от Let's Encrypt;
