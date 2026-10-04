@@ -242,7 +242,8 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   `current.json` нет — клиент ещё не выкатан. Домен бакета кэширует ответы на 60 секунд: сразу после
   выкатки клиента проверка может отстать, повторить через минуту;
 - вложенный маршрут SPA (`/notebooks/…`) отдаёт тот же ответ, `POST` на него — `405`;
-- путь `/api/v1/*` отвечает `503` с телом `API is not deployed`;
+- до первой выкатки API отвечает `503 API is not deployed`, после неё
+  `/api/v1/users/me` без токена возвращает JSON/401;
 - сертификат от Let's Encrypt;
 - на публичном IP открыты 22/80/443 и закрыты 5432, 8080, 2375, 2376 (ловит порты Docker
   в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
@@ -253,3 +254,95 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 - вне allowlist (22/80/443) на интерфейсах, отличных от loopback, ничего не слушает.
 
 CDN-ресурс и свои домены CDN и бакета создаёт Pulumi, сертификаты доменов — в панели (`pulumi/README.md`, «Свои домены»).
+
+## Go API: первая выкатка и откат
+
+В одном проекте `/opt/cellestial` роль `app` управляет API и PostgreSQL 18, роль
+`caddy` — общим Caddyfile. API и Postgres доступны только в сети `app`. Данные
+Postgres сохраняются в `cellestial_postgres_data`, сертификаты — в существующих
+`cellestial_caddy_data` и `cellestial_caddy_config`. Не выполнять `down -v`.
+
+Пакет GHCR остаётся приватным. Постоянный токен на VPS и в Vault не хранится.
+Денис создаёт
+отдельную пару CI-ключей без passphrase, добавляет **только** `ci.pub` в
+`files/authorized_keys/` через PR и запускает `site.yml` своим уже разрешённым
+ключом. Приватный ключ и проверенный host key передаются через защищённое
+хранилище для environment secrets `DEPLOY_SSH_KEY` и `SSH_KNOWN_HOSTS` в бэке.
+Пароль существующего Vault — в `ANSIBLE_VAULT_PASSWORD`.
+
+Для выкатки Selectel и Pulumi не нужны. Не подключайте `env.sh`: используйте
+статический inventory `inventory/ci.yml` и явно экспортируйте путь к паролю:
+
+```bash
+cd ansible
+python3 -m venv /tmp/cdd-deploy-venv
+. /tmp/cdd-deploy-venv/bin/activate
+pip install -r deploy-requirements.txt
+ansible-galaxy collection install -r deploy-requirements.yml
+export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
+# gh должен быть авторизован аккаунтом с доступом к курсовому репозиторию и пакету.
+gh auth refresh -s read:packages
+export GHCR_USERNAME="$(gh api user --jq .login)"
+export GHCR_TOKEN="$(gh auth token)"
+ansible-playbook -i inventory/ci.yml deploy-backend.yml \
+  -e backend_image_tag=sha-1234567 \
+  -e deploy_key_path="$HOME/.ssh/selectel_release" \
+  --ssh-common-args='-o StrictHostKeyChecking=yes'
+unset GHCR_TOKEN GHCR_USERNAME
+```
+
+Замените пример SHA на опубликованный тег. Без `backend_image_tag`, `GHCR_USERNAME`
+или `GHCR_TOKEN` playbook завершается до изменений VPS. Credentials читаются только
+из окружения управляющей машины, не из Vault и не через `-e`. Он пишет `.env` с
+правами `0600` и `no_log`, выполняет login через stdin с `no_log`, скачивает API и
+всегда делает logout, в том числе при ошибке login или pull. Ошибка не подавляется.
+Затем скачивает отсутствующие публичные образы Caddy/Postgres и запускает Compose
+с `--pull never --wait`, чтобы API не скачивался после logout, включает API-маршрут
+и проверяет JSON/401 на `/api/v1/users/me`. `/health` доступен только внутри сети.
+
+Откат — та же команда с прежним SHA-тегом. Данные Postgres остаются в volume;
+goose Down не запускается, прежний API должен поддерживать применённую схему БД.
+После неудачного деплоя проверьте состояние контейнеров и повторите playbook с
+рабочим тегом: автоматического отката нет.
+
+`site.yml` проходит до первой выкатки без тега. После неё он сохраняет полный
+`compose.yml` и `.env`, управляет только сервисом Caddy и не меняет образ API.
+Он продолжает обновлять общий Caddyfile: клиент отдаётся из S3 как раньше.
+GHCR credentials для `site.yml` не нужны, API он не скачивает.
+
+S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`AWS_ENDPOINT_URL_S3`, `S3_NOTEBOOKS_BUCKET`, `S3_AVATARS_BUCKET`,
+`S3_AVATARS_PUBLIC_URL`. Источники — `group_vars/all/vars.yml` и существующий Vault.
+Go API хранит файлы блокнотов в `S3_NOTEBOOKS_BUCKET`, используя параметры `AWS_*`.
+Параметры аватарок передаются конфигурацией, но текущий API их ещё не читает.
+
+Проверка после выкатки:
+
+```bash
+ansible-playbook -i inventory/ci.yml verify.yml
+ssh deploy@cellestial.ru 'cd /opt/cellestial && sudo docker compose ps'
+```
+
+Статический inventory подтверждает один указанный хост, а не количество серверов
+в Selectel: проверка количества серверов проекта требует динамического inventory.
+Для CI достаточно `deploy-requirements.*`; `site.yml` и `verify.yml` требуют также
+коллекций из `requirements.yml`. У CI свой `deploy_key_path` и доверенный
+`UserKnownHostsFile`, проверка host key обязательна.
+
+Локальные проверки без VPS и настоящих секретов:
+
+```bash
+COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
+ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
+```
+
+По умолчанию `ansible.cfg` выбирает только `inventory/openstack.yml`: не указывайте
+каталог `inventory` целиком, иначе Ansible объединит динамический и статический
+хосты. Для CI всегда передавайте `-i inventory/ci.yml`.
+
+В CI только шаг с playbook получает `GHCR_USERNAME` из `github.actor` и `GHCR_TOKEN`
+из `secrets.GITHUB_TOKEN` с разрешением job `packages: read`. Отдельного GHCR secret
+нет. После успешной или упавшей на pull выкатки проверьте отсутствие `ghcr.io` в
+Docker config пользователя, под которым выполнялся login (`become: true` — root).
+Если logout сам завершился ошибкой, выкатка тоже неуспешна; удаление credentials
+нужно подтвердить перед повторным запуском.

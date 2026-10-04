@@ -1,0 +1,8 @@
+---
+app_backend_image: ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development
+app_postgres_image: postgres:18-alpine
+app_postgres_user: postgres
+app_postgres_database: app_db
+app_access_token_ttl: 15m
+app_refresh_token_ttl: 720h
+app_wait_timeout: 180

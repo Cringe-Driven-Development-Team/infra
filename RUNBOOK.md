@@ -233,3 +233,13 @@ pulumi destroy
 | `Attempting to decrypt but no vault secrets found` | Не задан `ANSIBLE_VAULT_PASSWORD_FILE` (не выполнен `. ./env.sh`) — п.5 |
 | `The vault password file … was not found` / `Decryption failed` | Нет `~/.config/cdd-vault-pass` или в нём не тот пароль — взять лично у Дениса или менторов |
 | Caddy не получает сертификат | A-запись ещё не указала на `publicIp` — `dig cellestial.ru`, подождать TTL 300s |
+
+## Выкатка Go API (infra#30)
+
+После мержа infra#22 и infra#30 установите CI-ключ через `site.yml`, настройте
+секреты и ручное approval environment `production` бэка. Backend PR мержится
+последним и запускает первый деплой. Команды первой выкатки, проверки и отката
+по SHA-тегу — в [ansible/README.md](ansible/README.md#go-api-первая-выкатка-и-откат).
+Pulumi из CI не запускается. Перед приёмкой проверьте pull приватного образа и logout GHCR,
+healthy у API и Postgres, сохранность данных после отката и неизменность тега API
+после `site.yml`; маршруты клиента и закрытые порты — через `verify.yml`.
