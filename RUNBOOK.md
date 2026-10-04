@@ -189,7 +189,7 @@ for p in 5432 8080 2375 2376; do nc -z -G3 "$IP" $p && echo "$p OPEN — так 
 CDN: CDN-ресурс с бакетом источником создаёт Pulumi (`infra:cdn: true`) — файлы отдаются с
 `pulumi stack output cdnDefaultDomain`. Свои домены тоже делает Pulumi: `infra:cdnDomain` — CNAME в зоне
 `cellestial.ru.`, `infra:staticDomain` — такой же CNAME на второй CDN-ресурс (источник — бакет
-статики, сертификат не выпущен — домен только по HTTP), `infra:avatarsDomain` — отдельная зона `avatars.cellestial.ru.`, оба с привязкой к
+статики), `infra:avatarsDomain` — отдельная зона `avatars.cellestial.ru.`, оба с привязкой к
 CDN-ресурсу и бакету аватарок. Сертификаты к ним — руками в панели (CDN → ресурс → сертификаты; S3 →
 SSL-сертификаты); после выпуска:
 
