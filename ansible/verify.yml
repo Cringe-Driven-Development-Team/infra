@@ -15,11 +15,10 @@
         fail_msg: "Ожидалась одна VPS, в inventory: {{ groups['all'] }}"
 
     # current.json в бакете релизов пишет CI фронта при выкатке: { "stable": "{sha}", ... }; пока
-    # его нет, клиент не выкатан. Устаревший frontend_s3_domain (стек пересоздан, бакет новый)
-    # здесь не отвечает вовсе — под видом «клиент ещё не выкатан» он проверку не пройдёт.
+    # его нет, клиент не выкатан. Читается с того же домена CDN, с которого Caddy берёт index.html.
     - name: Указатель релиза в бакете релизов
       ansible.builtin.uri:
-        url: "https://{{ frontend_s3_domain }}/current.json"
+        url: "https://{{ frontend_cdn_domain }}/current.json"
         status_code: [200, 404]
         return_content: true
       register: release_pointer
@@ -29,8 +28,8 @@
         client_release: >-
           {{ (release_pointer.content | from_json).stable if release_pointer.status == 200 else '' }}
 
-    # Caddy отдаёт корневой index.html бакета релизов клиента. 404 от хранилища допустим, только
-    # пока клиент не выкатан.
+    # Caddy отдаёт корневой index.html бакета релизов клиента с CDN. 404 от хранилища допустим,
+    # только пока клиент не выкатан.
     - name: HTTPS на домене отвечает
       ansible.builtin.uri:
         url: "https://{{ app_domain }}/"
@@ -55,8 +54,8 @@
         msg: "В бакете нет current.json: {{ app_domain }} отвечает {{ https_ok.status }} до первой выкатки клиента"
       when: client_release == ''
 
-    # Домен бакета кэширует ответы на 60 секунд: сразу после выкатки корень может отставать от
-    # current.json — повторить через минуту.
+    # CDN кэширует ответы: сразу после выкатки клиента корень может отставать от current.json —
+    # повторить позже или сбросить кэш CDN-ресурса.
     - name: Домен отдаёт релиз stable из current.json
       ansible.builtin.assert:
         that:

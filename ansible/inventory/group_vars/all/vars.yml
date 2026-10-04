@@ -9,10 +9,10 @@ ansible_ssh_private_key_file: "{{ deploy_key_path }}"
 # Домен VPS (A-запись под управлением Pulumi: infra:domain)
 app_domain: cellestial.ru
 
-# Публичный домен бакета релизов клиента (cd pulumi && pulumi stack output s3PublicDomain):
-# Caddy проксирует с него корневой index.html. После пересоздания стека сверить — домен меняется
-# вместе с бакетом.
-frontend_s3_domain: 4f974504-d606-43c5-8fa4-cdbc2a15cd42.selstorage.ru
+# Домен CDN бакета релизов клиента (cd pulumi && pulumi stack output cdnCustomDomain): Caddy
+# проксирует с него корневой index.html, с него же браузер грузит чанки. При пересоздании стека
+# и бакета не меняется. Сертификат домена выпущен в панели.
+frontend_cdn_domain: cdn.cellestial.ru
 
 # Пользователи в группе docker (эквивалент root на хосте)
 docker_users:
