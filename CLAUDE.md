@@ -31,6 +31,11 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   Анонимное чтение по ключу — `https://<avatarsPublicDomain>/<ключ>`, его даёт тип бакета. Правило
   `PublicRead` в политику не возвращать: политика Selectel действует только на авторизованные
   запросы, через S3 API анонимный запрос получает `403` при любой политике.
+- Бакет статики `infra:staticBucket` (`cellestial-static-0`), **публичный** (`BucketAccess` с
+  `type: "public"`), `forceDestroy: true`, без политики: пишет пользователь стека (`s3AccessKey`) — им
+  выкладывает CI репозитория `static`. Перед ним второй CDN-ресурс `<infra:name>-static-cdn`
+  (отдельный от CDN релизов, не зависит от `infra:cdn`); выходы `staticBucket`, `staticPublicDomain`,
+  `staticCdnResourceId`, `staticCdnDefaultDomain`.
 - При `infra:cdn: true` — CDN-ресурс `<infra:name>-cdn` с бакетом источником (dynamic-ресурс
   `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
 - Свои домены и их привязка dynamic-ресурсами (`pulumi/selectel-storage.ts`); сертификатов Pulumi не
@@ -38,12 +43,16 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   - `infra:cdnDomain` (`cdn.cellestial.ru`) — **CNAME внутри зоны `cellestial.ru.`** на
     `cdnDefaultDomain`, без зоны-поддомена; `CdnDomain`: домен в `names` CDN-ресурса; выход
     `cdnCustomDomain`.
+  - `infra:staticDomain` (`static.cellestial.ru`) — так же, **CNAME внутри зоны `cellestial.ru.`** на
+    `staticCdnDefaultDomain`; `CdnDomain`: домен в `names` CDN-ресурса статики; выход
+    `staticCustomDomain`. Сертификат не выпущен — домен отвечает только по HTTP.
   - `infra:avatarsDomain` (`avatars.cellestial.ru`) — **отдельная зона DNS** `avatars.cellestial.ru.` в
     проекте `infra-shared` (`infra:dnsProjectId`) и в ней ALIAS на публичный
     домен бакета `<uuid>.selstorage.ru` (`avatarsPublicDomain`); `BucketDomain`: домен бакета аватарок
     `infra:avatarsBucket`; выход `avatarsCustomDomain`. NS-делегирование из `cellestial.ru.` ставит
     Selectel.
-  - У бакета релизов своего домена нет (`s3.cellestial.ru` не делаем) — только `s3PublicDomain`.
+  - У бакетов релизов и статики своего домена нет (`s3.cellestial.ru` не делаем) — только
+    `s3PublicDomain` и `staticPublicDomain`; свои домены — у их CDN-ресурсов.
 
 ### Руками в панели Selectel
 

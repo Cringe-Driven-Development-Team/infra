@@ -54,6 +54,9 @@ const s3EndpointUrl = `https://s3.${s3Pool}.storage.selcloud.ru`;
 const notebooksBucketName = cfg.require("notebooksBucket");
 // Публичный бакет аватарок пользователей — в том же пуле; пишет Go API, читают все.
 const avatarsBucketName = cfg.require("avatarsBucket");
+// Публичный бакет статики продукта (картинки, шрифты) — в том же пуле; пишет CI репозитория static
+// ключом пользователя стека, отдаётся через свой CDN-ресурс. Не задан — бакета и его CDN нет.
+const staticBucketName = cfg.get("staticBucket");
 // Тип бакета Selectel: public (по умолчанию) — чтение объектов без авторизации, источник для CDN.
 const s3Public = cfg.getBoolean("s3Public") ?? true;
 // CDN-ресурс с бакетом источником; технический домен — <id>.selcdn.net.
@@ -63,6 +66,11 @@ const cdnEnabled = cfg.getBoolean("cdn") ?? false;
 // Сертификаты доменов выпускают в панели. У бакета релизов своего домена нет.
 const cdnCustomDomainName = cfg.get("cdnDomain");
 const avatarsCustomDomainName = cfg.get("avatarsDomain");
+// Свой домен CDN-ресурса статики (static.cellestial.ru): CNAME в зоне infra:dnsZone, как у infra:cdnDomain.
+const staticCustomDomainName = cfg.get("staticDomain");
+if (staticCustomDomainName && !staticBucketName) {
+  throw new Error("infra:staticDomain задан без infra:staticBucket: домен привязывается к CDN-ресурсу бакета статики");
+}
 if (cdnCustomDomainName && !cdnEnabled) {
   throw new Error("infra:cdnDomain задан без infra:cdn: домен привязывается к CDN-ресурсу");
 }
@@ -458,6 +466,21 @@ new aws.s3.BucketPolicy("avatars", {
     })),
 }, { provider: s3 });
 
+// Бакет статики продукта. Содержимое выкладывает CI репозитория static и может выложить заново,
+// поэтому forceDestroy, как у бакета релизов. Политики нет: пишет пользователь стека по роли member.
+const staticBucketResource = staticBucketName
+  ? new aws.s3.Bucket("static", { bucket: staticBucketName, forceDestroy: true }, { provider: s3 })
+  : undefined;
+// Тип public: публичный домен <uuid>.selstorage.ru (выход staticPublicDomain) — источник CDN статики.
+const staticAccess = staticBucketResource
+  ? new BucketAccess("static", {
+      projectId: project.id,
+      pool: s3Pool,
+      bucket: staticBucketResource.bucket,
+      type: "public",
+    }, { dependsOn: [staticBucketResource] })
+  : undefined;
+
 // DNS: зона домена (infra:dnsZone) лежит в проекте infra:dnsProjectId, по умолчанию — в проекте стека.
 const appDomain = cfg.get("domain");
 const withDot = (d: string) => (d.endsWith(".") ? d : `${d}.`);
@@ -473,7 +496,7 @@ const dnsProvider = new selectel.Provider("dns", {
   authRegion: selectelCfg.get("authRegion"),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || cdnCustomDomainName
+const parentZone = appDomain || cdnCustomDomainName || staticCustomDomainName
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -514,6 +537,32 @@ if (cdnEnabled) {
       projectId: project.id,
       resourceId: cdn.id,
       domain: cdnCustomDomainName,
+    }, { dependsOn: [record] });
+  }
+}
+
+// Второй CDN-ресурс — с бакетом статики источником; свой домен infra:staticDomain привязывается так
+// же, как infra:cdnDomain: CNAME в зоне infra:dnsZone и CdnDomain.
+let staticCdn: CdnResource | undefined;
+if (staticAccess) {
+  staticCdn = new CdnResource("static-cdn", {
+    projectId: project.id,
+    name: checkCdnName(cfg.get("staticCdnName") ?? `${name}-static-cdn`),
+    originHost: staticAccess.publicDomain,
+  });
+  if (staticCustomDomainName) {
+    const record = new selectel.DomainsRrsetV2("static", {
+      zoneId: parentZone!.id,
+      projectId: dnsProjectId,
+      name: withDot(staticCustomDomainName),
+      type: "CNAME",
+      ttl: 300,
+      records: [{ content: staticCdn.cdnDomain.apply(withDot) }],
+    }, { ...withDns, deleteBeforeReplace: true });
+    new CdnDomain("static", {
+      projectId: project.id,
+      resourceId: staticCdn.id,
+      domain: staticCustomDomainName,
     }, { dependsOn: [record] });
   }
 }
@@ -572,3 +621,9 @@ export const notebooksSecretKey = pulumi.secret(notebooksCredentials.secretKey);
 export const avatarsBucket = avatarsBucketResource.bucket;
 export const avatarsPublicDomain = avatarsAccess.publicDomain;
 export const avatarsCustomDomain = avatarsCustomDomainName ?? null;
+// Бакет статики: пишет ключ стека (s3AccessKey), публичный URL — https://<staticCustomDomain>/<ключ>
+export const staticBucket = staticBucketResource?.bucket ?? null;
+export const staticPublicDomain = staticAccess?.publicDomain ?? null;
+export const staticCustomDomain = staticCustomDomainName ?? null;
+export const staticCdnResourceId = staticCdn?.id ?? null;
+export const staticCdnDefaultDomain = staticCdn?.cdnDomain ?? null;

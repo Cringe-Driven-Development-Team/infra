@@ -85,6 +85,7 @@ pulumi config set infra:s3Pool   ru-7
 pulumi config set infra:s3Bucket '<имя бакета релизов, глобально уникальное>'
 pulumi config set infra:notebooksBucket '<имя приватного бакета ноутбуков, глобально уникальное>'
 pulumi config set infra:avatarsBucket '<имя публичного бакета аватарок, глобально уникальное>'
+pulumi config set infra:staticBucket '<имя публичного бакета статики, глобально уникальное>'
 pulumi config set infra:s3PublicRead true   # публичное чтение объектов (политика бакета), нужно для DoD
 ```
 
@@ -187,7 +188,8 @@ for p in 5432 8080 2375 2376; do nc -z -G3 "$IP" $p && echo "$p OPEN — так 
 
 CDN: CDN-ресурс с бакетом источником создаёт Pulumi (`infra:cdn: true`) — файлы отдаются с
 `pulumi stack output cdnDefaultDomain`. Свои домены тоже делает Pulumi: `infra:cdnDomain` — CNAME в зоне
-`cellestial.ru.`, `infra:avatarsDomain` — отдельная зона `avatars.cellestial.ru.`, оба с привязкой к
+`cellestial.ru.`, `infra:staticDomain` — такой же CNAME на второй CDN-ресурс (источник — бакет
+статики, сертификат не выпущен — домен только по HTTP), `infra:avatarsDomain` — отдельная зона `avatars.cellestial.ru.`, оба с привязкой к
 CDN-ресурсу и бакету аватарок. Сертификаты к ним — руками в панели (CDN → ресурс → сертификаты; S3 →
 SSL-сертификаты); после выпуска:
 

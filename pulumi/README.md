@@ -2,7 +2,7 @@
 
 Создаёт: проект, сервисного пользователя проекта (+ S3-ключи), keypair, приватную сеть с роутером
 (нужна для floating IP), VPS (floating IP, роль gateway: Caddy, позже Go API и Postgres в Docker Compose),
-три S3-бакета через @pulumi/aws (фронт под CDN, аватарки, ноутбуки — см. «Бакеты»), A-запись домена
+S3-бакеты через @pulumi/aws (фронт и статика под CDN, аватарки, ноутбуки — см. «Бакеты»), A-запись домена
 на VPS, отдельного сервисного пользователя с S3-ключом для Go API.
 
 Двухсерверная схема (gateway + backend) заморожена в git в варианте `bff` документации; стек — одна VPS.
@@ -97,16 +97,19 @@ A-запись домена находится под управлением Pul
 
 ## Бакеты
 
-Три бакета в одном пуле (`infra:s3Pool`):
+Бакеты в одном пуле (`infra:s3Pool`):
 
 | Бакет | Конфиг | Для чего | Тип | CDN | Кто пишет |
 |---|---|---|---|---|---|
 | фронт | `infra:s3Bucket` | статика фронтенда (релизы) | публичный | да, источник CDN-ресурса (`infra:cdn`) | пользователь стека (`s3AccessKey`) |
+| статика | `infra:staticBucket` | статические файлы продукта (картинки, шрифты) | публичный | да, источник своего CDN-ресурса | пользователь стека (`s3AccessKey`), CI репозитория `static` |
 | аватарки | `infra:avatarsBucket` | аватарки пользователей, бэкенд | публичный | нет | Go API (`notebooksAccessKey`) |
 | ноутбуки | `infra:notebooksBucket` | `.ipynb` пользователей, бэкенд | приватный | нет | Go API (`notebooksAccessKey`) |
 
 - Фронт отдаётся через CDN (`cdnDefaultDomain`, свой домен — `cdnCustomDomain`) или напрямую с
   `https://<s3PublicDomain>/<ключ>`; проверка — ниже, «Проверка S3».
+- Статика отдаётся через свой CDN-ресурс (`staticCdnDefaultDomain`, свой домен — `staticCustomDomain`)
+  — «Бакет статики».
 - Аватарки отдаются напрямую с `https://<avatarsPublicDomain>/<ключ>` — «Бакет аватарок».
 - Ноутбуки читает и пишет только Go API своим ключом — «Бакет ноутбуков».
 
@@ -158,6 +161,22 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 `ansible/inventory/group_vars/all/vault.yml` (`vault_notebooks_s3_access_key`,
 `vault_notebooks_s3_secret_key`) через `ansible-vault edit` — `ansible/README.md`, «Секреты».
 
+## Бакет статики
+
+`infra:staticBucket` (`cellestial-static-0`) — статические файлы продукта, клиент берёт их по
+`<staticCustomDomain>/<путь>`. Бакет необязательный: без `infra:staticBucket` нет ни его, ни его CDN.
+
+- тип бакета `public` (`BucketAccess`), публичный домен `<uuid>.selstorage.ru` — выход
+  `staticPublicDomain`;
+- перед бакетом — второй CDN-ресурс `<infra:name>-static-cdn` (`infra:staticCdnName`), отдельный от
+  CDN релизов и создаётся независимо от `infra:cdn`; выходы `staticCdnResourceId`,
+  `staticCdnDefaultDomain`;
+- политики бакета нет: пишет пользователь стека (`s3AccessKey`, роль `member`) — этим ключом
+  выкладывает файлы CI репозитория `static`;
+- `forceDestroy: true`, без `protect`, как у бакета релизов: содержимое CI выкладывает заново.
+
+Выходы: `staticBucket`, `staticPublicDomain`, `staticCustomDomain` (свой домен — «Свои домены»).
+
 ## Бакет аватарок
 
 `infra:avatarsBucket` — аватарки пользователей, читают все, пишет Go API:
@@ -205,11 +224,12 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 ## Свои домены
 
-`infra:cdnDomain` и `infra:avatarsDomain` — свои домены CDN-ресурса и бакета аватарок
-(`infra:avatarsBucket`); у бакета релизов своего домена нет. Привязка — dynamic-ресурсы `CdnDomain` и
+`infra:cdnDomain`, `infra:staticDomain` и `infra:avatarsDomain` — свои домены CDN-ресурса релизов,
+CDN-ресурса статики и бакета аватарок (`infra:avatarsBucket`); у бакетов релизов и статики своего
+домена нет — домены привязаны к их CDN. Привязка — dynamic-ресурсы `CdnDomain` и
 `BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
 
-| | CDN (`cdn.cellestial.ru`) | Бакет аватарок (`avatars.cellestial.ru`) |
+| | CDN (`cdn.cellestial.ru`, `static.cellestial.ru`) | Бакет аватарок (`avatars.cellestial.ru`) |
 |---|---|---|
 | DNS | CNAME в зоне `infra:dnsZone` на `<id>.selcdn.net.` | своя зона `avatars.cellestial.ru.` (проект `infra:dnsProjectId`), в ней ALIAS на публичный домен бакета `<uuid>.selstorage.ru.` (`avatarsPublicDomain`) |
 | Привязка | `PATCH /cdn/v3/resources/<id>` — `names`, сверка через `GET` | `PUT /v2/containers/<бакет>/domains` |
@@ -217,6 +237,8 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 - CDN: Selectel сам проверяет CNAME при привязке, поэтому на ней короткий повтор (до трёх минут); не
   успело — `up` падает с понятной ошибкой, повторный `up` продолжает. Распространения DNS `up` не ждёт.
+- `static.cellestial.ru` привязан без сертификата: по HTTPS CDN отвечает чужим сертификатом, домен
+  работает только по HTTP, пока сертификат не выпущен в панели (CDN → ресурс статики → сертификаты).
 - Аватарки: на вершине зоны CNAME невозможен, поэтому в зоне ALIAS. Привязка домена бакета через API
   проверяет именно CNAME и на ALIAS отвечает `domain_cname_invalid`: `BucketDomain` не трогает уже
   привязанный домен, а слетевшую привязку возвращают в панели (S3 → бакет → Домены).

@@ -11,8 +11,11 @@ app_domain: cellestial.ru
 
 # Публичный домен бакета релизов клиента (cd pulumi && pulumi stack output s3PublicDomain):
 # Caddy проксирует с него корневой index.html. После пересоздания стека сверить — домен меняется
-# вместе с бакетом.
-frontend_s3_domain: 4f974504-d606-43c5-8fa4-cdbc2a15cd42.selstorage.ru
+# вместе с бакетом. Через CDN index.html не брать: CDN-ресурс кэширует его на сутки.
+frontend_s3_domain: 9a05c2b1-0469-4c78-b3e7-87e5ca5d0d0b.selstorage.ru
+# Домен CDN бакета релизов (pulumi stack output cdnCustomDomain): с него браузер грузит чанки
+# releases/{sha}/. При пересоздании стека и бакета не меняется.
+frontend_cdn_domain: cdn.cellestial.ru
 
 # Пользователи в группе docker (эквивалент root на хосте)
 docker_users:
