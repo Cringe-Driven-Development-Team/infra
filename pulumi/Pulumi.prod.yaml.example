@@ -42,6 +42,9 @@ config:
   # infra:cdnDomain: cdn.cellestial.ru
   # Свой домен бакета аватарок: отдельная зона DNS с ALIAS на хранилище; сертификат — в панели
   # infra:avatarsDomain: avatars.cellestial.ru
+  # Свой домен CDN-ресурса статики (нужен infra:staticBucket): CNAME в зоне infra:dnsZone и привязка
+  # infra:staticDomain: static.cellestial.ru
+  # infra:staticCdnName: "<имя CDN-ресурса статики>"   # по умолчанию <infra:name>-static-cdn
 
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1
@@ -52,3 +55,5 @@ config:
   # infra:notebooksUserName: cellestialNotebooksUser   # уникально в аккаунте
   # Публичный бакет аватарок (тот же пул); пишет тот же пользователь Go API
   infra:avatarsBucket: "<глобально-уникальное-имя-бакета>"
+  # Публичный бакет статики продукта (тот же пул) и CDN-ресурс перед ним; пишет ключ стека
+  # infra:staticBucket: "<глобально-уникальное-имя-бакета>"
