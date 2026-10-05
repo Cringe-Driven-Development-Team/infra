@@ -83,6 +83,9 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 значения из `pulumi stack output`; `avatars_public_domain` — свой домен бакета аватарок (выход
 `avatarsCustomDomain`), сертификат к нему выпускается в панели.
 
+`app_cors_allowed_origins` там же — origin'ы, которым Go API подтверждает CORS (`CORS_ALLOWED_ORIGINS`
+в `.env`): на проде только `https://cellestial.ru`, без `localhost`. Не секрет, в vault не кладётся.
+
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
 

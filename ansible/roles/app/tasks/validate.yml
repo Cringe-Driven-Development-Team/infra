@@ -53,3 +53,11 @@
       - avatars_bucket | length > 0
       - avatars_public_domain is match('^[a-zA-Z0-9.-]+$')
     fail_msg: Set S3 configuration in inventory/group_vars/all/vars.yml.
+
+- name: Check CORS origins
+  ansible.builtin.assert:
+    that:
+      - app_cors_allowed_origins is string
+      - app_cors_allowed_origins is match('^https://[^ ]+$')
+      - "'http://' not in app_cors_allowed_origins"
+    fail_msg: Set app_cors_allowed_origins in inventory/group_vars/all/vars.yml to HTTPS origins only.
