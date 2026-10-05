@@ -11,7 +11,7 @@ app_domain: cellestial.ru
 
 # Origin'ы, которым Go API подтверждает CORS (CORS_ALLOWED_ORIGINS в .env бэка): на проде — только
 # свой домен. Без переменной бэк берёт дефолт из кода, а в нём есть http://localhost:5173.
-app_cors_allowed_origins: https://cellestial.ru
+app_cors_allowed_origins: https://cellestial.ru,http://localhost:5173
 
 # Публичный домен бакета релизов клиента (cd pulumi && pulumi stack output s3PublicDomain):
 # Caddy проксирует с него корневой index.html. После пересоздания стека сверить — домен меняется
