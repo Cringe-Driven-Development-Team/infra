@@ -63,6 +63,7 @@ class DeploymentChecks(unittest.TestCase):
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
+            'app_cors_allowed_origins: https://app.example.org\n'
         )
         password = b"test-vault-password-only"
         vault = VaultLib([("default", VaultSecret(password))])
@@ -198,7 +199,8 @@ class DeploymentChecks(unittest.TestCase):
         )
         variables.update(backend_image_tag="sha-1234567", s3_region="ru-7",
                          s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
-                         avatars_bucket="avatars", avatars_public_domain="avatars.example.org")
+                         avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
+                         app_cors_allowed_origins="https://app.example.org")
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
         compose_template = templates.from_string(
@@ -261,6 +263,8 @@ class DeploymentChecks(unittest.TestCase):
                     )
                 self.assertEqual(services["api"]["environment"]["S3_AVATARS_PUBLIC_URL"],
                                  "https://avatars.example.org")
+                self.assertEqual(services["api"]["environment"]["CORS_ALLOWED_ORIGINS"],
+                                 "https://app.example.org")
 
     def test_caddy_preserves_frontend_in_both_states(self):
         templates = Environment(undefined=StrictUndefined)
