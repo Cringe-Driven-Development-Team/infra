@@ -69,6 +69,7 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 |---|---|
 | `vault_postgres_password` | `postgres_password` |
 | `vault_jwt_secret` | `jwt_secret` |
+| `vault_csrf_secret` | `csrf_secret` |
 | `vault_notebooks_s3_access_key` | `notebooks_s3_access_key` |
 | `vault_notebooks_s3_secret_key` | `notebooks_s3_secret_key` |
 

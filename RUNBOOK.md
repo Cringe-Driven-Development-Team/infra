@@ -115,7 +115,7 @@ cd ansible
 # из п.1.1, project_id = `pulumi stack output projectId`, region_name ru-9 (оба сразу — нельзя);
 # тогда и export ANSIBLE_VAULT_PASSWORD_FILE=~/.config/cdd-vault-pass — руками
 
-ansible-vault view inventory/group_vars/all/vault.yml   # пароль подходит: видны vault_postgres_password, vault_jwt_secret
+ansible-vault view inventory/group_vars/all/vault.yml   # пароль подходит: видны vault_postgres_password, vault_jwt_secret, vault_csrf_secret
 
 ansible-inventory -i inventory --graph        # должен появиться 1 хост: gateway
 # ключи всех, кто заходит на стенд, — в files/authorized_keys/*.pub (коммитятся в репо;

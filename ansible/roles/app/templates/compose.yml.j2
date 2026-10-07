@@ -26,6 +26,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?postgres password is required}
       POSTGRES_DB: ${POSTGRES_DB:?postgres database is required}
       JWT_SECRET: ${JWT_SECRET:?jwt secret is required}
+      CSRF_SECRET: ${CSRF_SECRET:?csrf secret is required}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
       COOKIE_SECURE: "true"

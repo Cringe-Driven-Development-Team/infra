@@ -33,6 +33,7 @@ app_compose_dir: /opt/cellestial
 # Роли и шаблоны используют только открытые имена.
 postgres_password: "{{ vault_postgres_password }}"
 jwt_secret: "{{ vault_jwt_secret }}"
+csrf_secret: "{{ vault_csrf_secret }}"
 # S3-ключ Go API к бакетам ноутбуков и аватарок (выходы Pulumi notebooksAccessKey / notebooksSecretKey)
 notebooks_s3_access_key: "{{ vault_notebooks_s3_access_key }}"
 notebooks_s3_secret_key: "{{ vault_notebooks_s3_secret_key }}"
