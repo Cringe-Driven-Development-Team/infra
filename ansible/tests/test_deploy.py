@@ -59,6 +59,7 @@ class DeploymentChecks(unittest.TestCase):
         (variables / "vars.yml").write_text(
             'postgres_password: "{{ vault_postgres_password }}"\n'
             'jwt_secret: "{{ vault_jwt_secret }}"\n'
+            'csrf_secret: "{{ vault_csrf_secret }}"\n'
             'notebooks_s3_access_key: fake-key\nnotebooks_s3_secret_key: fake-secret\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
@@ -70,6 +71,7 @@ class DeploymentChecks(unittest.TestCase):
         (variables / "vault.yml").write_bytes(
             vault.encrypt(
                 b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
+                b"vault_csrf_secret: fake-csrf-secret\n"
             )
         )
         password_file = self.root / "vault-pass"
@@ -141,6 +143,17 @@ class DeploymentChecks(unittest.TestCase):
                 result = self.validate("sha-1234567")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("decrypt", (result.stdout + result.stderr).lower())
+
+    def test_missing_csrf_secret_is_rejected(self):
+        vault = VaultLib([("default", VaultSecret(b"test-vault-password-only"))])
+        (self.root / "group_vars/all/vault.yml").write_bytes(
+            vault.encrypt(
+                b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
+            )
+        )
+        result = self.validate("sha-1234567")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("vault_csrf_secret", result.stdout + result.stderr)
 
     def test_registry_logout_on_success_and_login_or_pull_failure(self):
         binary_directory = self.root / "bin"
@@ -221,7 +234,7 @@ class DeploymentChecks(unittest.TestCase):
             "${ENV}$value",
         ]:
             with self.subTest(secret=secret):
-                variables.update(postgres_password=secret, jwt_secret=secret,
+                variables.update(postgres_password=secret, jwt_secret=secret, csrf_secret=secret,
                                  notebooks_s3_access_key=secret, notebooks_s3_secret_key=secret)
                 (self.root / ".env").write_text(env_template.render(variables))
                 compose_environment = dict(os.environ)
@@ -253,10 +266,10 @@ class DeploymentChecks(unittest.TestCase):
                         secret,
                     )
                     self.assertFalse(services[service].get("ports"))
-                self.assertEqual(
-                    services["api"]["environment"]["JWT_SECRET"].replace("$$", "$"),
-                    secret,
-                )
+                for name in ["JWT_SECRET", "CSRF_SECRET"]:
+                    self.assertEqual(
+                        services["api"]["environment"][name].replace("$$", "$"), secret
+                    )
                 for name in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]:
                     self.assertEqual(
                         services["api"]["environment"][name].replace("$$", "$"), secret

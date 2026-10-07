@@ -29,8 +29,10 @@
     that:
       - postgres_password | length > 0
       - jwt_secret | length > 0
+      - csrf_secret | length > 0
       - postgres_password.splitlines() | length == 1
       - jwt_secret.splitlines() | length == 1
+      - csrf_secret.splitlines() | length == 1
     fail_msg: Application secrets must be nonempty single-line values.
   no_log: true
 
