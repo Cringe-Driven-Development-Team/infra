@@ -1,6 +1,28 @@
 # Managed by Ansible. Caddy сам получает и продлевает сертификат Let's Encrypt
 # для домена из первой строки (A-запись должна указывать на этот сервер).
+{# Политика под то, что грузит клиент: чанки JS и CSS — с CDN бакета релизов, картинки и шрифты —
+    со статики, аватарки — со своего бакета, API — свой домен. data: в img-src — иконки: они заданы
+    в CSS как mask-image с SVG в data:. Инлайновых скриптов и style-атрибутов в разметке нет. -#}
+{% set caddy_csp = [
+    "default-src 'none'",
+    "script-src https://" ~ frontend_cdn_domain,
+    "style-src https://" ~ frontend_cdn_domain,
+    "img-src https://" ~ frontend_cdn_domain ~ " https://" ~ frontend_static_domain
+        ~ " https://" ~ avatars_public_domain ~ " data:",
+    "font-src https://" ~ frontend_static_domain,
+    "connect-src 'self'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+] | join('; ') %}
 {{ app_domain }} {
+	# Браузер не угадывает тип ответа по содержимому. defer — заголовок ставится при отправке ответа
+	# и заменяет пришедший от API или хранилища, а не дублирует его.
+	header {
+		X-Content-Type-Options nosniff
+		defer
+	}
+
 	# До первой выкатки API отвечает заглушкой, затем работает во внутренней сети Compose.
 	handle /api/v1/* {
 {% if caddy_api_enabled | default(caddy_app_environment.stat.exists) %}
@@ -28,6 +50,9 @@
 			header_up -Authorization
 			# index.html — указатель на релиз: браузер сверяет его при каждом заходе
 			header_down Cache-Control no-cache
+			# ограничивает последствия XSS: страница грузит скрипты, стили, картинки и шрифты только
+			# со своих доменов; у Report-Only нарушения только пишутся в консоль браузера
+			header_down {{ 'Content-Security-Policy-Report-Only' if caddy_csp_report_only | default(true) else 'Content-Security-Policy' }} "{{ caddy_csp }}"
 		}
 	}
 }

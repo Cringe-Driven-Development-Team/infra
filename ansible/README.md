@@ -227,6 +227,13 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   s3PublicDomain`) с `Host` бакета. `Cookie` и `Authorization` в хранилище не уходят, в ответе —
   `Cache-Control: no-cache`.
 - В бакет уходят только `GET` и `HEAD` и без query string запроса; остальные методы получают `405`.
+- Все ответы Caddy несут `X-Content-Type-Options: nosniff`, ответ с `index.html` — ещё и
+  `Content-Security-Policy`: скрипты и стили — только с `frontend_cdn_domain`, картинки — с него,
+  `frontend_static_domain`, `avatars_public_domain` и из `data:` (иконки-маски), шрифты — с
+  `frontend_static_domain`, запросы — на свой домен. Пока `caddy_csp_report_only: true`
+  (`inventory/group_vars/all/vars.yml`), заголовок называется `Content-Security-Policy-Report-Only`: браузер
+  пишет нарушения в консоль и ничего не блокирует. Новый источник у клиента (воркер, инлайновый
+  стиль, чужой домен) — правка политики в `Caddyfile.j2`.
 - `/api/v1/*` отвечает `503` с телом `API is not deployed`, пока Go API нет в Compose.
 - Чанки браузер грузит с CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
   настраивать не нужно: CDN-ресурс Selectel на запрос с `Origin` сам отвечает
