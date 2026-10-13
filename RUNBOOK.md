@@ -198,7 +198,7 @@ curl -I "https://$(pulumi stack output cdnCustomDomain)/index.html"
 curl -I "https://$(pulumi stack output avatarsCustomDomain)/<ключ аватарки>"
 ```
 
-Что автоматом, а что руками — `CLAUDE.md`.
+Что автоматом, а что руками — `AGENTS.md`.
 
 ## 7. Снос всего
 
