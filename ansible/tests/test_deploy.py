@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 from ansible.parsing.vault import VaultLib, VaultSecret
-from ansible.plugins.filter.core import to_json
+from ansible.plugins.filter.core import to_bool, to_json
 from jinja2 import Environment, StrictUndefined
 import yaml
 
@@ -281,6 +281,7 @@ class DeploymentChecks(unittest.TestCase):
 
     def test_caddy_preserves_frontend_in_both_states(self):
         templates = Environment(undefined=StrictUndefined)
+        templates.filters["bool"] = to_bool
         template = templates.from_string(
             (ANSIBLE / "roles/caddy/templates/Caddyfile.j2").read_text()
         )
@@ -311,18 +312,21 @@ class DeploymentChecks(unittest.TestCase):
 
     def test_caddy_enforces_csp_when_report_only_is_off(self):
         templates = Environment(undefined=StrictUndefined)
+        templates.filters["bool"] = to_bool
         template = templates.from_string(
             (ANSIBLE / "roles/caddy/templates/Caddyfile.j2").read_text()
         )
-        rendered = template.render(app_domain="cellestial.ru",
-            frontend_s3_domain="frontend.example.org",
-            frontend_cdn_domain="cdn.example.org",
-            frontend_static_domain="static.example.org",
-            avatars_public_domain="avatars.example.org",
-            caddy_csp_report_only=False,
-            caddy_app_environment={"stat": {"exists": True}})
-        self.assertIn('header_down Content-Security-Policy "default-src ', rendered)
-        self.assertNotIn("Content-Security-Policy-Report-Only", rendered)
+        # строка "false" — значение из -e caddy_csp_report_only=false
+        for report_only in [False, "false"]:
+            rendered = template.render(app_domain="cellestial.ru",
+                frontend_s3_domain="frontend.example.org",
+                frontend_cdn_domain="cdn.example.org",
+                frontend_static_domain="static.example.org",
+                avatars_public_domain="avatars.example.org",
+                caddy_csp_report_only=report_only,
+                caddy_app_environment={"stat": {"exists": True}})
+            self.assertIn('header_down Content-Security-Policy "default-src ', rendered)
+            self.assertNotIn("Content-Security-Policy-Report-Only", rendered)
 
 if __name__ == "__main__":
     unittest.main()

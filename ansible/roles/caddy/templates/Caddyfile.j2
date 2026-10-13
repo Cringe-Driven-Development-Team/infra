@@ -52,7 +52,7 @@
 			header_down Cache-Control no-cache
 			# ограничивает последствия XSS: страница грузит скрипты, стили, картинки и шрифты только
 			# со своих доменов; у Report-Only нарушения только пишутся в консоль браузера
-			header_down {{ 'Content-Security-Policy-Report-Only' if caddy_csp_report_only | default(true) else 'Content-Security-Policy' }} "{{ caddy_csp }}"
+			header_down {{ 'Content-Security-Policy-Report-Only' if caddy_csp_report_only | default(true) | bool else 'Content-Security-Policy' }} "{{ caddy_csp }}"
 		}
 	}
 }
