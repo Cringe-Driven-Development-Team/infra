@@ -102,8 +102,10 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 - Pulumi — программа и dynamic-ресурсы: `pulumi-typescript`; операции со стеком и стейтом: `pulumi-cli`.
 - `ansible/` и vault: `ansible-org`.
 
-Скилл не заменяет проверку: факты про стенд сверяй с кодом и самим стендом. Напоминание о скиллах
-добавляет хук `.claude/hooks/devops-skills.sh` (тест — `bash .claude/hooks/devops-skills_test.sh`).
+Скилл не заменяет проверку: факты про стенд сверяй с кодом и самим стендом. О скиллах напоминают
+два хука в `.claude/hooks/`: `devops-skills-session.sh` — в начале каждой сессии, `devops-skills.sh` —
+по словам запроса (тесты — `bash .claude/hooks/devops-skills-session_test.sh` и
+`bash .claude/hooks/devops-skills_test.sh`).
 
 ## Задачи и PR
 

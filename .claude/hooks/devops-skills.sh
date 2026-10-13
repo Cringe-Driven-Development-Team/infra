@@ -19,6 +19,6 @@ has 'pulumi|[Сс]тейт|[Сс]тек' && add 'pulumi-typescript, pulumi-cli'
 has 'ansible|playbook|vault|inventory|caddy|[Аа]нсибл|[Пп]лейбук' && add 'ansible-org'
 
 if [ -n "$skills" ]; then
-  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Запрос касается инфраструктуры. До первой команды или правки по теме вызови скиллы: %s. Какой скилл для чего — раздел «Скиллы» в CLAUDE.md."}}\n' "$skills"
+  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Запрос касается инфраструктуры. До первой команды или правки по теме вызови скиллы: %s. Какой скилл для чего — раздел «Скиллы» в AGENTS.md."}}\n' "$skills"
 fi
 exit 0
