@@ -20,6 +20,13 @@ frontend_s3_domain: 9a05c2b1-0469-4c78-b3e7-87e5ca5d0d0b.selstorage.ru
 # Домен CDN бакета релизов (pulumi stack output cdnCustomDomain): с него браузер грузит чанки
 # releases/{sha}/. При пересоздании стека и бакета не меняется.
 frontend_cdn_domain: cdn.cellestial.ru
+# Домен статики продукта (pulumi stack output staticCustomDomain): картинки и шрифты клиента.
+# Вместе с frontend_cdn_domain и avatars_public_domain входит в Content-Security-Policy.
+frontend_static_domain: static.cellestial.ru
+# Content-Security-Policy на index.html клиента. true — заголовок Content-Security-Policy-Report-Only:
+# браузер пишет нарушения в консоль и ничего не блокирует. false — политика применяется.
+# Переключать после прохода по экранам прода без нарушений; verify.yml ждёт тот же заголовок.
+caddy_csp_report_only: true
 
 # Пользователи в группе docker (эквивалент root на хосте)
 docker_users:
