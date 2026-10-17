@@ -257,6 +257,27 @@ class DeploymentChecks(unittest.TestCase):
                     env=compose_environment,
                 )
                 services = json.loads(result.stdout)["services"]
+                if secret == "base64/secret+value=":
+                    rollback_environment = dict(compose_environment,
+                        ROLLBACK_BACKEND_IMAGE="ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development:sha-7654321")
+                    recovery = subprocess.run(
+                        [*compose, "-f", str(self.root / "compose.yml"), "-f",
+                         str(ANSIBLE / "files/backend-rollback.override.yml"), "config", "--format", "json"],
+                        capture_output=True, text=True, timeout=30, check=True,
+                        env=rollback_environment)
+                    expected_recovery = json.loads(result.stdout)
+                    expected_recovery["services"]["api"].update(
+                        image=rollback_environment["ROLLBACK_BACKEND_IMAGE"], pull_policy="never")
+                    self.assertEqual(json.loads(recovery.stdout), expected_recovery)
+                    missing_image_environment = dict(compose_environment)
+                    missing_image_environment.pop("ROLLBACK_BACKEND_IMAGE", None)
+                    missing_image = subprocess.run(
+                        [*compose, "-f", str(self.root / "compose.yml"), "-f",
+                         str(ANSIBLE / "files/backend-rollback.override.yml"), "config", "--format", "json"],
+                        capture_output=True, text=True, timeout=30,
+                        env=missing_image_environment)
+                    self.assertNotEqual(missing_image.returncode, 0)
+                    self.assertIn("ROLLBACK_BACKEND_IMAGE", missing_image.stderr)
                 # Canonical Compose output escapes literal dollars for reuse as YAML.
                 for service in ["api", "postgres"]:
                     self.assertEqual(

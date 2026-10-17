@@ -1,0 +1,5 @@
+# Manual offline recovery only; normal CD does not load this file.
+services:
+  api:
+    image: ${ROLLBACK_BACKEND_IMAGE:?set the full previously verified image and SHA tag}
+    pull_policy: never

@@ -377,3 +377,34 @@ ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 Docker config пользователя, под которым выполнялся login (`become: true` — root).
 Если logout сам завершился ошибкой, выкатка тоже неуспешна; удаление credentials
 нужно подтвердить перед повторным запуском.
+
+### Откат из проверенного архива без registry
+
+Если текущий токен не читает старый private package, перед переключением сохранить
+работающий image через `docker image save`. Это архив образа, не контейнера:
+production environment и данные volumes в него не входят. Сверить его blob hashes
+и зафиксировать SHA256 архива, затем проверить `docker image load` на отдельном
+Docker. Архив и прежний image на VPS сохраняются вне retention новой организации.
+
+Перед откатом выключить `PRODUCTION_ENABLED` в team/backend и дождаться текущей
+выкатки. Передать на VPS проверенный архив и
+`files/backend-rollback.override.yml`; сверить SHA256 с журналом окна. Если старый
+образ уже присутствует, повторный load не требуется. Следующие команды выполняются
+на VPS; путь к архиву и полный старый SHA-тег взять из журнала:
+
+```bash
+sudo docker image load -i /path/to/verified-old-image.tar
+sudo env ROLLBACK_BACKEND_IMAGE='ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development:sha-OLD' \
+  docker compose --project-directory /opt/cellestial --env-file /opt/cellestial/.env \
+  -f /opt/cellestial/compose.yml -f /tmp/backend-rollback.override.yml \
+  up -d --no-deps --pull never --wait --wait-timeout 120 api
+curl --silent --output /dev/null --write-out '%{http_code}\n' \
+  https://cellestial.ru/api/v1/users/me
+```
+
+Ожидаются healthy у API и HTTP401. Overlay меняет только image API и запрещает pull;
+секреты, Caddy, Postgres, сети и volumes берутся из существующего Compose. Не
+запускать `down -v` или миграции Down. Overlay используется только в этом вызове;
+перед возвращением автоматических выкаток согласовать image/tag в infra и снова
+включить production. Повторное скачивание старого package из GHCR по-прежнему
+требует отдельного read credential его организации.

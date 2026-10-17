@@ -256,3 +256,9 @@ healthy у API и Postgres, сохранность данных после от�
 `app_backend_image=ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development`,
 старого SHA-тега и GHCR credential, читающего старый private package.
 Команда с override — в ansible/README.md; volumes и БД при переносе не меняются.
+Если старый private package недоступен текущему токену, подготовить до переключения
+проверенный архив работающего image. Откат из него через отдельный Compose overlay
+с `pull_policy: never` описан в
+[ansible/README.md](ansible/README.md#откат-из-проверенного-архива-без-registry).
+Архив, его SHA256 и результаты load-проверки хранить в журнале окна вне checkout;
+повторный pull старого package остаётся отдельной операцией с прежним read credential.
