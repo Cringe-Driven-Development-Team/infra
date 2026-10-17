@@ -257,6 +257,27 @@ class DeploymentChecks(unittest.TestCase):
                     env=compose_environment,
                 )
                 services = json.loads(result.stdout)["services"]
+                if secret == "base64/secret+value=":
+                    rollback_environment = dict(compose_environment,
+                        ROLLBACK_BACKEND_IMAGE="ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development:sha-7654321")
+                    recovery = subprocess.run(
+                        [*compose, "-f", str(self.root / "compose.yml"), "-f",
+                         str(ANSIBLE / "files/backend-rollback.override.yml"), "config", "--format", "json"],
+                        capture_output=True, text=True, timeout=30, check=True,
+                        env=rollback_environment)
+                    expected_recovery = json.loads(result.stdout)
+                    expected_recovery["services"]["api"].update(
+                        image=rollback_environment["ROLLBACK_BACKEND_IMAGE"], pull_policy="never")
+                    self.assertEqual(json.loads(recovery.stdout), expected_recovery)
+                    missing_image_environment = dict(compose_environment)
+                    missing_image_environment.pop("ROLLBACK_BACKEND_IMAGE", None)
+                    missing_image = subprocess.run(
+                        [*compose, "-f", str(self.root / "compose.yml"), "-f",
+                         str(ANSIBLE / "files/backend-rollback.override.yml"), "config", "--format", "json"],
+                        capture_output=True, text=True, timeout=30,
+                        env=missing_image_environment)
+                    self.assertNotEqual(missing_image.returncode, 0)
+                    self.assertIn("ROLLBACK_BACKEND_IMAGE", missing_image.stderr)
                 # Canonical Compose output escapes literal dollars for reuse as YAML.
                 for service in ["api", "postgres"]:
                     self.assertEqual(
@@ -278,6 +299,26 @@ class DeploymentChecks(unittest.TestCase):
                                  "https://avatars.example.org")
                 self.assertEqual(services["api"]["environment"]["CORS_ALLOWED_ORIGINS"],
                                  "https://app.example.org")
+
+    def test_registry_switch_and_explicit_rollback_image(self):
+        variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
+        variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
+        template = Environment(undefined=StrictUndefined).from_string(
+            (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text())
+        expected = "ghcr.io/cringe-driven-development-team/backend"
+        for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
+            with self.subTest(override=override):
+                values = dict(variables)
+                if override is not None:
+                    values["app_backend_image"] = override
+                rendered = template.render(values).replace(
+                    "${BACKEND_IMAGE_TAG:?backend tag is required}", "sha-1234567")
+                data = yaml.safe_load(rendered)
+                self.assertEqual(data["services"]["api"]["image"],
+                                 (override or expected) + ":sha-1234567")
+                self.assertEqual(set(data["volumes"]),
+                                 {"caddy_data", "caddy_config", "postgres_data"})
+                self.assertFalse(data["services"]["api"].get("ports"))
 
     def test_caddy_preserves_frontend_in_both_states(self):
         templates = Environment(undefined=StrictUndefined)

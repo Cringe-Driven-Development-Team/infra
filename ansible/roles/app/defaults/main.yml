@@ -1,5 +1,5 @@
 ---
-app_backend_image: ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development
+app_backend_image: ghcr.io/cringe-driven-development-team/backend
 app_postgres_image: postgres:18-alpine
 app_postgres_user: postgres
 app_postgres_database: app_db

@@ -281,6 +281,13 @@ Postgres сохраняются в `cellestial_postgres_data`, сертифик�
 хранилище для environment secrets `DEPLOY_SSH_KEY` и `SSH_KNOWN_HOSTS` в бэке.
 Пароль существующего Vault — в `ANSIBLE_VAULT_PASSWORD`.
 
+Для `team/backend` используется отдельная пара CI: её public key —
+`files/authorized_keys/ci-team-backend.pub`, private key — только в новом
+production secret `DEPLOY_SSH_KEY`. После ревью PR с public key оператор
+добавляет его в `authorized_keys` существующим разрешённым ключом. Старый
+`ci.pub` сохраняется для отката. Host key нового CI проверен по fingerprint
+из аутентифицированной консоли провайдера; личный ключ оператора в CI не передаётся.
+
 Для выкатки Selectel и Pulumi не нужны. Не подключайте `env.sh`: используйте
 статический inventory `inventory/ci.yml` и явно экспортируйте путь к паролю:
 
@@ -291,7 +298,7 @@ python3 -m venv /tmp/cdd-deploy-venv
 pip install -r deploy-requirements.txt
 ansible-galaxy collection install -r deploy-requirements.yml
 export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
-# gh должен быть авторизован аккаунтом с доступом к курсовому репозиторию и пакету.
+# gh должен быть авторизован аккаунтом с доступом к team/backend и его package.
 gh auth refresh -s read:packages
 export GHCR_USERNAME="$(gh api user --jq .login)"
 export GHCR_TOKEN="$(gh auth token)"
@@ -311,7 +318,20 @@ unset GHCR_TOKEN GHCR_USERNAME
 с `--pull never --wait`, чтобы API не скачивался после logout, включает API-маршрут
 и проверяет JSON/401 на `/api/v1/users/me`. `/health` доступен только внутри сети.
 
-Откат — та же команда с прежним SHA-тегом. Данные Postgres остаются в volume;
+По умолчанию образ берётся из ghcr.io/cringe-driven-development-team/backend.
+Изменение default нельзя вливать до публикации нового package и остановки старого
+writer: старый CI читает infra@main. Порядок окна — в
+[runbook организации](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/docs/migrations/team-repositories-runbook.md).
+Проверить связь private package с team/backend и права его GITHUB_TOKEN.
+
+Откат внутри нового registry — та же команда с прежним SHA-тегом.
+Для отката к образу до переноса дополнительно передать
+`-e app_backend_image=ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development`
+и его прежний `backend_image_tag=sha-<old>`. GHCR_TOKEN должен читать старый
+package: временный token нового repo не обязан иметь это право. Старые package,
+tag и рабочий read credential сохраняются до завершения периода отката.
+Перед deploy сверить compose image и убедиться, что новые writers выключены.
+Данные Postgres остаются в volume;
 goose Down не запускается, прежний API должен поддерживать применённую схему БД.
 После неудачного деплоя проверьте состояние контейнеров и повторите playbook с
 рабочим тегом: автоматического отката нет.
@@ -357,3 +377,34 @@ ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 Docker config пользователя, под которым выполнялся login (`become: true` — root).
 Если logout сам завершился ошибкой, выкатка тоже неуспешна; удаление credentials
 нужно подтвердить перед повторным запуском.
+
+### Откат из проверенного архива без registry
+
+Если текущий токен не читает старый private package, перед переключением сохранить
+работающий image через `docker image save`. Это архив образа, не контейнера:
+production environment и данные volumes в него не входят. Сверить его blob hashes
+и зафиксировать SHA256 архива, затем проверить `docker image load` на отдельном
+Docker. Архив и прежний image на VPS сохраняются вне retention новой организации.
+
+Перед откатом выключить `PRODUCTION_ENABLED` в team/backend и дождаться текущей
+выкатки. Передать на VPS проверенный архив и
+`files/backend-rollback.override.yml`; сверить SHA256 с журналом окна. Если старый
+образ уже присутствует, повторный load не требуется. Следующие команды выполняются
+на VPS; путь к архиву и полный старый SHA-тег взять из журнала:
+
+```bash
+sudo docker image load -i /path/to/verified-old-image.tar
+sudo env ROLLBACK_BACKEND_IMAGE='ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development:sha-OLD' \
+  docker compose --project-directory /opt/cellestial --env-file /opt/cellestial/.env \
+  -f /opt/cellestial/compose.yml -f /tmp/backend-rollback.override.yml \
+  up -d --no-deps --pull never --wait --wait-timeout 120 api
+curl --silent --output /dev/null --write-out '%{http_code}\n' \
+  https://cellestial.ru/api/v1/users/me
+```
+
+Ожидаются healthy у API и HTTP401. Overlay меняет только image API и запрещает pull;
+секреты, Caddy, Postgres, сети и volumes берутся из существующего Compose. Не
+запускать `down -v` или миграции Down. Overlay используется только в этом вызове;
+перед возвращением автоматических выкаток согласовать image/tag в infra и снова
+включить production. Повторное скачивание старого package из GHCR по-прежнему
+требует отдельного read credential его организации.
