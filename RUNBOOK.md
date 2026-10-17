@@ -245,3 +245,14 @@ pulumi destroy
 Pulumi из CI не запускается. Перед приёмкой проверьте pull приватного образа и logout GHCR,
 healthy у API и Postgres, сохранность данных после отката и неизменность тега API
 после `site.yml`; маршруты клиента и закрытые порты — через `verify.yml`.
+
+Перенос backend в team/backend меняет default image на
+`ghcr.io/cringe-driven-development-team/backend`. Этот infra PR принимается
+только после публикации нового private package и остановки старого deploy,
+который также читает infra@main. Затем включается новый production writer.
+Полное окно и metadata gates — в
+[runbook организации](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/docs/migrations/team-repositories-runbook.md).
+Откат к прежней организации требует явного
+`app_backend_image=ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development`,
+старого SHA-тега и GHCR credential, читающего старый private package.
+Команда с override — в ansible/README.md; volumes и БД при переносе не меняются.

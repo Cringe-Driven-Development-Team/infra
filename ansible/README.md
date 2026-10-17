@@ -291,7 +291,7 @@ python3 -m venv /tmp/cdd-deploy-venv
 pip install -r deploy-requirements.txt
 ansible-galaxy collection install -r deploy-requirements.yml
 export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
-# gh должен быть авторизован аккаунтом с доступом к курсовому репозиторию и пакету.
+# gh должен быть авторизован аккаунтом с доступом к team/backend и его package.
 gh auth refresh -s read:packages
 export GHCR_USERNAME="$(gh api user --jq .login)"
 export GHCR_TOKEN="$(gh auth token)"
@@ -311,7 +311,20 @@ unset GHCR_TOKEN GHCR_USERNAME
 с `--pull never --wait`, чтобы API не скачивался после logout, включает API-маршрут
 и проверяет JSON/401 на `/api/v1/users/me`. `/health` доступен только внутри сети.
 
-Откат — та же команда с прежним SHA-тегом. Данные Postgres остаются в volume;
+По умолчанию образ берётся из ghcr.io/cringe-driven-development-team/backend.
+Изменение default нельзя вливать до публикации нового package и остановки старого
+writer: старый CI читает infra@main. Порядок окна — в
+[runbook организации](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/docs/migrations/team-repositories-runbook.md).
+Проверить связь private package с team/backend и права его GITHUB_TOKEN.
+
+Откат внутри нового registry — та же команда с прежним SHA-тегом.
+Для отката к образу до переноса дополнительно передать
+`-e app_backend_image=ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development`
+и его прежний `backend_image_tag=sha-<old>`. GHCR_TOKEN должен читать старый
+package: временный token нового repo не обязан иметь это право. Старые package,
+tag и рабочий read credential сохраняются до завершения периода отката.
+Перед deploy сверить compose image и убедиться, что новые writers выключены.
+Данные Postgres остаются в volume;
 goose Down не запускается, прежний API должен поддерживать применённую схему БД.
 После неудачного деплоя проверьте состояние контейнеров и повторите playbook с
 рабочим тегом: автоматического отката нет.

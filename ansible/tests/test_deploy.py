@@ -279,6 +279,26 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertEqual(services["api"]["environment"]["CORS_ALLOWED_ORIGINS"],
                                  "https://app.example.org")
 
+    def test_registry_switch_and_explicit_rollback_image(self):
+        variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
+        variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
+        template = Environment(undefined=StrictUndefined).from_string(
+            (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text())
+        expected = "ghcr.io/cringe-driven-development-team/backend"
+        for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
+            with self.subTest(override=override):
+                values = dict(variables)
+                if override is not None:
+                    values["app_backend_image"] = override
+                rendered = template.render(values).replace(
+                    "${BACKEND_IMAGE_TAG:?backend tag is required}", "sha-1234567")
+                data = yaml.safe_load(rendered)
+                self.assertEqual(data["services"]["api"]["image"],
+                                 (override or expected) + ":sha-1234567")
+                self.assertEqual(set(data["volumes"]),
+                                 {"caddy_data", "caddy_config", "postgres_data"})
+                self.assertFalse(data["services"]["api"].get("ports"))
+
     def test_caddy_preserves_frontend_in_both_states(self):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["bool"] = to_bool
