@@ -281,6 +281,13 @@ Postgres сохраняются в `cellestial_postgres_data`, сертифик�
 хранилище для environment secrets `DEPLOY_SSH_KEY` и `SSH_KNOWN_HOSTS` в бэке.
 Пароль существующего Vault — в `ANSIBLE_VAULT_PASSWORD`.
 
+Для `team/backend` используется отдельная пара CI: её public key —
+`files/authorized_keys/ci-team-backend.pub`, private key — только в новом
+production secret `DEPLOY_SSH_KEY`. После ревью PR с public key оператор
+добавляет его в `authorized_keys` существующим разрешённым ключом. Старый
+`ci.pub` сохраняется для отката. Host key нового CI проверен по fingerprint
+из аутентифицированной консоли провайдера; личный ключ оператора в CI не передаётся.
+
 Для выкатки Selectel и Pulumi не нужны. Не подключайте `env.sh`: используйте
 статический inventory `inventory/ci.yml` и явно экспортируйте путь к паролю:
 
