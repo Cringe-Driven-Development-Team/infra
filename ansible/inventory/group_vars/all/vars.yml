@@ -13,10 +13,12 @@ app_domain: cellestial.ru
 # свой домен. Без переменной бэк берёт дефолт из кода, а в нём есть http://localhost:5173.
 app_cors_allowed_origins: https://cellestial.ru
 
-# Публичный домен бакета релизов клиента (cd pulumi && pulumi stack output s3PublicDomain):
-# Caddy проксирует с него корневой index.html. После пересоздания стека сверить — домен меняется
-# вместе с бакетом. Через CDN index.html не брать: CDN-ресурс кэширует его на сутки.
-frontend_s3_domain: 9a05c2b1-0469-4c78-b3e7-87e5ca5d0d0b.selstorage.ru
+# Свой домен бакета релизов клиента (cd pulumi && pulumi stack output s3CustomDomain): Caddy
+# проксирует с него корневой index.html. Зону и привязку ведёт Pulumi (infra:s3Domain), при
+# пересоздании стека домен не меняется; сертификат выпускают в панели — без него Caddy отвечает 502.
+# Технический <uuid>.selstorage.ru — выход s3PublicDomain. Через CDN index.html не брать: CDN-ресурс
+# кэширует его на сутки.
+frontend_s3_domain: s3.cellestial.ru
 # Домен CDN бакета релизов (pulumi stack output cdnCustomDomain): с него браузер грузит чанки
 # releases/{sha}/. При пересоздании стека и бакета не меняется.
 frontend_cdn_domain: cdn.cellestial.ru
