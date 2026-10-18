@@ -1,0 +1,212 @@
+name: Инфраструктура
+
+# PR: тесты и проверки без секретов, затем pulumi preview и site.yml --check --diff по проду —
+# результат в сводке запуска. Мерж в main: pulumi up, site.yml, verify.yml.
+# Секреты — в environments infra-preview (PR) и production (main): ansible/README.md, «CI/CD инфраструктуры».
+on:
+  pull_request:
+    paths: &infra-paths
+      - pulumi/**
+      - ansible/**
+      - .github/workflows/infra.yml
+  push:
+    branches: [main]
+    paths: *infra-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PULUMI_VERSION: 3.261.0
+  # Личный ~/.aws раннера не участвует (pulumi/bootstrap/env.sh делает то же)
+  AWS_CONFIG_FILE: /dev/null
+  AWS_SHARED_CREDENTIALS_FILE: /dev/null
+  ANSIBLE_HOST_KEY_CHECKING: "True"
+  ANSIBLE_FORCE_COLOR: "1"
+
+jobs:
+  checks:
+    name: Тесты и синтаксис
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Pulumi CLI
+        run: |
+          curl -fsSL https://get.pulumi.com | sh -s -- --version "$PULUMI_VERSION"
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+      # pulumi install генерирует sdks/selectel из terraform-провайдера и ставит зависимости bun
+      - name: Pulumi — зависимости
+        run: |
+          (cd pulumi && pulumi install)
+          (cd pulumi/bootstrap && pulumi install)
+      - name: Pulumi — типы и тесты
+        run: |
+          (cd pulumi && bunx tsc --noEmit -p . && bun test)
+          (cd pulumi/bootstrap && bun test)
+      - name: Ansible — зависимости
+        working-directory: ansible
+        run: |
+          python -m pip install -r deploy-requirements.txt
+          ansible-galaxy collection install -r requirements.yml
+      # Синтаксис не расшифровывает vault — пароль не нужен
+      - name: Ansible — синтаксис и тесты
+        working-directory: ansible
+        run: |
+          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml
+          COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
+
+  # Предпросмотр по проду: в PR видно, что изменит мерж. На проде ничего не меняется.
+  preview:
+    name: Предпросмотр прода
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # production открыт только для main; у preview те же секреты в своём environment
+    environment: infra-preview
+    concurrency:
+      group: infra-production-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Инструменты
+        run: |
+          curl -fsSL https://get.pulumi.com | sh -s -- --version "$PULUMI_VERSION"
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+          (cd ansible && python -m pip install -r deploy-requirements.txt && ansible-galaxy collection install -r requirements.yml)
+      - &secrets-step
+        name: Секреты в файлы
+        env:
+          SELECTEL_ENV_FILE: ${{ secrets.SELECTEL_ENV_FILE }}
+          DEPLOY_SSH_KEY: ${{ secrets.INFRA_DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          for name in SELECTEL_ENV_FILE DEPLOY_SSH_KEY SSH_KNOWN_HOSTS ANSIBLE_VAULT_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Нет секрета $name в environment ${{ github.job == 'apply' && 'production' || 'infra-preview' }} (ansible/README.md, «CI/CD инфраструктуры»)"
+              exit 1
+            fi
+          done
+          umask 077
+          d="$RUNNER_TEMP/infra"
+          mkdir -p "$d"
+          printf '%s\n' "$SELECTEL_ENV_FILE" > "$d/selectel.env"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$d/ci-key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$d/known_hosts"
+          printf '%s\n' "$ANSIBLE_VAULT_PASSWORD" > "$d/vault-pass"
+          ssh-keygen -y -f "$d/ci-key" > "$d/ci-key.pub"
+          ssh-keygen -F cellestial.ru -f "$d/known_hosts" > /dev/null
+          {
+            echo "SELECTEL_ENV=$d/selectel.env"
+            echo "ANSIBLE_VAULT_PASSWORD_FILE=$d/vault-pass"
+            echo "INFRA_SSH_ARGS=-o UserKnownHostsFile=$d/known_hosts -o StrictHostKeyChecking=yes"
+            echo "INFRA_DEPLOY_KEY=$d/ci-key"
+          } >> "$GITHUB_ENV"
+      - &pulumi-install
+        name: Pulumi — зависимости
+        working-directory: pulumi
+        run: pulumi install
+      - name: pulumi preview
+        working-directory: pulumi
+        run: |
+          . bootstrap/env.sh
+          unset OS_PROJECT_NAME
+          set -o pipefail
+          pulumi preview --stack prod --diff --non-interactive 2>&1 | grep -v 'no supported checksum' | tee "$RUNNER_TEMP/preview.txt"
+      - name: site.yml --check --diff
+        working-directory: ansible
+        run: |
+          set -o pipefail
+          ansible-playbook -i inventory/ci.yml site.yml --check --diff \
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" \
+            | tee "$RUNNER_TEMP/ansible-check.txt"
+      - name: Сводка
+        if: always()
+        run: |
+          {
+            echo '## pulumi preview'
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/preview.txt" 2>/dev/null | tail -150
+            echo '```'
+            echo '## site.yml --check --diff'
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/ansible-check.txt" 2>/dev/null \
+              | grep -E '^(TASK|changed|fatal|failed|PLAY RECAP|[-+@]{1,3} |[[:space:]]*[a-z_-]+ +:)' | tail -150
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - &cleanup
+        name: Удалить секреты
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/infra"
+
+  # Выкатка на прод. Отменять запуск нельзя: pulumi, прерванный во время записи стейта, оставляет
+  # пустой prod.json (pulumi/README.md, «Разбор ошибок»), поэтому очередь без cancel-in-progress.
+  apply:
+    name: Выкатка на прод
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: production
+      url: https://cellestial.ru
+    concurrency:
+      group: infra-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Инструменты
+        run: |
+          curl -fsSL https://get.pulumi.com | sh -s -- --version "$PULUMI_VERSION"
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+          (cd ansible && python -m pip install -r deploy-requirements.txt && ansible-galaxy collection install -r requirements.yml)
+      - *secrets-step
+      - *pulumi-install
+      - name: pulumi up
+        working-directory: pulumi
+        run: |
+          . bootstrap/env.sh
+          unset OS_PROJECT_NAME
+          pulumi up --stack prod --diff --yes --non-interactive 2>&1 | grep -v 'no supported checksum'
+          exit "${PIPESTATUS[0]}"
+      - name: site.yml
+        working-directory: ansible
+        run: |
+          ansible-playbook -i inventory/ci.yml site.yml \
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
+      - name: verify.yml
+        working-directory: ansible
+        run: |
+          ansible-playbook -i inventory/ci.yml verify.yml \
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
+      - *cleanup

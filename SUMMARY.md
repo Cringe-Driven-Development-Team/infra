@@ -93,6 +93,10 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   (`failed to load checkpoint: unexpected end of JSON input`). Лечение — до любой следующей записи
   скопировать `prod/.pulumi/stacks/infra/prod.json.bak` поверх `prod.json`.
 
+- CI/CD — `.github/workflows/infra.yml`: на PR — тесты, `pulumi preview` и `site.yml --check` по
+  проду; мерж в `main` — `pulumi up`, `site.yml`, `verify.yml`. Секреты и подключение — `ansible/README.md`,
+  «CI/CD инфраструктуры». Запуск с `pulumi up` не отменять (см. выше про прерванный `pulumi`).
+
 ## Скиллы
 
 Плагины маркетплейса `cdd` включены в `.claude/settings.json`. До первой команды или правки по теме
