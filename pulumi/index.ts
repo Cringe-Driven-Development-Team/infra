@@ -492,8 +492,8 @@ const dnsProjectId: pulumi.Input<string> = cfg.get("dnsProjectId") ?? project.id
 const dnsProvider = new selectel.Provider("dns", {
   projectId: dnsProjectId,
   domainName,
-  authUrl: selectelCfg.get("authUrl"),
-  authRegion: selectelCfg.get("authRegion"),
+  authUrl: selectelCfg.require("authUrl"),
+  authRegion: selectelCfg.require("authRegion"),
 });
 const withDns = { provider: dnsProvider };
 const parentZone = appDomain || cdnCustomDomainName || staticCustomDomainName
