@@ -1,7 +1,7 @@
 # Инструкции для агентов
 
 Общепроектный контекст, текущая архитектура и планы — в
-[docs/site/project-context.md](https://github.com/Cringe-Driven-Development-Team/docs/blob/main/site/project-context.md).
+[Контекст проекта](https://docs.cellestial.ru/project-context).
 Фактическое состояние инфраструктуры проверяй по `pulumi/`, `ansible/` и стенду.
 
 Устройство репозитория и локальные команды — в [README.md](README.md), порядок эксплуатации —
