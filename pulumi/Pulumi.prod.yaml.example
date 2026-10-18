@@ -40,6 +40,8 @@ config:
   # infra:cdnName: "<имя CDN-ресурса>"   # по умолчанию <infra:name>-cdn
   # Свой домен CDN-ресурса: CNAME в зоне infra:dnsZone и привязка; сертификат — в панели
   # infra:cdnDomain: cdn.cellestial.ru
+  # Свой домен бакета релизов (нужен infra:s3Public): отдельная зона DNS с ALIAS на хранилище; сертификат — в панели
+  # infra:s3Domain: s3.cellestial.ru
   # Свой домен бакета аватарок: отдельная зона DNS с ALIAS на хранилище; сертификат — в панели
   # infra:avatarsDomain: avatars.cellestial.ru
   # Свой домен CDN-ресурса статики (нужен infra:staticBucket): CNAME в зоне infra:dnsZone и привязка

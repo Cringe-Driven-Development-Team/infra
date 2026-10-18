@@ -189,14 +189,24 @@ for p in 5432 8080 2375 2376; do nc -z -G3 "$IP" $p && echo "$p OPEN — так 
 CDN: CDN-ресурс с бакетом источником создаёт Pulumi (`infra:cdn: true`) — файлы отдаются с
 `pulumi stack output cdnDefaultDomain`. Свои домены тоже делает Pulumi: `infra:cdnDomain` — CNAME в зоне
 `cellestial.ru.`, `infra:staticDomain` — такой же CNAME на второй CDN-ресурс (источник — бакет
-статики), `infra:avatarsDomain` — отдельная зона `avatars.cellestial.ru.`, оба с привязкой к
-CDN-ресурсу и бакету аватарок. Сертификаты к ним — руками в панели (CDN → ресурс → сертификаты; S3 →
-SSL-сертификаты); после выпуска:
+статики), `infra:s3Domain` и `infra:avatarsDomain` — отдельные зоны `s3.cellestial.ru.` и
+`avatars.cellestial.ru.` с ALIAS на публичные домены бакетов релизов и аватарок. Руками в панели:
+
+1. Привязка домена бакета, если `up` упал на `BucketDomain` с `domain_cname_invalid` (API проверяет
+   CNAME, а в зоне ALIAS): S3 → бакет (`s3Bucket` или `avatarsBucket`) → Домены → добавить домен, затем
+   повторный `pulumi up` — уже привязанный домен он не трогает.
+2. Сертификаты: CDN → ресурс → сертификаты (`cdn.cellestial.ru`, `static.cellestial.ru`);
+   S3 → SSL-сертификаты (`s3.cellestial.ru`, `avatars.cellestial.ru`).
+3. Проверка после выпуска — 200 и валидный сертификат:
 
 ```bash
 curl -I "https://$(pulumi stack output cdnCustomDomain)/index.html"
+curl -I "https://$(pulumi stack output s3CustomDomain)/current.json"
 curl -I "https://$(pulumi stack output avatarsCustomDomain)/<ключ аватарки>"
 ```
+
+Только после сертификата `s3.cellestial.ru` — `ansible-playbook site.yml`: Caddy берёт `index.html`
+клиента через этот домен (`frontend_s3_domain`), без сертификата главная отвечает `502`.
 
 Что автоматом, а что руками — `CLAUDE.md`.
 

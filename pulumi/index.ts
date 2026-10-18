@@ -61,11 +61,15 @@ const staticBucketName = cfg.get("staticBucket");
 const s3Public = cfg.getBoolean("s3Public") ?? true;
 // CDN-ресурс с бакетом источником; технический домен — <id>.selcdn.net.
 const cdnEnabled = cfg.getBoolean("cdn") ?? false;
-// Свои домены CDN-ресурса и бакета аватарок (например cdn.cellestial.ru, avatars.cellestial.ru) и их
-// привязка (CdnDomain, BucketDomain): у CDN — CNAME в зоне infra:dnsZone, у аватарок — своя зона DNS.
-// Сертификаты доменов выпускают в панели. У бакета релизов своего домена нет.
+// Свои домены CDN-ресурса и бакетов релизов и аватарок (например cdn.cellestial.ru, s3.cellestial.ru,
+// avatars.cellestial.ru) и их привязка (CdnDomain, BucketDomain): у CDN — CNAME в зоне infra:dnsZone,
+// у бакетов — своя зона DNS. Сертификаты доменов выпускают в панели.
 const cdnCustomDomainName = cfg.get("cdnDomain");
+const s3CustomDomainName = cfg.get("s3Domain");
 const avatarsCustomDomainName = cfg.get("avatarsDomain");
+if (s3CustomDomainName && !s3Public) {
+  throw new Error("infra:s3Domain задан при infra:s3Public=false: свой домен бывает только у публичного бакета");
+}
 // Свой домен CDN-ресурса статики (static.cellestial.ru): CNAME в зоне infra:dnsZone, как у infra:cdnDomain.
 const staticCustomDomainName = cfg.get("staticDomain");
 if (staticCustomDomainName && !staticBucketName) {
@@ -567,33 +571,46 @@ if (staticAccess) {
   }
 }
 
-// Свой домен бакета аватарок — отдельная зона DNS (не запись в infra:dnsZone). Зона — в проекте
+// Свой домен публичного бакета — отдельная зона DNS (не запись в infra:dnsZone). Зона — в проекте
 // родительской зоны: в проекте стека Selectel отвечает root_zone_already_belongs_to_another_user.
 // NS-делегирование из родительской зоны Selectel ставит сам, своей NS-записи не нужно.
 // На вершине зоны CNAME невозможен, поэтому ALIAS — на актуальный публичный домен бакета
-// <uuid>.selstorage.ru (avatarsPublicDomain): он меняется вместе с бакетом, запись идёт за ним.
-if (avatarsCustomDomainName) {
+// <uuid>.selstorage.ru: он меняется вместе с бакетом, запись идёт за ним.
+// Логические имена (avatars, avatars-alias) — в URN ресурсов стейта, не менять.
+const bucketDomainZone = (
+  logicalName: string,
+  domainName: string,
+  bucketName: pulumi.Input<string>,
+  access: BucketAccess,
+) => {
   // Имя зоны уникально в аккаунте: при замене (смена проекта) сначала удалить старую.
-  const avatarsZone = new selectel.DomainsZoneV2("avatars", {
-    name: withDot(avatarsCustomDomainName),
+  const zone = new selectel.DomainsZoneV2(logicalName, {
+    name: withDot(domainName),
     projectId: dnsProjectId,
   }, { ...withDns, deleteBeforeReplace: true });
-  const record = new selectel.DomainsRrsetV2("avatars-alias", {
-    zoneId: avatarsZone.id,
+  const record = new selectel.DomainsRrsetV2(`${logicalName}-alias`, {
+    zoneId: zone.id,
     projectId: dnsProjectId,
-    name: withDot(avatarsCustomDomainName),
+    name: withDot(domainName),
     type: "ALIAS",
     ttl: 300,
-    records: [{ content: avatarsAccess.publicDomain.apply(withDot) }],
+    records: [{ content: access.publicDomain.apply(withDot) }],
   }, { ...withDns, deleteBeforeReplace: true });
   // Привязка через API проверяет CNAME и ALIAS не принимает (domain_cname_invalid): уже привязанный
   // домен BucketDomain не трогает, а заново привязать домен-зону можно только в панели.
-  new BucketDomain("avatars", {
+  new BucketDomain(logicalName, {
     projectId: project.id,
     pool: s3Pool,
-    bucket: avatarsBucketResource.bucket,
-    domain: avatarsCustomDomainName,
-  }, { dependsOn: [record, avatarsAccess] });
+    bucket: bucketName,
+    domain: domainName,
+  }, { dependsOn: [record, access] });
+};
+
+if (s3CustomDomainName) {
+  bucketDomainZone("s3", s3CustomDomainName, bucket.bucket, bucketAccess);
+}
+if (avatarsCustomDomainName) {
+  bucketDomainZone("avatars", avatarsCustomDomainName, avatarsBucketResource.bucket, avatarsAccess);
 }
 
 export const projectId = project.id;
@@ -604,6 +621,8 @@ export const domain = appDomain ?? null;
 export const s3Endpoint = s3EndpointUrl;
 export const s3Bucket = bucket.bucket;
 export const s3PublicDomain = bucketAccess.publicDomain;
+// Свой домен бакета релизов; HTTPS на нём — после выпуска сертификата в панели
+export const s3CustomDomain = s3CustomDomainName ?? null;
 // Свой домен CDN-ресурса (у аватарок — avatarsCustomDomain); HTTPS на них — после выпуска
 // сертификатов в панели
 export const cdnCustomDomain = cdnCustomDomainName ?? null;

@@ -51,8 +51,11 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
     домен бакета `<uuid>.selstorage.ru` (`avatarsPublicDomain`); `BucketDomain`: домен бакета аватарок
     `infra:avatarsBucket`; выход `avatarsCustomDomain`. NS-делегирование из `cellestial.ru.` ставит
     Selectel.
-  - У бакетов релизов и статики своего домена нет (`s3.cellestial.ru` не делаем) — только
-    `s3PublicDomain` и `staticPublicDomain`; свои домены — у их CDN-ресурсов.
+  - `infra:s3Domain` (`s3.cellestial.ru`) — так же, как аватарки: **отдельная зона DNS**
+    `s3.cellestial.ru.` в `infra-shared` с ALIAS на `s3PublicDomain`; `BucketDomain`: домен бакета
+    релизов `infra:s3Bucket` (только при `infra:s3Public`); выход `s3CustomDomain`. Через него Caddy
+    берёт `index.html` клиента (`frontend_s3_domain` в Ansible).
+  - У бакета статики своего домена нет — только `staticPublicDomain`; свой домен — у его CDN-ресурса.
 
 ### Руками в панели Selectel
 
@@ -60,12 +63,13 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 - Личный доступ к стейту на человека — `pulumi/bootstrap/README.md`.
 - Сертификаты своих доменов: `cdn.cellestial.ru` и `static.cellestial.ru` — панель → CDN → ресурс →
   сертификаты (у каждого домена свой CDN-ресурс);
-  `avatars.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
+  `s3.cellestial.ru` и `avatars.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
   (`POST /cdn/v3/letsencrypt/<id>`) дважды завершался `failed` без причины. Сами домены привязывает
   Pulumi — в панели их не трогать.
 - Бэк отдаёт ссылки на аватарки через `avatars.cellestial.ru` (`avatars_public_domain` в Ansible).
   Без сертификата домен по HTTPS отвечает сертификатом `*.ru-7.storage.selcloud.ru`, а HTTP
   перенаправляет на HTTPS — после пересоздания стека сначала сертификат в панели, потом выкатка бэка.
+  То же для `s3.cellestial.ru` и Caddy: сначала сертификат, потом `site.yml`, иначе главная — `502`.
 
 ### Чего не делать в коде (уже падало)
 

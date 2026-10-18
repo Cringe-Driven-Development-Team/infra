@@ -107,7 +107,8 @@ A-запись домена находится под управлением Pul
 | ноутбуки | `infra:notebooksBucket` | `.ipynb` пользователей, бэкенд | приватный | нет | Go API (`notebooksAccessKey`) |
 
 - Фронт отдаётся через CDN (`cdnDefaultDomain`, свой домен — `cdnCustomDomain`) или напрямую с
-  `https://<s3PublicDomain>/<ключ>`; проверка — ниже, «Проверка S3».
+  `https://<s3PublicDomain>/<ключ>` и со своего домена бакета `https://<s3CustomDomain>/<ключ>` (через
+  него Caddy берёт `index.html`); проверка — ниже, «Проверка S3».
 - Статика отдаётся через свой CDN-ресурс (`staticCdnDefaultDomain`, свой домен — `staticCustomDomain`)
   — «Бакет статики».
 - Аватарки отдаются напрямую с `https://<avatarsPublicDomain>/<ключ>` — «Бакет аватарок».
@@ -224,14 +225,21 @@ nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
 
 ## Свои домены
 
-`infra:cdnDomain`, `infra:staticDomain` и `infra:avatarsDomain` — свои домены CDN-ресурса релизов,
-CDN-ресурса статики и бакета аватарок (`infra:avatarsBucket`); у бакетов релизов и статики своего
-домена нет — домены привязаны к их CDN. Привязка — dynamic-ресурсы `CdnDomain` и
-`BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
+Конфиги:
 
-| | CDN (`cdn.cellestial.ru`, `static.cellestial.ru`) | Бакет аватарок (`avatars.cellestial.ru`) |
+- `infra:cdnDomain` — CDN-ресурса релизов (`cdn.cellestial.ru`), выход `cdnCustomDomain`;
+- `infra:staticDomain` — CDN-ресурса статики (`static.cellestial.ru`), выход `staticCustomDomain`;
+- `infra:s3Domain` — бакета релизов `infra:s3Bucket` (`s3.cellestial.ru`), выход `s3CustomDomain`;
+  только у публичного бакета: при `infra:s3Public=false` программа падает до создания ресурсов;
+- `infra:avatarsDomain` — бакета аватарок `infra:avatarsBucket` (`avatars.cellestial.ru`), выход
+  `avatarsCustomDomain`.
+
+У бакета статики своего домена нет — домен привязан к его CDN. Привязка — dynamic-ресурсы `CdnDomain`
+и `BucketDomain` (`selectel-storage.ts`). Сертификатов Pulumi не выпускает.
+
+| | CDN (`cdn.cellestial.ru`, `static.cellestial.ru`) | Бакеты релизов и аватарок (`s3.cellestial.ru`, `avatars.cellestial.ru`) |
 |---|---|---|
-| DNS | CNAME в зоне `infra:dnsZone` на `<id>.selcdn.net.` | своя зона `avatars.cellestial.ru.` (проект `infra:dnsProjectId`), в ней ALIAS на публичный домен бакета `<uuid>.selstorage.ru.` (`avatarsPublicDomain`) |
+| DNS | CNAME в зоне `infra:dnsZone` на `<id>.selcdn.net.` | своя зона домена (проект `infra:dnsProjectId`), в ней ALIAS на публичный домен бакета `<uuid>.selstorage.ru.` (`s3PublicDomain`, `avatarsPublicDomain`) |
 | Привязка | `PATCH /cdn/v3/resources/<id>` — `names`, сверка через `GET` | `PUT /v2/containers/<бакет>/domains` |
 | Сертификат (руками) | панель → CDN → ресурс → сертификаты | панель → S3 → SSL-сертификаты |
 
@@ -240,7 +248,7 @@ CDN-ресурса статики и бакета аватарок (`infra:avata
 - Сертификат `static.cellestial.ru` выпущен в панели (CDN → ресурс статики → сертификаты), домен
   отвечает по HTTPS. После пересоздания CDN-ресурса статики сертификат выпускают заново: до этого по
   HTTPS CDN отвечает чужим сертификатом.
-- Аватарки: на вершине зоны CNAME невозможен, поэтому в зоне ALIAS. Привязка домена бакета через API
+- Бакеты: на вершине зоны CNAME невозможен, поэтому в зоне ALIAS. Привязка домена бакета через API
   проверяет именно CNAME и на ALIAS отвечает `domain_cname_invalid`: `BucketDomain` не трогает уже
   привязанный домен, а слетевшую привязку возвращают в панели (S3 → бакет → Домены).
 - Зону создаёт Pulumi. Созданную руками зону с тем же именем перед `up` удалить: вторую зону с этим
@@ -252,10 +260,14 @@ CDN-ресурса статики и бакета аватарок (`infra:avata
   ```bash
   curl -skI "https://$(pulumi stack output avatarsCustomDomain)/x"
   curl -sI  "https://$(pulumi stack output avatarsPublicDomain)/x"
+  curl -skI "https://$(pulumi stack output s3CustomDomain)/current.json"
+  curl -sI  "https://$(pulumi stack output s3PublicDomain)/current.json"
   ```
 - Без сертификата свой домен бакета по HTTPS отвечает сертификатом `*.<пул>.storage.selcloud.ru`, а
   HTTP перенаправляет на HTTPS. Бэк отдаёт ссылки на аватарки через свой домен
-  (`avatars_public_domain` в Ansible) — сертификат должен быть выпущен до выкатки бэка.
+  (`avatars_public_domain` в Ansible) — сертификат должен быть выпущен до выкатки бэка. Caddy берёт
+  `index.html` клиента через `s3.cellestial.ru` (`frontend_s3_domain`) — сертификат до прогона
+  `site.yml`, иначе главная отвечает `502`.
 - Отвязка домена бакета (`pulumi destroy`, смена домена) сверяется через `GET`; не вышло — ошибка с
   подсказкой отвязать в панели.
 - Тесты функций API: `bun test selectel-storage.test.ts`.
