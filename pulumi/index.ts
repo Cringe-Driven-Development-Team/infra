@@ -488,12 +488,15 @@ const dnsProjectId: pulumi.Input<string> = cfg.get("dnsProjectId") ?? project.id
 // Свой провайдер selectel для DNS: его projectId — проект, где провайдер ищет импортируемые записи и
 // зоны (у провайдера по умолчанию он берётся из INFRA_PROJECT_ID, иначе import падает с
 // «INFRA_PROJECT_ID must be set»). Явный провайдер не читает selectel:* из конфига стека — передаём;
-// логин и пароль он, как и провайдер по умолчанию, берёт из OS_* (selectel.env).
+// Логин и пароль — из OS_* (selectel.env), как у провайдера по умолчанию, но явно: SDK, собранный
+// свежим pulumi install, делает их обязательными. Пароль в стейте — секретом.
 const dnsProvider = new selectel.Provider("dns", {
   projectId: dnsProjectId,
   domainName,
   authUrl: selectelCfg.require("authUrl"),
   authRegion: selectelCfg.require("authRegion"),
+  username: selectelCreds.username,
+  password: pulumi.secret(selectelCreds.password),
 });
 const withDns = { provider: dnsProvider };
 const parentZone = appDomain || cdnCustomDomainName || staticCustomDomainName
