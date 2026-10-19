@@ -22,6 +22,7 @@ config:
   infra:cdnDomain: cdn.cellestial.ru
   infra:avatarsDomain: avatars.cellestial.ru
   infra:staticDomain: static.cellestial.ru
+  infra:docsDomain: docs.cellestial.ru
   infra:s3Pool: ru-7
   infra:s3Bucket: cellestial-frontend-releases-0
   infra:s3PublicRead: "false"

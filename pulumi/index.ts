@@ -74,6 +74,12 @@ if (staticCustomDomainName && !staticBucketName) {
 if (cdnCustomDomainName && !cdnEnabled) {
   throw new Error("infra:cdnDomain задан без infra:cdn: домен привязывается к CDN-ресурсу");
 }
+// Свой домен сайта документации (docs.cellestial.ru): сайт собирает и отдаёт GitHub Pages репозитория
+// docs, в зоне infra:dnsZone — только CNAME на Pages. Сертификат выпускает GitHub.
+const docsCustomDomainName = cfg.get("docsDomain");
+// Значение TXT-записи, которой GitHub подтверждает домен infra:dnsZone для организации (организация →
+// Settings → Pages → Add a domain). Не секрет: значение публично в DNS.
+const githubPagesChallenge = cfg.get("githubPagesChallenge");
 
 const renamedFromStudy = { aliases: [{ name: "study" }] };
 
@@ -499,7 +505,7 @@ const dnsProvider = new selectel.Provider("dns", {
   password: pulumi.secret(selectelCreds.password),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || cdnCustomDomainName || staticCustomDomainName
+const parentZone = appDomain || cdnCustomDomainName || staticCustomDomainName || docsCustomDomainName || githubPagesChallenge
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -568,6 +574,33 @@ if (staticAccess) {
       domain: staticCustomDomainName,
     }, { dependsOn: [record] });
   }
+}
+
+// Сайт документации на GitHub Pages: CNAME своего домена на адрес Pages организации.
+const githubOrg = "cringe-driven-development-team";
+if (docsCustomDomainName) {
+  new selectel.DomainsRrsetV2("docs", {
+    zoneId: parentZone!.id,
+    projectId: dnsProjectId,
+    name: withDot(docsCustomDomainName),
+    type: "CNAME",
+    ttl: 300,
+    records: [{ content: `${githubOrg}.github.io.` }],
+  }, { ...withDns, deleteBeforeReplace: true });
+}
+
+// Подтверждение домена зоны для организации на GitHub: пока домен подтверждён, чужой репозиторий не
+// займёт его поддомен на Pages, даже если сайт docs отключат. Имя записи GitHub задаёт сам.
+if (githubPagesChallenge) {
+  new selectel.DomainsRrsetV2("github-pages-challenge", {
+    zoneId: parentZone!.id,
+    projectId: dnsProjectId,
+    name: `_github-pages-challenge-${githubOrg}.${withDot(cfg.require("dnsZone"))}`,
+    type: "TXT",
+    ttl: 300,
+    // Содержимое TXT Selectel принимает только в кавычках
+    records: [{ content: `"${githubPagesChallenge}"` }],
+  }, { ...withDns, deleteBeforeReplace: true });
 }
 
 // Свой домен бакета аватарок — отдельная зона DNS (не запись в infra:dnsZone). Зона — в проекте
