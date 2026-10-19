@@ -45,6 +45,10 @@ config:
   # Свой домен CDN-ресурса статики (нужен infra:staticBucket): CNAME в зоне infra:dnsZone и привязка
   # infra:staticDomain: static.cellestial.ru
   # infra:staticCdnName: "<имя CDN-ресурса статики>"   # по умолчанию <infra:name>-static-cdn
+  # Свой домен сайта документации: CNAME в зоне infra:dnsZone на GitHub Pages организации
+  # infra:docsDomain: docs.cellestial.ru
+  # TXT подтверждения домена infra:dnsZone для организации на GitHub (значение выдаёт GitHub)
+  # infra:githubPagesChallenge: "<значение из Settings → Pages → Add a domain>"
 
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1

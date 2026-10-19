@@ -260,6 +260,28 @@ CDN-ресурса статики и бакета аватарок (`infra:avata
   подсказкой отвязать в панели.
 - Тесты функций API: `bun test selectel-storage.test.ts`.
 
+### Сайт документации
+
+`infra:docsDomain` (`docs.cellestial.ru`) — свой домен сайта документации. Сайт собирает и отдаёт
+GitHub Pages репозитория [docs](https://github.com/Cringe-Driven-Development-Team/docs); Pulumi держит
+только CNAME в зоне `infra:dnsZone` на `cringe-driven-development-team.github.io.` Сертификат выпускает
+GitHub, когда домен выставлен в настройках Pages репозитория `docs` (Settings → Pages → Custom domain).
+
+```bash
+dig +short CNAME docs.cellestial.ru   # cringe-driven-development-team.github.io.
+```
+
+`infra:githubPagesChallenge` — значение TXT-записи
+`_github-pages-challenge-cringe-driven-development-team.<infra:dnsZone>`, которой GitHub подтверждает
+домен для организации. Пока домен подтверждён, чужой репозиторий не займёт его поддомен на Pages, даже
+если сайт docs отключат. Порядок:
+
+1. Владелец организации: Settings → Pages → Add a domain → `cellestial.ru`; GitHub покажет значение TXT.
+2. `pulumi config set infra:githubPagesChallenge <значение>` и `pulumi up`.
+3. Владелец организации нажимает Verify. Запись остаётся в стеке.
+
+Ключи независимы: без `infra:githubPagesChallenge` создаётся только CNAME.
+
 ## Передача в Ansible
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт
