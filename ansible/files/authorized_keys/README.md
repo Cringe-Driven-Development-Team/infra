@@ -14,3 +14,7 @@
 только в `DEPLOY_SSH_KEY` environment `production` бэка. Перед первым деплоем
 нужно применить `site.yml` существующим разрешённым ключом. Личный ключ
 участника не используется как CI-ключ.
+
+`ci-infra.pub` — ключ CI самой инфраструктуры (`.github/workflows/infra.yml`): приватная часть —
+только в секрете `INFRA_DEPLOY_SSH_KEY` environments `production` и `infra-preview` этого
+репозитория (`ansible/README.md`, «CI/CD инфраструктуры»).
