@@ -15,3 +15,5 @@ strict: true
 groups:
   # metadata задаётся в pulumi/index.ts: { role: "gateway", env: "release" }
   gateway: (openstack.metadata | default({})).get('role') == 'gateway'
+  # VPS с Coolify для сервиса вебхуков — плейбук coolify.yml
+  coolify: (openstack.metadata | default({})).get('role') == 'coolify'

@@ -1,0 +1,57 @@
+---
+- name: Ключи бэкапа заданы в Vault
+  ansible.builtin.assert:
+    that:
+      - vault_coolify_restic_password | default('') | length > 0
+      - vault_coolify_backup_access_key | default('') | length > 0
+      - vault_coolify_backup_secret_key | default('') | length > 0
+    fail_msg: >-
+      В inventory/group_vars/all/vault.yml нет vault_coolify_restic_password,
+      vault_coolify_backup_access_key или vault_coolify_backup_secret_key
+      (ключ — выходы Pulumi coolifyBackupAccessKey/coolifyBackupSecretKey; RUNBOOK, «Coolify»).
+    quiet: true
+
+- name: Пакет restic
+  ansible.builtin.apt:
+    name: restic
+    state: present
+
+- name: Каталог /etc/restic
+  ansible.builtin.file:
+    path: /etc/restic
+    state: directory
+    mode: "0700"
+
+- name: Окружение restic
+  ansible.builtin.template:
+    src: env.j2
+    dest: /etc/restic/env
+    mode: "0600"
+  no_log: true
+
+- name: Репозиторий restic существует
+  ansible.builtin.shell:
+    cmd: set -a && . /etc/restic/env && restic cat config >/dev/null 2>&1 || restic init
+    executable: /bin/bash
+  register: restic_backup_init
+  changed_when: "'created restic repository' in restic_backup_init.stdout"
+  no_log: true
+
+- name: Unit бэкапа
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - restic-backup.service
+    - restic-backup.timer
+  notify: Reload systemd
+
+- name: Применить изменения unit'ов
+  ansible.builtin.meta: flush_handlers
+
+- name: Таймер бэкапа включён
+  ansible.builtin.systemd_service:
+    name: restic-backup.timer
+    state: started
+    enabled: true

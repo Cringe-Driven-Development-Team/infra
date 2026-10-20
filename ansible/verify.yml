@@ -5,14 +5,14 @@
   vars:
     public_ip: "{{ hostvars[groups['gateway'][0]]['ansible_host'] }}"
   tasks:
-    # Inventory строится из серверов проекта (openstack.yml) — один хост означает,
-    # что второй сервер в проекте не осталось.
-    - name: В проекте ровно одна VPS
+    # Inventory строится из серверов проекта (openstack.yml): прод-VPS (gateway) ровно одна, кроме
+    # неё допускается только VPS с Coolify (группа coolify, coolify.yml).
+    - name: В проекте ровно одна прод-VPS
       ansible.builtin.assert:
         that:
           - groups['gateway'] | length == 1
-          - groups['all'] | length == 1
-        fail_msg: "Ожидалась одна VPS, в inventory: {{ groups['all'] }}"
+          - groups['all'] | difference(groups['gateway']) | difference(groups['coolify'] | default([])) | length == 0
+        fail_msg: "Ожидалась одна прод-VPS и не больше одной лишней (coolify), в inventory: {{ groups['all'] }}"
 
     # current.json в бакете релизов пишет CI фронта при выкатке: { "stable": "{sha}", ... }; пока
     # его нет, клиент не выкатан. Устаревший frontend_s3_domain (стек пересоздан, бакет новый)
@@ -156,7 +156,7 @@
       loop: [5432, 8080, 2375, 2376]
 
 - name: "Проверки на VPS"
-  hosts: all
+  hosts: gateway
   gather_facts: false
   become: true
   tasks:

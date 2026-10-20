@@ -14,6 +14,14 @@
       X11Forwarding no
       # Jump-хост больше не нужен: VPS одна, ProxyCommand/ProxyJump удалены из inventory
       AllowTcpForwarding no
+      {% if ssh_hardening_root_from | default([]) | length > 0 %}
+      # root — только по ключу и только из этих сетей (Coolify управляет хостом из контейнера)
+      Match Address {{ ssh_hardening_root_from | join(',') }}
+          PermitRootLogin prohibit-password
+      # Конец условного блока: drop-in включается в начало sshd_config, без этого Match
+      # распространился бы на основной конфиг
+      Match all
+      {% endif %}
   notify: Restart sshd
 
 # Старое имя drop-in (99-) от предыдущих прогонов: sshd берёт первое значение, 00- его перекрывает,

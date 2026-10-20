@@ -1,0 +1,42 @@
+---
+# Установка и обновление — официальный install.sh с зафиксированной версией. Повторный прогон при той
+# же версии ничего не делает: версия сверяется по образу работающего контейнера coolify.
+- name: Версия работающего Coolify
+  ansible.builtin.command: docker inspect --format '{{ "{{" }} .Config.Image {{ "}}" }}' coolify
+  register: coolify_running_image
+  changed_when: false
+  failed_when: false
+  # только чтение: и в --check должна отвечать правда, иначе check всегда «переустанавливает»
+  check_mode: false
+
+- name: Установить или обновить Coolify
+  when: not (coolify_running_image.stdout | default('')).endswith(':' ~ coolify_version)
+  block:
+    - name: Каталог /data/coolify
+      ansible.builtin.file:
+        path: /data/coolify
+        state: directory
+        mode: "0755"
+
+    - name: Скачать install.sh
+      ansible.builtin.get_url:
+        url: "{{ coolify_install_url }}"
+        dest: /data/coolify/install.sh
+        mode: "0700"
+        force: true
+
+    # AUTOUPDATE=false — версию меняет только этот плейбук
+    - name: Запустить install.sh {{ coolify_version }}
+      ansible.builtin.command: bash /data/coolify/install.sh {{ coolify_version }}
+      environment:
+        AUTOUPDATE: "false"
+      changed_when: true
+
+- name: Coolify отвечает на хосте
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8000/api/health
+    status_code: 200
+  register: coolify_health
+  until: coolify_health is succeeded
+  retries: 30
+  delay: 10

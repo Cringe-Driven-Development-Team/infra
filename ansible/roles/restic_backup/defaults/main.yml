@@ -1,0 +1,13 @@
+# Репозиторий restic — бакет бэкапов в S3 Selectel (выход Pulumi coolifyBackupBucket)
+restic_backup_bucket: cellestial-coolify-backups-0
+restic_backup_s3_endpoint: "https://s3.{{ s3_region }}.storage.selcloud.ru"
+# /data/coolify — база, ключи и .env (APP_KEY) Coolify; тома Docker — данные приложений
+restic_backup_paths:
+  - /data/coolify
+  - /var/lib/docker/volumes
+restic_backup_keep_daily: 7
+restic_backup_keep_weekly: 4
+# Каждую ночь, время сервера (UTC); RandomizedDelaySec разносит запуск
+restic_backup_on_calendar: "*-*-* 00:30:00"
+# Имя хоста в снимках: постоянное — в dynamic и статическом (CI) inventory у VPS разные имена
+restic_backup_host: coolify

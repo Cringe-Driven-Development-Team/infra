@@ -6,3 +6,7 @@ all:
       hosts:
         cellestial:
           ansible_host: cellestial.ru
+    coolify:
+      hosts:
+        coolify:
+          ansible_host: coolify.cellestial.ru

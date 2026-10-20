@@ -1,0 +1,14 @@
+---
+# VPS с self-hosted Coolify для сервиса вебхуков (infra#54). Первый вход — bootstrap.yml --limit coolify.
+# Прод-VPS (gateway) этот плейбук не трогает.
+- name: "VPS с Coolify"
+  hosts: coolify
+  become: true
+  roles:
+    - users
+    - common
+    - ssh_hardening
+    - firewall
+    - docker
+    - coolify
+    - restic_backup

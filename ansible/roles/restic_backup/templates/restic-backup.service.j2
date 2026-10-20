@@ -1,0 +1,11 @@
+# Managed by Ansible. Ручной запуск: systemctl start restic-backup; журнал: journalctl -u restic-backup
+[Unit]
+Description=restic backup of Coolify data to S3
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/restic/env
+ExecStart=/usr/bin/restic backup --host {{ restic_backup_host }} {{ restic_backup_paths | join(' ') }}
+ExecStartPost=/usr/bin/restic forget --host {{ restic_backup_host }} --keep-daily {{ restic_backup_keep_daily }} --keep-weekly {{ restic_backup_keep_weekly }} --prune
