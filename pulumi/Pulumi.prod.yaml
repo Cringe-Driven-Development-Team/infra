@@ -23,6 +23,11 @@ config:
   infra:avatarsDomain: avatars.cellestial.ru
   infra:staticDomain: static.cellestial.ru
   infra:docsDomain: docs.cellestial.ru
+  infra:coolify: "true"
+  infra:coolifyFlavorName: SL1.2-4096
+  infra:coolifyDomain: coolify.cellestial.ru
+  infra:hooksDomain: hooks.cellestial.ru
+  infra:coolifyBackupBucket: cellestial-coolify-backups-0
   infra:s3Pool: ru-7
   infra:s3Bucket: cellestial-frontend-releases-0
   infra:s3PublicRead: "false"

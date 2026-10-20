@@ -68,6 +68,10 @@ const cdnCustomDomainName = cfg.get("cdnDomain");
 const avatarsCustomDomainName = cfg.get("avatarsDomain");
 // Свой домен CDN-ресурса статики (static.cellestial.ru): CNAME в зоне infra:dnsZone, как у infra:cdnDomain.
 const staticCustomDomainName = cfg.get("staticDomain");
+// VPS с Coolify (infra#54) и домены её панели и сервиса вебхуков — A-записи в infra:dnsZone.
+const coolifyEnabled = cfg.getBoolean("coolify") ?? false;
+const coolifyDomainName = cfg.get("coolifyDomain");
+const hooksDomainName = cfg.get("hooksDomain");
 if (staticCustomDomainName && !staticBucketName) {
   throw new Error("infra:staticDomain задан без infra:staticBucket: домен привязывается к CDN-ресурсу бакета статики");
 }
@@ -505,7 +509,7 @@ const dnsProvider = new selectel.Provider("dns", {
   password: pulumi.secret(selectelCreds.password),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || cdnCustomDomainName || staticCustomDomainName || docsCustomDomainName || githubPagesChallenge
+const parentZone = appDomain || coolifyDomainName || hooksDomainName || cdnCustomDomainName || staticCustomDomainName || docsCustomDomainName || githubPagesChallenge
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -632,6 +636,146 @@ if (avatarsCustomDomainName) {
   }, { dependsOn: [record, avatarsAccess] });
 }
 
+// ---------------------------------------------------------------------------
+// Отдельная VPS с self-hosted Coolify для сервиса вебхуков (infra#54). Включается infra:coolify.
+// Та же приватная сеть и роутер, что у gateway, но свои порт, диск, floating IP и security group:
+// прод-ресурсы не меняются. Docker публикует порты в обход ufw, поэтому наружу порты закрывает
+// security group на порту VPS — только 22/80/443 (панель :8000 снаружи не видна никогда).
+// ---------------------------------------------------------------------------
+let coolifyFloatingIp: openstack.networking.FloatingIp | undefined;
+let coolifyBackupBucketResource: aws.s3.Bucket | undefined;
+let coolifyBackupCredentials: selectel.IamS3CredentialsV1 | undefined;
+if (coolifyEnabled) {
+  const secGroup = new openstack.networking.SecGroup("coolify", {
+    name: "coolify",
+    description: "Coolify VPS: only SSH, HTTP, HTTPS and ICMP from outside",
+  }, withOs);
+  const ingress: [string, number | undefined][] = [["tcp", 22], ["tcp", 80], ["tcp", 443], ["icmp", undefined]];
+  for (const [protocol, port] of ingress) {
+    new openstack.networking.SecGroupRule(`coolify-${protocol}${port ?? ""}`, {
+      securityGroupId: secGroup.id,
+      direction: "ingress",
+      ethertype: "IPv4",
+      protocol,
+      ...(port ? { portRangeMin: port, portRangeMax: port } : {}),
+      remoteIpPrefix: "0.0.0.0/0",
+    }, withOs);
+  }
+
+  const port = new openstack.networking.Port("coolify", {
+    name: "coolify-port",
+    networkId: network.id,
+    fixedIps: [{ subnetId: subnet.id }],
+    securityGroupIds: [secGroup.id],
+  }, withOs);
+
+  // 40 ГБ: Coolify, образы сборок и тома сервиса; enableOnlineResize — увеличение без пересоздания.
+  const volume = new openstack.blockstorage.Volume("coolify", {
+    name: "boot-volume-coolify",
+    size: cfg.getNumber("coolifyVolumeSize") ?? 40,
+    imageId: image.id,
+    volumeType,
+    availabilityZone: zone,
+    enableOnlineResize: true,
+  }, { ...withOs, ignoreChanges: ["imageId"] });
+
+  new openstack.compute.Instance("coolify", {
+    name: "pulumi-server-coolify",
+    flavorId: flavorId("coolify"),
+    keyPair: keypair.name,
+    availabilityZone: zone,
+    networks: [{ port: port.id }],
+    blockDevices: [{
+      sourceType: "volume",
+      destinationType: "volume",
+      uuid: volume.id,
+      bootIndex: 0,
+      deleteOnTermination: false,
+    }],
+    // По metadata.role dynamic inventory Ansible собирает группу coolify
+    metadata: { role: "coolify", env: "release" },
+    userData,
+    vendorOptions: { ignoreResizeConfirmation: true },
+  }, { ...withOs, deleteBeforeReplace: true, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
+
+  coolifyFloatingIp = new openstack.networking.FloatingIp("coolify", {
+    pool: externalNetworkName,
+  }, withOs);
+  new openstack.networking.FloatingIpAssociate("coolify", {
+    portId: port.id,
+    floatingIp: coolifyFloatingIp.address,
+  }, { ...withOs, dependsOn: [routerInterface] });
+
+  // Панель и сервис вебхуков — A-записи в infra:dnsZone; сертификаты выпускает proxy Coolify.
+  for (const [logicalName, domainName] of [["coolify", coolifyDomainName], ["hooks", hooksDomainName]] as const) {
+    if (!domainName) continue;
+    new selectel.DomainsRrsetV2(logicalName, {
+      zoneId: parentZone!.id,
+      projectId: dnsProjectId,
+      name: withDot(domainName),
+      type: "A",
+      ttl: 300,
+      records: [{ content: coolifyFloatingIp.address }],
+    }, { ...withDns, deleteBeforeReplace: true });
+  }
+
+  // Бэкапы restic с VPS: приватный бакет и свой пользователь, как у бакета ноутбуков. Ключ этого
+  // пользователя лежит на VPS — доступ у него только к этому бакету (по политике).
+  const backupUser = new selectel.IamServiceuserV1("coolify-backup", {
+    name: cfg.get("coolifyBackupUserName") ?? "cellestialCoolifyBackupUser",
+    password: new random.RandomPassword("coolify-backup-serviceuser", serviceUserPasswordArgs).result,
+    roles: [
+      { roleName: "s3.bucket.user", scope: "project", projectId: project.id },
+    ],
+  });
+  coolifyBackupCredentials = new selectel.IamS3CredentialsV1("coolify-backup-s3", {
+    name: `${name}-coolify-backup`,
+    userId: backupUser.id,
+    projectId: project.id,
+  });
+  // Резервные копии: без forceDestroy и с protect, как данные пользователей.
+  coolifyBackupBucketResource = new aws.s3.Bucket("coolify-backups", {
+    bucket: cfg.require("coolifyBackupBucket"),
+  }, { provider: s3, protect: true });
+  new BucketAccess("coolify-backups", {
+    projectId: project.id,
+    pool: s3Pool,
+    bucket: coolifyBackupBucketResource.bucket,
+    type: "private",
+  }, { dependsOn: [coolifyBackupBucketResource] });
+  // Первым правилом s3:* пользователю стека — иначе политика отрежет его самого (см. "notebooks").
+  new aws.s3.BucketPolicy("coolify-backups", {
+    bucket: coolifyBackupBucketResource.id,
+    policy: pulumi.all([coolifyBackupBucketResource.arn, serviceUser.id, backupUser.id])
+      .apply(([arn, stackUserId, backupUserId]) => JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Sid: "StackServiceUserFullAccess",
+            Effect: "Allow",
+            Principal: { AWS: [stackUserId] },
+            Action: "s3:*",
+            Resource: [arn, `${arn}/*`],
+          },
+          {
+            Sid: "ResticObjects",
+            Effect: "Allow",
+            Principal: { AWS: [backupUserId] },
+            Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+            Resource: `${arn}/*`,
+          },
+          {
+            Sid: "ResticList",
+            Effect: "Allow",
+            Principal: { AWS: [backupUserId] },
+            Action: ["s3:ListBucket", "s3:GetBucketLocation"],
+            Resource: arn,
+          },
+        ],
+      })),
+  }, { provider: s3 });
+}
+
 export const projectId = project.id;
 export const publicIp = floatingIp.address;
 export const gatewayName = serverGateway.name;
@@ -663,3 +807,10 @@ export const staticPublicDomain = staticAccess?.publicDomain ?? null;
 export const staticCustomDomain = staticCustomDomainName ?? null;
 export const staticCdnResourceId = staticCdn?.id ?? null;
 export const staticCdnDefaultDomain = staticCdn?.cdnDomain ?? null;
+// VPS с Coolify (infra:coolify): адрес, домены панели и вебхуков, бакет и ключ бэкапов restic
+export const coolifyPublicIp = coolifyFloatingIp?.address ?? null;
+export const coolifyDomain = coolifyEnabled ? coolifyDomainName ?? null : null;
+export const hooksDomain = coolifyEnabled ? hooksDomainName ?? null : null;
+export const coolifyBackupBucket = coolifyBackupBucketResource?.bucket ?? null;
+export const coolifyBackupAccessKey = coolifyBackupCredentials?.accessKey ?? null;
+export const coolifyBackupSecretKey = coolifyBackupCredentials ? pulumi.secret(coolifyBackupCredentials.secretKey) : null;
