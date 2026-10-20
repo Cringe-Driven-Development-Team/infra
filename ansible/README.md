@@ -266,6 +266,61 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 
 CDN-ресурс и свои домены CDN и бакета создаёт Pulumi, сертификаты доменов — в панели (`pulumi/README.md`, «Свои домены»).
 
+## CI/CD инфраструктуры
+
+Workflow `.github/workflows/infra.yml` запускается на изменения в `pulumi/`, `ansible/` и в нём самом:
+
+| Событие | Что делает |
+|---|---|
+| PR | тесты Pulumi (`tsc`, `bun test`), синтаксис плейбуков и `tests/`; затем по проду `pulumi preview --diff` и `site.yml --check --diff` — вывод в сводке запуска (Summary). На проде ничего не меняется |
+| мерж в `main`, ручной запуск из `main` | `pulumi up`, `site.yml`, `verify.yml` |
+
+Выкатки идут по одной (`concurrency` без отмены). Запуск с `pulumi up` не отменять: прерванная
+запись стейта оставляет пустой `prod.json` (`pulumi/README.md`, «Разбор ошибок»). Шаги, которые
+делают руками в панели (привязка домена бакета, сертификаты), CI не делает: `up` на них падает, как и
+локальный.
+
+Ansible в CI ходит по статическому `inventory/ci.yml` своим ключом `ci-infra`, Pulumi — от своего
+сервисного пользователя Selectel. Секреты — в двух environments репозитория с одинаковым набором:
+`production` (только `main`, выкатка) и `infra-preview` (без ограничения веток, preview в PR):
+
+| Секрет | Что в нём |
+|---|---|
+| `SELECTEL_ENV_FILE` | содержимое `selectel.env` CI: `SELECTEL_USERNAME`, `SELECTEL_PASSWORD`, `SELECTEL_DOMAIN_NAME`, `PULUMI_CONFIG_PASSPHRASE`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` — его читает `pulumi/bootstrap/env.sh` |
+| `INFRA_DEPLOY_SSH_KEY` | приватный ключ `ci-infra` без passphrase |
+| `SSH_KNOWN_HOSTS` | host key `cellestial.ru`, сверенный по fingerprint из консоли сервера в панели |
+| `ANSIBLE_VAULT_PASSWORD` | пароль `inventory/group_vars/all/vault.yml` |
+
+Подключение, один раз:
+
+1. Сервисный пользователь CI — в панели, как личный (`pulumi/bootstrap/README.md`, «Один раз на
+   человека»): пользователь **аккаунта** с узнаваемым именем (например `cellestial-infra-ci`), роли
+   `member` и `iam.admin`. Его `selectel.env` и ключ стейта — отдельным файлом, не поверх своего:
+
+   ```sh
+   SELECTEL_ENV=$HOME/.config/selectel-ci.env bash pulumi/bootstrap/init-env.sh cellestial-infra-ci
+   cd pulumi/bootstrap && pulumi install && SELECTEL_ENV=$HOME/.config/selectel-ci.env sh -c '. ./env.sh && bun state-key.ts'
+   ```
+
+2. Ключ SSH: `ssh-keygen -t ed25519 -N '' -C ci-infra -f ~/.ssh/cdd-ci-infra`; публичная часть —
+   `files/authorized_keys/ci-infra.pub` (PR), затем `ansible-playbook site.yml` своим ключом, чтобы
+   ключ CI попал на сервер до первой выкатки из CI.
+3. Секреты в оба environment (нужны права администратора репозитория):
+
+   ```sh
+   for env in production infra-preview; do
+     gh secret set SELECTEL_ENV_FILE       --env "$env" < ~/.config/selectel-ci.env
+     gh secret set INFRA_DEPLOY_SSH_KEY    --env "$env" < ~/.ssh/cdd-ci-infra
+     ssh-keyscan -t ed25519 cellestial.ru | gh secret set SSH_KNOWN_HOSTS --env "$env"
+     gh secret set ANSIBLE_VAULT_PASSWORD  --env "$env" < ~/.config/cdd-vault-pass
+   done
+   ```
+
+   Fingerprint из `ssh-keyscan` сверить с консолью сервера (`ssh-keygen -lf
+   /etc/ssh/ssh_host_ed25519_key.pub`). Environment `infra-preview` создаётся этой же командой.
+4. Файлы `selectel-ci.env` и `~/.ssh/cdd-ci-infra` после загрузки удалить с машины. Отозвать доступ
+   CI — удалить сервисного пользователя в панели и `ci-infra.pub` из репозитория.
+
 ## Go API: первая выкатка и откат
 
 В одном проекте `/opt/cellestial` роль `app` управляет API и PostgreSQL 18, роль
