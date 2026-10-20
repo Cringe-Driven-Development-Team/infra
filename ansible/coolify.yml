@@ -11,4 +11,6 @@
     - firewall
     - docker
     - coolify
-    - restic_backup
+    # без бакета бэкапов и ключей в Vault — --skip-tags backup
+    - role: restic_backup
+      tags: backup

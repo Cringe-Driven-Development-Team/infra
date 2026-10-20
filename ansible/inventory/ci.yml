@@ -8,5 +8,5 @@ all:
           ansible_host: cellestial.ru
     coolify:
       hosts:
-        coolify:
+        cellestial-coolify:
           ansible_host: coolify.cellestial.ru

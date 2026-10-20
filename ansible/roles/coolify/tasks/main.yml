@@ -1,4 +1,11 @@
 ---
+# cloud-init не дописал имя хоста в /etc/hosts: sudo на каждом вызове ругается «unable to resolve host»
+- name: Имя хоста в /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^127\.0\.1\.1\s'
+    line: "127.0.1.1 {{ ansible_facts['hostname'] }}"
+
 # Установка и обновление — официальный install.sh с зафиксированной версией. Повторный прогон при той
 # же версии ничего не делает: версия сверяется по образу работающего контейнера coolify.
 - name: Версия работающего Coolify
