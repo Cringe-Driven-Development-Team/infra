@@ -282,6 +282,22 @@ dig +short CNAME docs.cellestial.ru   # cringe-driven-development-team.github.io
 
 Ключи независимы: без `infra:githubPagesChallenge` создаётся только CNAME.
 
+## VPS с Coolify
+
+`infra:coolify: "true"` — отдельная VPS под сервис вебхуков (infra#54) в той же приватной сети, что и
+gateway, но со своими портом, диском (`infra:coolifyVolumeSize`, 40 ГБ), флейвором
+(`infra:coolifyFlavorName`) и floating IP; `metadata.role: coolify` — группа `coolify` в Ansible.
+
+- Security group `coolify` на порту VPS: входящие только 22/80/443 tcp и ICMP. Docker публикует порты
+  Coolify (`8000`, `6001`, `6002`) мимо ufw — закрывает их именно security group.
+- A-записи `infra:coolifyDomain` (панель) и `infra:hooksDomain` (сервис) в `infra:dnsZone`; сертификаты
+  выпускает proxy Coolify.
+- Бакет бэкапов `infra:coolifyBackupBucket`: приватный, `protect: true`, пользователь
+  `infra:coolifyBackupUserName` с ролью `s3.bucket.user` — доступ только к этому бакету по политике.
+
+Выходы: `coolifyPublicIp`, `coolifyDomain`, `hooksDomain`, `coolifyBackupBucket`,
+`coolifyBackupAccessKey`, `coolifyBackupSecretKey`. Дальше — RUNBOOK, «VPS с Coolify».
+
 ## Передача в Ansible
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт

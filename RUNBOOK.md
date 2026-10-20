@@ -262,3 +262,95 @@ healthy у API и Postgres, сохранность данных после от�
 [ansible/README.md](ansible/README.md#откат-из-проверенного-архива-без-registry).
 Архив, его SHA256 и результаты load-проверки хранить в журнале окна вне checkout;
 повторный pull старого package остаётся отдельной операцией с прежним read credential.
+
+## VPS с Coolify (infra#54)
+
+Отдельная VPS под сервис вебхуков: Coolify, панель `https://coolify.cellestial.ru`, сервис
+`https://hooks.cellestial.ru`. Прод-VPS её плейбук не трогает. Устройство — `pulumi/index.ts`
+(«VPS с self-hosted Coolify»), `ansible/coolify.yml`; инструкция автору сервиса — `docs/coolify.md`.
+
+### Создание
+
+1. Pulumi (`infra:coolify: "true"` и домены уже в `Pulumi.prod.yaml`): после мержа это делает CI. Первый раз,
+   до мержа, — из ветки только по новым ресурсам после `pulumi preview`.
+2. Ключ бэкапа и пароль restic — в Vault:
+
+   ```bash
+   cd pulumi
+   pulumi stack output coolifyBackupAccessKey --show-secrets
+   pulumi stack output coolifyBackupSecretKey --show-secrets
+   cd ../ansible && ansible-vault edit inventory/group_vars/all/vault.yml
+   # vault_coolify_backup_access_key, vault_coolify_backup_secret_key,
+   # vault_coolify_restic_password (openssl rand -base64 32; без него бэкапы не прочитать)
+   ```
+
+3. Хост: `. ./env.sh && ansible-playbook bootstrap.yml --limit coolify && ansible-playbook coolify.yml`.
+4. Host key — в `SSH_KNOWN_HOSTS` environments `production` и `infra-preview` вместе с `cellestial.ru`
+   (fingerprint сверить в консоли сервера: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`):
+
+   ```bash
+   ssh-keyscan -t ed25519 cellestial.ru coolify.cellestial.ru | gh secret set SSH_KNOWN_HOSTS --env production
+   ```
+
+### Первая настройка (панель снаружи закрыта)
+
+Порт `8000` закрыт security group, регистрация администратора открыта, пока его нет, — поэтому только
+через туннель, сразу после `coolify.yml`:
+
+```bash
+ssh -L 8000:127.0.0.1:8000 deploy@coolify.cellestial.ru
+# браузер: http://localhost:8000 → регистрация администратора (почта команды, пароль — в менеджер паролей)
+```
+
+В панели: Settings → Instance's Domain `https://coolify.cellestial.ru` (сертификат выпустит proxy),
+Settings → Registration — выключить. Сервер `localhost` Coolify подключает сам (root по ключу из сети
+Docker). Автору сервиса — приглашение в Team с ролью Member.
+
+### Проверки
+
+```bash
+curl -sI https://coolify.cellestial.ru | head -1                  # 200/302 по HTTPS
+for p in 22 80 443 8000 6001 6002; do nc -z -G3 coolify.cellestial.ru $p && echo "$p open"; done
+# открыты только 22, 80, 443
+curl -sI https://cellestial.ru | head -1                          # прод отвечает как раньше
+```
+
+### Обновление Coolify
+
+`coolify_version` в `ansible/roles/coolify/defaults/main.yml` → PR → CI прогонит `coolify.yml`. Перед
+обновлением — внеочередной бэкап (`ssh deploy@coolify.cellestial.ru sudo systemctl start restic-backup`).
+Откат версии — прежняя `coolify_version` и тот же прогон; при несовместимой миграции базы — восстановление
+из бэкапа.
+
+### Бэкап и восстановление
+
+Ночью таймер `restic-backup.timer` снимает `/data/coolify` (база, SSH-ключи и `source/.env` с `APP_KEY`) и
+тома Docker; хранятся 7 дневных и 4 недельных снимка.
+
+```bash
+ssh deploy@coolify.cellestial.ru
+sudo systemctl start restic-backup && sudo journalctl -u restic-backup -n 20
+sudo bash -c 'set -a; . /etc/restic/env; restic snapshots'
+```
+
+Восстановление на чистую VPS (после `coolify.yml`): остановить Coolify и приложения, вернуть данные,
+поднять заново:
+
+```bash
+sudo bash -c 'set -a; . /etc/restic/env
+  docker stop $(docker ps -q)
+  restic restore latest --target / --include /data/coolify --include /var/lib/docker/volumes
+  systemctl restart docker'
+sudo AUTOUPDATE=false bash /data/coolify/install.sh <coolify_version>   # поднимает Coolify на восстановленных данных
+```
+
+Проверка: панель открывается со старыми учётками, приложение отвечает на `https://hooks.cellestial.ru/health`
+с прежними данными тома.
+
+### Диагностика вебхуков и откат приложения
+
+- Доставки GitHub — Settings → Webhooks → Recent Deliveries репозитория/организации (код ответа, тело,
+  Redeliver); Apidog — журнал уведомлений проекта.
+- Логи сервиса — панель → приложение → Logs; деплои — Deployments.
+- Откат — Deployments → предыдущий удачный деплой → Redeploy (для образа — прежний тег).
+

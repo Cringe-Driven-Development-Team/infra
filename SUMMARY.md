@@ -97,6 +97,11 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   проду; мерж в `main` — `pulumi up`, `site.yml`, `verify.yml`. Секреты и подключение — `ansible/README.md`,
   «CI/CD инфраструктуры». Запуск с `pulumi up` не отменять (см. выше про прерванный `pulumi`).
 
+- VPS с Coolify (infra#54): `infra:coolify` в Pulumi (своя security group — наружу 22/80/443, A-записи
+  `coolify.cellestial.ru` и `hooks.cellestial.ru`, бакет бэкапов `cellestial-coolify-backups-0`),
+  `ansible/coolify.yml`. Прод-плейбуки — только группа `gateway`. Порт панели `8000` наружу не открывать,
+  первая настройка — через SSH-туннель (RUNBOOK, «VPS с Coolify»).
+
 ## Скиллы
 
 Плагины маркетплейса `cdd` включены в `.claude/settings.json`. До первой команды или правки по теме
