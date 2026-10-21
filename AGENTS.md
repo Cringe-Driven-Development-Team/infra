@@ -10,3 +10,8 @@
 в [RUNBOOK.md](RUNBOOK.md). Подробности инструментов — в [Pulumi README](pulumi/README.md)
 и [Ansible README](ansible/README.md). Задачи и PR веди по
 [правилам команды](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md).
+
+## Code Review Rules
+
+- Пиши заголовки и пояснения замечаний к PR на русском языке.
+  Имена файлов, идентификаторы, команды и метки приоритета сохраняй без перевода.
