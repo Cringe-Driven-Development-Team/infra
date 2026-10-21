@@ -36,6 +36,14 @@
     fail_msg: Application secrets must be nonempty single-line values.
   no_log: true
 
+# Пароль попадает в redis.conf как есть (requirepass) — только безопасные символы
+- name: Check the Redis password
+  ansible.builtin.assert:
+    that:
+      - redis_password is match('^[A-Za-z0-9_-]{16,}$')
+    fail_msg: vault_redis_password must be 16+ characters of [A-Za-z0-9_-] (openssl rand -hex 32).
+  no_log: true
+
 - name: Check S3 credentials
   ansible.builtin.assert:
     that:

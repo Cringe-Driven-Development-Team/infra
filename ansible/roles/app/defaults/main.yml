@@ -1,6 +1,12 @@
 ---
 app_backend_image: ghcr.io/cringe-driven-development-team/backend
 app_postgres_image: postgres:18-alpine
+# Redis — refresh-сессии бэка (infra#46): только сеть app, данные в volume redis_data (AOF)
+app_redis_image: redis:8-alpine
+app_redis_maxmemory: 128mb
+# uid/gid пользователя redis в образе: конфиг с паролем читает только он
+app_redis_uid: 999
+app_redis_gid: 1000
 app_postgres_user: postgres
 app_postgres_database: app_db
 app_access_token_ttl: 15m

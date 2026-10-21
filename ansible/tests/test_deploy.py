@@ -60,6 +60,7 @@ class DeploymentChecks(unittest.TestCase):
             'postgres_password: "{{ vault_postgres_password }}"\n'
             'jwt_secret: "{{ vault_jwt_secret }}"\n'
             'csrf_secret: "{{ vault_csrf_secret }}"\n'
+            'redis_password: "{{ vault_redis_password }}"\n'
             'notebooks_s3_access_key: fake-key\nnotebooks_s3_secret_key: fake-secret\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
@@ -71,7 +72,7 @@ class DeploymentChecks(unittest.TestCase):
         (variables / "vault.yml").write_bytes(
             vault.encrypt(
                 b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
-                b"vault_csrf_secret: fake-csrf-secret\n"
+                b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n"
             )
         )
         password_file = self.root / "vault-pass"
@@ -149,11 +150,26 @@ class DeploymentChecks(unittest.TestCase):
         (self.root / "group_vars/all/vault.yml").write_bytes(
             vault.encrypt(
                 b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
+                b"vault_redis_password: fake-redis-password-0123\n"
             )
         )
         result = self.validate("sha-1234567")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("vault_csrf_secret", result.stdout + result.stderr)
+
+    def test_unsafe_redis_password_is_rejected(self):
+        vault = VaultLib([("default", VaultSecret(b"test-vault-password-only"))])
+        for password in [b"short", b"has space in redis password", b"quote'in-redis-password"]:
+            with self.subTest(password=password):
+                (self.root / "group_vars/all/vault.yml").write_bytes(
+                    vault.encrypt(
+                        b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
+                        b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: \"" + password + b"\"\n"
+                    )
+                )
+                result = self.validate("sha-1234567")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("vault_redis_password", result.stdout + result.stderr)
 
     def test_registry_logout_on_success_and_login_or_pull_failure(self):
         binary_directory = self.root / "bin"
@@ -235,6 +251,7 @@ class DeploymentChecks(unittest.TestCase):
         ]:
             with self.subTest(secret=secret):
                 variables.update(postgres_password=secret, jwt_secret=secret, csrf_secret=secret,
+                                 redis_password=secret,
                                  notebooks_s3_access_key=secret, notebooks_s3_secret_key=secret)
                 (self.root / ".env").write_text(env_template.render(variables))
                 compose_environment = dict(os.environ)
@@ -287,6 +304,18 @@ class DeploymentChecks(unittest.TestCase):
                         secret,
                     )
                     self.assertFalse(services[service].get("ports"))
+                # Redis: пароль доходит до API и до клиента healthcheck, порт не публикуется
+                self.assertEqual(
+                    services["api"]["environment"]["REDIS_PASSWORD"].replace("$$", "$"), secret
+                )
+                self.assertEqual(
+                    services["redis"]["environment"]["REDISCLI_AUTH"].replace("$$", "$"), secret
+                )
+                self.assertEqual(services["api"]["environment"]["REDIS_HOST"], "redis")
+                self.assertFalse(services["redis"].get("ports"))
+                self.assertEqual(
+                    services["api"]["depends_on"]["redis"]["condition"], "service_healthy"
+                )
                 for name in ["JWT_SECRET", "CSRF_SECRET"]:
                     self.assertEqual(
                         services["api"]["environment"][name].replace("$$", "$"), secret
@@ -317,7 +346,7 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertEqual(data["services"]["api"]["image"],
                                  (override or expected) + ":sha-1234567")
                 self.assertEqual(set(data["volumes"]),
-                                 {"caddy_data", "caddy_config", "postgres_data"})
+                                 {"caddy_data", "caddy_config", "postgres_data", "redis_data"})
                 self.assertFalse(data["services"]["api"].get("ports"))
 
     def test_caddy_preserves_frontend_in_both_states(self):

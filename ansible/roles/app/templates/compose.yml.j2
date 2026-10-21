@@ -38,9 +38,15 @@ services:
       S3_NOTEBOOKS_BUCKET: ${S3_NOTEBOOKS_BUCKET:?S3 configuration is required}
       S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET:?S3 configuration is required}
       S3_AVATARS_PUBLIC_URL: ${S3_AVATARS_PUBLIC_URL:?S3 configuration is required}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?redis password is required}
+      REDIS_DB: ${REDIS_DB:-0}
 
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
@@ -69,6 +75,25 @@ services:
     networks:
       - app
 
+  # Пароль — в redis.conf (0600, читает только redis), а не в --requirepass: аргументы видны в ps
+  redis:
+    image: {{ app_redis_image }}
+    restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?redis password is required}
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      start_period: 5s
+      retries: 12
+    networks:
+      - app
+
 networks:
   app: {}
 
@@ -76,3 +101,4 @@ volumes:
   caddy_data: {}
   caddy_config: {}
   postgres_data: {}
+  redis_data: {}

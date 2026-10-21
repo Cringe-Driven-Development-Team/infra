@@ -11,6 +11,24 @@
     mode: "0600"
   no_log: true
 
+- name: Redis configuration directory
+  ansible.builtin.file:
+    path: "{{ app_compose_dir }}/redis"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Пароль Redis внутри: файл читает только пользователь redis контейнера
+- name: Write the Redis configuration
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "{{ app_compose_dir }}/redis/redis.conf"
+    owner: "{{ app_redis_uid }}"
+    group: "{{ app_redis_gid }}"
+    mode: "0600"
+  no_log: true
+
 - name: Write the full application Compose project
   ansible.builtin.template:
     src: compose.yml.j2
@@ -28,6 +46,7 @@
     services:
       - caddy
       - postgres
+      - redis
     policy: missing
 
 - name: Start the application and wait for healthchecks

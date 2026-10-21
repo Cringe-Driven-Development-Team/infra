@@ -1,0 +1,8 @@
+# Managed by Ansible (роль app). Redis — refresh-сессии бэка, только в сети app.
+requirepass {{ redis_password }}
+# Сессии переживают перезапуск контейнера: AOF в volume redis_data
+appendonly yes
+appendfsync everysec
+# При нехватке памяти — ошибка записи, а не тихое вытеснение сессий
+maxmemory {{ app_redis_maxmemory }}
+maxmemory-policy noeviction
