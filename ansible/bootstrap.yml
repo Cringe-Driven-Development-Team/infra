@@ -1,6 +1,7 @@
 ---
 # Первый контакт с чистыми образами: root на 22 порту, python3 может отсутствовать.
-# Запуск: ansible-playbook bootstrap.yml (параллельно с pulumi up нельзя — нужны хосты из inventory)
+# Запуск: ansible-playbook bootstrap.yml (параллельно с pulumi up нельзя — нужны хосты из inventory).
+# Новый хост к уже настроенным — с --limit (например --limit auxiliary): на старых root уже закрыт.
 - name: "Bootstrap: python3 на чистых хостах"
   hosts: all
   gather_facts: false

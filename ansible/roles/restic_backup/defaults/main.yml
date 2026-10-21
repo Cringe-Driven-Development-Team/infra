@@ -1,0 +1,15 @@
+# Репозиторий restic — бакет бэкапов в S3 Selectel (выход Pulumi auxiliaryBackupBucket)
+restic_backup_bucket: cellestial-auxiliary-backups-0
+# Пул бакета — выход Pulumi auxiliaryBackupPoolName (infra:auxiliaryBackupPool)
+restic_backup_pool: ru-1
+restic_backup_s3_endpoint: "https://s3.{{ restic_backup_pool }}.storage.selcloud.ru"
+# Тома Docker: данные сервиса (hooks_data) и сертификаты Caddy; /opt/hooks — compose.yml, Caddyfile, .env
+restic_backup_paths:
+  - /var/lib/docker/volumes
+  - /opt/hooks
+restic_backup_keep_daily: 7
+restic_backup_keep_weekly: 4
+# Каждую ночь, время сервера (UTC); RandomizedDelaySec разносит запуск
+restic_backup_on_calendar: "*-*-* 00:30:00"
+# Имя хоста в снимках: постоянное — в dynamic и статическом (CI) inventory у VPS разные имена
+restic_backup_host: auxiliary

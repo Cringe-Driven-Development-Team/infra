@@ -262,3 +262,83 @@ healthy у API и Postgres, сохранность данных после от�
 [ansible/README.md](ansible/README.md#откат-из-проверенного-архива-без-registry).
 Архив, его SHA256 и результаты load-проверки хранить в журнале окна вне checkout;
 повторный pull старого package остаётся отдельной операцией с прежним read credential.
+
+## Вспомогательная VPS (infra#54)
+
+Отдельная VPS под сервис вебхуков GitHub/Apidog → Telegram: `https://hooks.cellestial.ru`. Caddy и
+контейнер сервиса — проект Compose `/opt/hooks`; порт сервиса наружу не публикуется, снаружи открыты
+только 22/80/443 (security group). Прод-VPS её плейбук не трогает. Устройство — `pulumi/index.ts`
+(«Вспомогательная VPS»), `ansible/auxiliary.yml`, роли `hooks` и `restic_backup`.
+
+### Создание
+
+1. Pulumi (`infra:auxiliary: "true"` в `Pulumi.prod.yaml`): после мержа это делает CI. Первый раз, до мержа, —
+   из ветки только по новым ресурсам после `pulumi preview`.
+2. Ключ бэкапа и пароль restic — в Vault:
+
+   ```bash
+   cd pulumi
+   pulumi stack output auxiliaryBackupAccessKey --show-secrets
+   pulumi stack output auxiliaryBackupSecretKey --show-secrets
+   cd ../ansible && ansible-vault edit inventory/group_vars/all/vault.yml
+   # vault_auxiliary_backup_access_key, vault_auxiliary_backup_secret_key,
+   # vault_auxiliary_restic_password (openssl rand -base64 32; без него бэкапы не прочитать)
+   ```
+
+3. Хост: `. ./env.sh && ansible-playbook bootstrap.yml --limit auxiliary && ansible-playbook auxiliary.yml`.
+   Бакета или ключей ещё нет — `ansible-playbook auxiliary.yml --skip-tags backup`.
+4. Host key — в `SSH_KNOWN_HOSTS` environments `production` и `infra-preview` вместе с `cellestial.ru`
+   (fingerprint сверить в консоли сервера: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`):
+
+   ```bash
+   for env in production infra-preview; do
+     ssh-keyscan -t ed25519 cellestial.ru hooks.cellestial.ru | gh secret set SSH_KNOWN_HOSTS --env "$env"
+   done
+   ```
+
+### Проверки
+
+```bash
+curl -s https://hooks.cellestial.ru/health                        # ok, валидный сертификат
+for p in 22 80 443 8080; do nc -z -G3 hooks.cellestial.ru $p && echo "$p open" || echo "$p closed"; done
+# открыты только 22, 80, 443
+curl -sI https://cellestial.ru | head -1                          # прод отвечает как раньше
+```
+
+### Развёртывание сервиса
+
+Сервис — образ из GHCR или Docker Hub с `GET /health` (200) и данными в `hooks_data_path`. Переменные
+(секреты GitHub webhook и Apidog, токен бота, chat/topic IDs) — только в Vault, в Git и CI их нет:
+
+```bash
+ansible-vault edit inventory/group_vars/all/vault.yml   # vault_hooks_env: { GITHUB_WEBHOOK_SECRET: ..., ... }
+```
+
+Образ и порт — в `inventory/group_vars/auxiliary/vars.yml`: `hooks_image` (с тегом, не `latest`),
+`hooks_port`, `hooks_command: []` (команда образа), при необходимости `hooks_data_path`. PR → CI прогонит
+`auxiliary.yml`; вручную — `ansible-playbook auxiliary.yml`. Плейбук ждёт `200` на
+`https://hooks.cellestial.ru/health`. Обновление — новый тег в `hooks_image`; откат — прежний тег и тот же
+прогон. Логи: `ssh deploy@hooks.cellestial.ru 'cd /opt/hooks && sudo docker compose logs -n 100 hooks'`.
+Что пришло от GitHub — Settings → Webhooks → Recent Deliveries (там же Redeliver).
+
+### Бэкап и восстановление
+
+Ночью таймер `restic-backup.timer` снимает тома Docker (`hooks_hooks_data`, сертификаты Caddy) и
+`/opt/hooks`; хранятся 7 дневных и 4 недельных снимка.
+
+```bash
+ssh deploy@hooks.cellestial.ru
+sudo systemctl start restic-backup && sudo journalctl -u restic-backup -n 20
+sudo bash -c 'set -a; . /etc/restic/env; restic snapshots'
+```
+
+Восстановление (на этой же или новой VPS после `auxiliary.yml`):
+
+```bash
+sudo bash -c 'set -a; . /etc/restic/env
+  cd /opt/hooks && docker compose stop
+  restic restore latest --target / --include /var/lib/docker/volumes/hooks_hooks_data
+  docker compose start'
+```
+
+Проверка: данные тома на месте, `https://hooks.cellestial.ru/health` отвечает.

@@ -97,6 +97,11 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
   проду; мерж в `main` — `pulumi up`, `site.yml`, `verify.yml`. Секреты и подключение — `ansible/README.md`,
   «CI/CD инфраструктуры». Запуск с `pulumi up` не отменять (см. выше про прерванный `pulumi`).
 
+- Вспомогательная VPS (infra#54): `infra:auxiliary` в Pulumi (своя security group — наружу 22/80/443,
+  A-запись `hooks.cellestial.ru`, бакет бэкапов `cellestial-auxiliary-backups-0`), `ansible/auxiliary.yml`
+  (Caddy + сервис вебхуков в Compose, restic). Прод-плейбуки — только группа `gateway`
+  (RUNBOOK, «Вспомогательная VPS»).
+
 ## Скиллы
 
 Плагины маркетплейса `cdd` включены в `.claude/settings.json`. До первой команды или правки по теме

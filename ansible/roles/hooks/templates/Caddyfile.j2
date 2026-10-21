@@ -1,0 +1,4 @@
+# Managed by Ansible (роль hooks). Caddy сам получает и продлевает сертификат Let's Encrypt.
+{{ hooks_domain }} {
+	reverse_proxy hooks:{{ hooks_port }}
+}

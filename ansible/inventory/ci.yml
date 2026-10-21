@@ -6,3 +6,7 @@ all:
       hosts:
         cellestial:
           ansible_host: cellestial.ru
+    auxiliary:
+      hosts:
+        cellestial-auxiliary:
+          ansible_host: hooks.cellestial.ru
