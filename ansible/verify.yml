@@ -167,14 +167,12 @@
         path: "{{ app_compose_dir }}/redis/redis.conf"
       register: verify_redis_conf
 
-    # Клиент — отдельный контейнер в сети app, как Go API; пароль — через окружение, не в аргументах
+    # Клиент — одноразовый контейнер сервиса redis в сети app, как Go API. Пароль (REDISCLI_AUTH)
+    # он берёт из .env Compose: через environment Ansible секрет попал бы в verbose-логи (-vvv)
     - name: Redis отвечает на PING из сети app
       ansible.builtin.command:
-        cmd: >-
-          docker run --rm --network cellestial_app --env REDISCLI_AUTH
-          {{ app_redis_image | default('redis:8-alpine') }} redis-cli -h redis ping
-      environment:
-        REDISCLI_AUTH: "{{ redis_password }}"
+        cmd: docker compose run --rm --no-deps redis redis-cli -h redis ping
+        chdir: "{{ app_compose_dir }}"
       register: verify_redis_ping
       changed_when: false
       failed_when: verify_redis_ping.rc != 0 or verify_redis_ping.stdout | trim != 'PONG'

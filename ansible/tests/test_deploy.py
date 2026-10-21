@@ -313,6 +313,9 @@ class DeploymentChecks(unittest.TestCase):
                 )
                 self.assertEqual(services["api"]["environment"]["REDIS_HOST"], "redis")
                 self.assertFalse(services["redis"].get("ports"))
+                # каталог, а не файл: замена redis.conf шаблоном видна в контейнере
+                self.assertIn("/usr/local/etc/redis",
+                              [volume["target"] for volume in services["redis"]["volumes"]])
                 self.assertEqual(
                     services["api"]["depends_on"]["redis"]["condition"], "service_healthy"
                 )

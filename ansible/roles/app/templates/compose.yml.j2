@@ -83,7 +83,8 @@ services:
     environment:
       REDISCLI_AUTH: ${REDIS_PASSWORD:?redis password is required}
     volumes:
-      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      # Каталог, а не файл: template заменяет redis.conf новым inode, файловый bind mount видел бы старый
+      - ./redis:/usr/local/etc/redis:ro
       - redis_data:/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
