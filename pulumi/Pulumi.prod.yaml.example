@@ -57,6 +57,7 @@ config:
   # infra:auxiliaryVolumeSize: 40
   # infra:hooksDomain: hooks.cellestial.ru
   # infra:auxiliaryBackupBucket: "<глобально-уникальное-имя-бакета>"
+  # infra:auxiliaryBackupPool: ru-1   # пул бакета бэкапов, по умолчанию infra:s3Pool
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1
   infra:s3Bucket: "<глобально-уникальное-имя-бакета>"

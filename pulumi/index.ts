@@ -71,6 +71,7 @@ const staticCustomDomainName = cfg.get("staticDomain");
 // Вспомогательная VPS (infra#54) — сервис вебхуков; его домен — A-запись в infra:dnsZone.
 const auxiliaryEnabled = cfg.getBoolean("auxiliary") ?? false;
 const hooksDomainName = cfg.get("hooksDomain");
+const auxiliaryBackupPool = cfg.get("auxiliaryBackupPool") ?? s3Pool;
 if (staticCustomDomainName && !staticBucketName) {
   throw new Error("infra:staticDomain задан без infra:staticBucket: домен привязывается к CDN-ресурсу бакета статики");
 }
@@ -731,13 +732,32 @@ if (auxiliaryEnabled) {
     userId: backupUser.id,
     projectId: project.id,
   });
+  // Пул бакета бэкапов — infra:auxiliaryBackupPool (по умолчанию infra:s3Pool): в ru-7 Selectel
+  // временно не создаёт бакеты (AccessDenied «Bucket creation is temporarily denied in this region»).
+  // S3-ключ выдан на проект, а не на пул — провайдер другого пула работает тем же ключом стека.
+  const backupS3 = auxiliaryBackupPool === s3Pool ? s3 : new aws.Provider("selectel-s3-auxiliary-backups", {
+    region: auxiliaryBackupPool,
+    accessKey: pulumi.all([s3AccessKeyReady, project.id]).apply(async ([accessKey, projectId]) => {
+      if (!pulumi.runtime.isDryRun()) {
+        await initProjectS3(curl, { ...selectelCreds, domain: domainName }, projectId, auxiliaryBackupPool);
+      }
+      return accessKey;
+    }),
+    secretKey: s3Credentials.secretKey,
+    endpoints: [{ s3: `https://s3.${auxiliaryBackupPool}.storage.selcloud.ru` }],
+    s3UsePathStyle: true,
+    skipCredentialsValidation: true,
+    skipRegionValidation: true,
+    skipRequestingAccountId: true,
+    skipMetadataApiCheck: true,
+  });
   // Резервные копии: без forceDestroy и с protect, как данные пользователей.
   auxiliaryBackupBucketResource = new aws.s3.Bucket("auxiliary-backups", {
     bucket: cfg.require("auxiliaryBackupBucket"),
-  }, { provider: s3, protect: true });
+  }, { provider: backupS3, protect: true });
   new BucketAccess("auxiliary-backups", {
     projectId: project.id,
-    pool: s3Pool,
+    pool: auxiliaryBackupPool,
     bucket: auxiliaryBackupBucketResource.bucket,
     type: "private",
   }, { dependsOn: [auxiliaryBackupBucketResource] });
@@ -771,7 +791,7 @@ if (auxiliaryEnabled) {
           },
         ],
       })),
-  }, { provider: s3 });
+  }, { provider: backupS3 });
 }
 
 export const projectId = project.id;
@@ -809,5 +829,6 @@ export const staticCdnDefaultDomain = staticCdn?.cdnDomain ?? null;
 export const auxiliaryPublicIp = auxiliaryFloatingIp?.address ?? null;
 export const hooksDomain = auxiliaryEnabled ? hooksDomainName ?? null : null;
 export const auxiliaryBackupBucket = auxiliaryBackupBucketResource?.bucket ?? null;
+export const auxiliaryBackupPoolName = auxiliaryEnabled ? auxiliaryBackupPool : null;
 export const auxiliaryBackupAccessKey = auxiliaryBackupCredentials?.accessKey ?? null;
 export const auxiliaryBackupSecretKey = auxiliaryBackupCredentials ? pulumi.secret(auxiliaryBackupCredentials.secretKey) : null;

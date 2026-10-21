@@ -291,7 +291,8 @@ gateway, но со своими портом, диском (`infra:auxiliaryVolu
 - Security group `auxiliary` на порту VPS: входящие только 22/80/443 tcp и ICMP. Docker публикует порты
   мимо ufw — закрывает их именно security group.
 - A-запись `infra:hooksDomain` в `infra:dnsZone`; сертификат выпускает Caddy на VPS.
-- Бакет бэкапов `infra:auxiliaryBackupBucket`: приватный, `protect: true`, пользователь
+- Бакет бэкапов `infra:auxiliaryBackupBucket` в пуле `infra:auxiliaryBackupPool` (`ru-1`: в `ru-7` Selectel
+  временно не создаёт бакеты): приватный, `protect: true`, пользователь
   `infra:auxiliaryBackupUserName` с ролью `s3.bucket.user` — доступ только к этому бакету по политике.
 
 Выходы: `auxiliaryPublicIp`, `hooksDomain`, `auxiliaryBackupBucket`, `auxiliaryBackupAccessKey`,

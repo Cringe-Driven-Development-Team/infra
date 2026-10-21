@@ -4,6 +4,13 @@
 - name: "Вспомогательная VPS"
   hosts: auxiliary
   become: true
+  pre_tasks:
+    # cloud-init не дописал имя хоста в /etc/hosts: sudo на каждом вызове пишет «unable to resolve host»
+    - name: Имя хоста в /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 {{ ansible_facts['hostname'] }}"
   roles:
     - users
     - common

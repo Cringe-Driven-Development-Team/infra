@@ -27,6 +27,7 @@ config:
   infra:auxiliaryFlavorName: SL1.2-4096
   infra:hooksDomain: hooks.cellestial.ru
   infra:auxiliaryBackupBucket: cellestial-auxiliary-backups-0
+  infra:auxiliaryBackupPool: ru-1
   infra:s3Pool: ru-7
   infra:s3Bucket: cellestial-frontend-releases-0
   infra:s3PublicRead: "false"
