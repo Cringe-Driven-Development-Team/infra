@@ -160,11 +160,12 @@
   gather_facts: false
   become: true
   tasks:
-    # Redis (infra#46) поднимает роль app вместе с бэком: до первой выкатки бэка его нет
-    - name: Есть ли выкатка бэка на VPS
+    # Redis (infra#46) поднимает роль app вместе с бэком (deploy-backend.yml): пока выкатки с Redis
+    # не было, нет и его конфига — проверка пропускается
+    - name: Выкачен ли Redis на VPS
       ansible.builtin.stat:
-        path: "{{ app_compose_dir }}/.env"
-      register: verify_app_env
+        path: "{{ app_compose_dir }}/redis/redis.conf"
+      register: verify_redis_conf
 
     # Клиент — отдельный контейнер в сети app, как Go API; пароль — через окружение, не в аргументах
     - name: Redis отвечает на PING из сети app
@@ -177,7 +178,7 @@
       register: verify_redis_ping
       changed_when: false
       failed_when: verify_redis_ping.rc != 0 or verify_redis_ping.stdout | trim != 'PONG'
-      when: verify_app_env.stat.exists
+      when: verify_redis_conf.stat.exists
 
     - name: Правила ufw
       ansible.builtin.command: ufw status verbose
