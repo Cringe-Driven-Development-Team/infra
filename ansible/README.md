@@ -418,8 +418,8 @@ Redis (infra#46) — refresh-сессии бэка. API получает `REDIS_
 `REDIS_PASSWORD` (Vault: `vault_redis_password`, 16+ символов `[A-Za-z0-9_-]` — например
 `openssl rand -hex 32`) и `REDIS_DB=0`. Пароль лежит в `/opt/cellestial/redis/redis.conf`
 (`requirepass`, права `0600`, владелец — пользователь `redis` контейнера), а не в аргументах
-`redis-server`; каталог `redis/` смонтирован целиком, и после изменения конфига роль перезапускает
-Redis. `appendonly yes` — сессии переживают перезапуск; `maxmemory 128mb` с
+`redis-server`; каталог `redis/` смонтирован целиком, после изменения конфига handler роли пересоздаёт
+Redis и ждёт `healthy` (таймаут — ошибка выкатки). `appendonly yes` — сессии переживают перезапуск; `maxmemory 128mb` с
 `noeviction` — при нехватке памяти Redis отвечает ошибкой, а не вытесняет сессии. Redis
 появляется на VPS с выкаткой бэка (`deploy-backend.yml`): `site.yml` проект приложения не меняет.
 

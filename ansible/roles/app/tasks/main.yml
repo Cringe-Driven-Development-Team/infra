@@ -27,7 +27,7 @@
     owner: "{{ app_redis_uid }}"
     group: "{{ app_redis_gid }}"
     mode: "0600"
-  register: app_redis_conf
+  notify: Recreate Redis with the new configuration
   no_log: true
 
 - name: Write the full application Compose project
@@ -58,14 +58,9 @@
     wait: true
     wait_timeout: "{{ app_wait_timeout }}"
 
-# Compose не пересоздаёт сервис от изменения содержимого конфига: новый redis.conf — перезапуском.
-# Первый запуск compose уже прочитал новый файл, перезапуск тогда лишний, но безвреден.
-- name: Restart Redis after a configuration change
-  ansible.builtin.command:
-    cmd: docker compose restart redis
-    chdir: "{{ app_compose_dir }}"
-  when: app_redis_conf is changed
-  changed_when: true
+# Новый redis.conf — до маршрута API и итоговой проверки (handler пересоздаёт Redis и ждёт healthy)
+- name: Apply the Redis configuration
+  ansible.builtin.meta: flush_handlers
 
 - name: Enable the API route in Caddy
   ansible.builtin.template:

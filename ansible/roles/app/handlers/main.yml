@@ -1,0 +1,10 @@
+---
+# Compose не пересоздаёт сервис от изменения содержимого конфига: новый redis.conf читает только новый
+# контейнер. --wait ждёт healthy и падает по таймауту — выкатка не отчитается успехом при упавшем Redis.
+- name: Recreate Redis with the new configuration
+  ansible.builtin.command:
+    cmd: >-
+      docker compose up -d --no-deps --force-recreate --pull never
+      --wait --wait-timeout {{ app_wait_timeout }} redis
+    chdir: "{{ app_compose_dir }}"
+  changed_when: true
