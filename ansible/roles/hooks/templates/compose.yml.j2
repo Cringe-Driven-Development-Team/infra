@@ -1,0 +1,43 @@
+# Managed by Ansible (роль hooks). Наружу смотрит только Caddy; сервис — во внутренней сети hooks.
+name: hooks
+
+services:
+  caddy:
+    image: {{ caddy_image }}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # сертификаты Let's Encrypt — переживают пересоздание контейнера
+      - caddy_config:/config
+    networks:
+      - hooks
+    depends_on:
+      - hooks
+
+  hooks:
+    image: {{ hooks_image }}
+{% if hooks_command | length > 0 %}
+    command: {{ hooks_command | to_json }}
+{% endif %}
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - hooks_data:{{ hooks_data_path }}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:{{ hooks_port }}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - hooks
+
+networks:
+  hooks: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  hooks_data: {}

@@ -50,14 +50,13 @@ config:
   # TXT подтверждения домена infra:dnsZone для организации на GitHub (значение выдаёт GitHub)
   # infra:githubPagesChallenge: "<значение из Settings → Pages → Add a domain>"
 
-  # VPS с Coolify для сервиса вебхуков: своя security group (наружу 22/80/443), A-записи панели и
+  # Вспомогательная VPS для сервиса вебхуков: своя security group (наружу 22/80/443), A-запись
   # вебхуков в infra:dnsZone, приватный бакет бэкапов restic со своим пользователем
-  # infra:coolify: "true"
-  # infra:coolifyFlavorName: SL1.2-4096
-  # infra:coolifyVolumeSize: 40
-  # infra:coolifyDomain: coolify.cellestial.ru
+  # infra:auxiliary: "true"
+  # infra:auxiliaryFlavorName: SL1.2-4096
+  # infra:auxiliaryVolumeSize: 40
   # infra:hooksDomain: hooks.cellestial.ru
-  # infra:coolifyBackupBucket: "<глобально-уникальное-имя-бакета>"
+  # infra:auxiliaryBackupBucket: "<глобально-уникальное-имя-бакета>"
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1
   infra:s3Bucket: "<глобально-уникальное-имя-бакета>"

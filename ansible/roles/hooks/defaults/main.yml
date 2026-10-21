@@ -1,0 +1,17 @@
+# Проект Compose сервиса вебхуков: Caddy (80/443, сертификат hooks_domain) и контейнер сервиса во
+# внутренней сети — его порт наружу не публикуется.
+hooks_compose_dir: /opt/hooks
+caddy_image: caddy:2.11-alpine
+
+# Образ сервиса. Пока сервиса нет — тестовый контейнер: busybox httpd отдаёт /health и пишет в /data.
+# Свой образ: hooks_image, hooks_port, hooks_command: [] (команда образа) — RUNBOOK, «Вспомогательная VPS».
+hooks_image: busybox:1.37
+hooks_port: 8080
+hooks_command:
+  - sh
+  - -c
+  - mkdir -p /www && echo ok > /www/health && exec httpd -f -p 8080 -h /www
+# Постоянное хранилище очереди и дедупликации — том hooks_data, смонтированный сюда
+hooks_data_path: /data
+# Переменные окружения сервиса (секреты — из Vault: vault_hooks_env), пишутся в .env с правами 0600
+hooks_env: "{{ vault_hooks_env | default({}) }}"

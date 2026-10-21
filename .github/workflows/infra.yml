@@ -1,7 +1,7 @@
 name: Инфраструктура
 
 # PR: тесты и проверки без секретов, затем pulumi preview и site.yml --check --diff по проду —
-# результат в сводке запуска. Мерж в main: pulumi up, site.yml, verify.yml, coolify.yml (VPS с Coolify).
+# результат в сводке запуска. Мерж в main: pulumi up, site.yml, verify.yml, auxiliary.yml (вспомогательная VPS).
 # Секреты — в environments infra-preview (PR) и production (main): ansible/README.md, «CI/CD инфраструктуры».
 on:
   pull_request:
@@ -63,7 +63,7 @@ jobs:
       - name: Ansible — синтаксис и тесты
         working-directory: ansible
         run: |
-          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml coolify.yml
+          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml auxiliary.yml
           COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
 
   # Предпросмотр по проду: в PR видно, что изменит мерж. На проде ничего не меняется.
@@ -141,14 +141,14 @@ jobs:
           ansible-playbook -i inventory/ci.yml site.yml --check --diff \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" \
             | tee "$RUNNER_TEMP/ansible-check.txt"
-      # VPS с Coolify (infra#54): её host key — тоже в SSH_KNOWN_HOSTS
-      - name: coolify.yml --check --diff
+      # Вспомогательная VPS (infra#54): её host key (hooks.cellestial.ru) — тоже в SSH_KNOWN_HOSTS
+      - name: auxiliary.yml --check --diff
         working-directory: ansible
         run: |
           set -o pipefail
-          ansible-playbook -i inventory/ci.yml coolify.yml --check --diff \
+          ansible-playbook -i inventory/ci.yml auxiliary.yml --check --diff \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" \
-            | tee "$RUNNER_TEMP/coolify-check.txt"
+            | tee "$RUNNER_TEMP/auxiliary-check.txt"
       - name: Сводка
         if: always()
         run: |
@@ -162,9 +162,9 @@ jobs:
             sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/ansible-check.txt" 2>/dev/null \
               | grep -E '^(TASK|changed|fatal|failed|PLAY RECAP|[-+@]{1,3} |[[:space:]]*[a-z_-]+ +:)' | tail -150
             echo '```'
-            echo '## coolify.yml --check --diff'
+            echo '## auxiliary.yml --check --diff'
             echo '```'
-            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/coolify-check.txt" 2>/dev/null \
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/auxiliary-check.txt" 2>/dev/null \
               | grep -E '^(TASK|changed|fatal|failed|PLAY RECAP|[-+@]{1,3} |[[:space:]]*[a-z_-]+ +:)' | tail -150
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -222,9 +222,9 @@ jobs:
         run: |
           ansible-playbook -i inventory/ci.yml verify.yml \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
-      - name: coolify.yml
+      - name: auxiliary.yml
         working-directory: ansible
         run: |
-          ansible-playbook -i inventory/ci.yml coolify.yml \
+          ansible-playbook -i inventory/ci.yml auxiliary.yml \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
       - *cleanup

@@ -1,0 +1,50 @@
+---
+- name: Каталог проекта Compose
+  ansible.builtin.file:
+    path: "{{ hooks_compose_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ hooks_compose_dir }}/Caddyfile"
+    mode: "0644"
+  notify: Reload caddy
+
+- name: Переменные сервиса
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ hooks_compose_dir }}/.env"
+    mode: "0600"
+  no_log: true
+
+- name: Файл compose.yml
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ hooks_compose_dir }}/compose.yml"
+    mode: "0644"
+
+- name: Поднять проект
+  community.docker.docker_compose_v2:
+    project_src: "{{ hooks_compose_dir }}"
+    state: present
+    pull: missing
+    wait: true
+    wait_timeout: 180
+
+- name: Применить Caddyfile
+  ansible.builtin.meta: flush_handlers
+
+# С управляющей машины: изнутри VPS floating IP может не отвечать (NAT без hairpin)
+- name: Сервис отвечает по HTTPS
+  ansible.builtin.uri:
+    url: "https://{{ hooks_domain }}/health"
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: hooks_health
+  until: hooks_health is succeeded
+  retries: 18
+  delay: 10
+  check_mode: false

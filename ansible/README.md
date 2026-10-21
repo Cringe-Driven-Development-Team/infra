@@ -185,16 +185,16 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 |---|---|---|
 | users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive, с проверкой ключа запускающего), sudo NOPASSWD — в bootstrap и в каждом site.yml |
 | common | все | базовые пакеты |
-| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service`. `ssh_hardening_root_from` — сети, из которых root входит по ключу (только у `coolify`) |
+| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
 | firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: `/api/v1/*` — Go API (пока `503`), остальные пути — `index.html` клиента из бакета релизов (`frontend_s3_domain`); сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
-| coolify | coolify | self-hosted Coolify официальным `install.sh` с версией `coolify_version`, `AUTOUPDATE=false`; повтор при той же версии — без изменений (сверка по образу контейнера `coolify`) |
-| restic_backup | coolify | ночной `restic backup` `/data/coolify` и томов Docker в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
+| hooks | auxiliary | Проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Пока сервиса нет — тестовый контейнер с `/health` |
+| restic_backup | auxiliary | ночной `restic backup` томов Docker и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
-Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml` — прод-VPS (группа `gateway`); `coolify.yml` —
-VPS с Coolify (группа `coolify`, RUNBOOK, «VPS с Coolify»).
+Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
+вспомогательная VPS (группа `auxiliary`, RUNBOOK, «Вспомогательная VPS»).
 
 ## Проект Compose
 

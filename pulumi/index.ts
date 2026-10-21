@@ -68,9 +68,8 @@ const cdnCustomDomainName = cfg.get("cdnDomain");
 const avatarsCustomDomainName = cfg.get("avatarsDomain");
 // Свой домен CDN-ресурса статики (static.cellestial.ru): CNAME в зоне infra:dnsZone, как у infra:cdnDomain.
 const staticCustomDomainName = cfg.get("staticDomain");
-// VPS с Coolify (infra#54) и домены её панели и сервиса вебхуков — A-записи в infra:dnsZone.
-const coolifyEnabled = cfg.getBoolean("coolify") ?? false;
-const coolifyDomainName = cfg.get("coolifyDomain");
+// Вспомогательная VPS (infra#54) — сервис вебхуков; его домен — A-запись в infra:dnsZone.
+const auxiliaryEnabled = cfg.getBoolean("auxiliary") ?? false;
 const hooksDomainName = cfg.get("hooksDomain");
 if (staticCustomDomainName && !staticBucketName) {
   throw new Error("infra:staticDomain задан без infra:staticBucket: домен привязывается к CDN-ресурсу бакета статики");
@@ -509,7 +508,7 @@ const dnsProvider = new selectel.Provider("dns", {
   password: pulumi.secret(selectelCreds.password),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || coolifyDomainName || hooksDomainName || cdnCustomDomainName || staticCustomDomainName || docsCustomDomainName || githubPagesChallenge
+const parentZone = appDomain || hooksDomainName || cdnCustomDomainName || staticCustomDomainName || docsCustomDomainName || githubPagesChallenge
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -637,22 +636,22 @@ if (avatarsCustomDomainName) {
 }
 
 // ---------------------------------------------------------------------------
-// Отдельная VPS с self-hosted Coolify для сервиса вебхуков (infra#54). Включается infra:coolify.
+// Вспомогательная VPS для сервиса вебхуков (infra#54). Включается infra:auxiliary.
 // Та же приватная сеть и роутер, что у gateway, но свои порт, диск, floating IP и security group:
 // прод-ресурсы не меняются. Docker публикует порты в обход ufw, поэтому наружу порты закрывает
-// security group на порту VPS — только 22/80/443 (панель :8000 снаружи не видна никогда).
+// security group на порту VPS — только 22/80/443; порт сервиса снаружи не виден.
 // ---------------------------------------------------------------------------
-let coolifyFloatingIp: openstack.networking.FloatingIp | undefined;
-let coolifyBackupBucketResource: aws.s3.Bucket | undefined;
-let coolifyBackupCredentials: selectel.IamS3CredentialsV1 | undefined;
-if (coolifyEnabled) {
-  const secGroup = new openstack.networking.SecGroup("coolify", {
-    name: "coolify",
-    description: "Coolify VPS: only SSH, HTTP, HTTPS and ICMP from outside",
+let auxiliaryFloatingIp: openstack.networking.FloatingIp | undefined;
+let auxiliaryBackupBucketResource: aws.s3.Bucket | undefined;
+let auxiliaryBackupCredentials: selectel.IamS3CredentialsV1 | undefined;
+if (auxiliaryEnabled) {
+  const secGroup = new openstack.networking.SecGroup("auxiliary", {
+    name: "auxiliary",
+    description: "Auxiliary VPS: only SSH, HTTP, HTTPS and ICMP from outside",
   }, withOs);
   const ingress: [string, number | undefined][] = [["tcp", 22], ["tcp", 80], ["tcp", 443], ["icmp", undefined]];
   for (const [protocol, port] of ingress) {
-    new openstack.networking.SecGroupRule(`coolify-${protocol}${port ?? ""}`, {
+    new openstack.networking.SecGroupRule(`auxiliary-${protocol}${port ?? ""}`, {
       securityGroupId: secGroup.id,
       direction: "ingress",
       ethertype: "IPv4",
@@ -662,26 +661,26 @@ if (coolifyEnabled) {
     }, withOs);
   }
 
-  const port = new openstack.networking.Port("coolify", {
-    name: "coolify-port",
+  const port = new openstack.networking.Port("auxiliary", {
+    name: "auxiliary-port",
     networkId: network.id,
     fixedIps: [{ subnetId: subnet.id }],
     securityGroupIds: [secGroup.id],
   }, withOs);
 
-  // 40 ГБ: Coolify, образы сборок и тома сервиса; enableOnlineResize — увеличение без пересоздания.
-  const volume = new openstack.blockstorage.Volume("coolify", {
-    name: "boot-volume-coolify",
-    size: cfg.getNumber("coolifyVolumeSize") ?? 40,
+  // 40 ГБ: образы Docker и тома сервиса; enableOnlineResize — увеличение без пересоздания.
+  const volume = new openstack.blockstorage.Volume("auxiliary", {
+    name: "boot-volume-auxiliary",
+    size: cfg.getNumber("auxiliaryVolumeSize") ?? 40,
     imageId: image.id,
     volumeType,
     availabilityZone: zone,
     enableOnlineResize: true,
   }, { ...withOs, ignoreChanges: ["imageId"] });
 
-  new openstack.compute.Instance("coolify", {
-    name: "pulumi-server-coolify",
-    flavorId: flavorId("coolify"),
+  new openstack.compute.Instance("auxiliary", {
+    name: "pulumi-server-auxiliary",
+    flavorId: flavorId("auxiliary"),
     keyPair: keypair.name,
     availabilityZone: zone,
     networks: [{ port: port.id }],
@@ -692,61 +691,60 @@ if (coolifyEnabled) {
       bootIndex: 0,
       deleteOnTermination: false,
     }],
-    // По metadata.role dynamic inventory Ansible собирает группу coolify
-    metadata: { role: "coolify", env: "release" },
+    // По metadata.role dynamic inventory Ansible собирает группу auxiliary
+    metadata: { role: "auxiliary", env: "release" },
     userData,
     vendorOptions: { ignoreResizeConfirmation: true },
   }, { ...withOs, deleteBeforeReplace: true, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
 
-  coolifyFloatingIp = new openstack.networking.FloatingIp("coolify", {
+  auxiliaryFloatingIp = new openstack.networking.FloatingIp("auxiliary", {
     pool: externalNetworkName,
   }, withOs);
-  new openstack.networking.FloatingIpAssociate("coolify", {
+  new openstack.networking.FloatingIpAssociate("auxiliary", {
     portId: port.id,
-    floatingIp: coolifyFloatingIp.address,
+    floatingIp: auxiliaryFloatingIp.address,
   }, { ...withOs, dependsOn: [routerInterface] });
 
-  // Панель и сервис вебхуков — A-записи в infra:dnsZone; сертификаты выпускает proxy Coolify.
-  for (const [logicalName, domainName] of [["coolify", coolifyDomainName], ["hooks", hooksDomainName]] as const) {
-    if (!domainName) continue;
-    new selectel.DomainsRrsetV2(logicalName, {
+  // Сервис вебхуков — A-запись в infra:dnsZone; сертификат выпускает Caddy на VPS.
+  if (hooksDomainName) {
+    new selectel.DomainsRrsetV2("hooks", {
       zoneId: parentZone!.id,
       projectId: dnsProjectId,
-      name: withDot(domainName),
+      name: withDot(hooksDomainName),
       type: "A",
       ttl: 300,
-      records: [{ content: coolifyFloatingIp.address }],
+      records: [{ content: auxiliaryFloatingIp.address }],
     }, { ...withDns, deleteBeforeReplace: true });
   }
 
   // Бэкапы restic с VPS: приватный бакет и свой пользователь, как у бакета ноутбуков. Ключ этого
   // пользователя лежит на VPS — доступ у него только к этому бакету (по политике).
-  const backupUser = new selectel.IamServiceuserV1("coolify-backup", {
-    name: cfg.get("coolifyBackupUserName") ?? "cellestialCoolifyBackupUser",
-    password: new random.RandomPassword("coolify-backup-serviceuser", serviceUserPasswordArgs).result,
+  const backupUser = new selectel.IamServiceuserV1("auxiliary-backup", {
+    name: cfg.get("auxiliaryBackupUserName") ?? "cellestialAuxiliaryBackupUser",
+    password: new random.RandomPassword("auxiliary-backup-serviceuser", serviceUserPasswordArgs).result,
     roles: [
       { roleName: "s3.bucket.user", scope: "project", projectId: project.id },
     ],
   });
-  coolifyBackupCredentials = new selectel.IamS3CredentialsV1("coolify-backup-s3", {
-    name: `${name}-coolify-backup`,
+  auxiliaryBackupCredentials = new selectel.IamS3CredentialsV1("auxiliary-backup-s3", {
+    name: `${name}-auxiliary-backup`,
     userId: backupUser.id,
     projectId: project.id,
   });
   // Резервные копии: без forceDestroy и с protect, как данные пользователей.
-  coolifyBackupBucketResource = new aws.s3.Bucket("coolify-backups", {
-    bucket: cfg.require("coolifyBackupBucket"),
+  auxiliaryBackupBucketResource = new aws.s3.Bucket("auxiliary-backups", {
+    bucket: cfg.require("auxiliaryBackupBucket"),
   }, { provider: s3, protect: true });
-  new BucketAccess("coolify-backups", {
+  new BucketAccess("auxiliary-backups", {
     projectId: project.id,
     pool: s3Pool,
-    bucket: coolifyBackupBucketResource.bucket,
+    bucket: auxiliaryBackupBucketResource.bucket,
     type: "private",
-  }, { dependsOn: [coolifyBackupBucketResource] });
+  }, { dependsOn: [auxiliaryBackupBucketResource] });
   // Первым правилом s3:* пользователю стека — иначе политика отрежет его самого (см. "notebooks").
-  new aws.s3.BucketPolicy("coolify-backups", {
-    bucket: coolifyBackupBucketResource.id,
-    policy: pulumi.all([coolifyBackupBucketResource.arn, serviceUser.id, backupUser.id])
+  new aws.s3.BucketPolicy("auxiliary-backups", {
+    bucket: auxiliaryBackupBucketResource.id,
+    policy: pulumi.all([auxiliaryBackupBucketResource.arn, serviceUser.id, backupUser.id])
       .apply(([arn, stackUserId, backupUserId]) => JSON.stringify({
         Version: "2012-10-17",
         Statement: [
@@ -807,10 +805,9 @@ export const staticPublicDomain = staticAccess?.publicDomain ?? null;
 export const staticCustomDomain = staticCustomDomainName ?? null;
 export const staticCdnResourceId = staticCdn?.id ?? null;
 export const staticCdnDefaultDomain = staticCdn?.cdnDomain ?? null;
-// VPS с Coolify (infra:coolify): адрес, домены панели и вебхуков, бакет и ключ бэкапов restic
-export const coolifyPublicIp = coolifyFloatingIp?.address ?? null;
-export const coolifyDomain = coolifyEnabled ? coolifyDomainName ?? null : null;
-export const hooksDomain = coolifyEnabled ? hooksDomainName ?? null : null;
-export const coolifyBackupBucket = coolifyBackupBucketResource?.bucket ?? null;
-export const coolifyBackupAccessKey = coolifyBackupCredentials?.accessKey ?? null;
-export const coolifyBackupSecretKey = coolifyBackupCredentials ? pulumi.secret(coolifyBackupCredentials.secretKey) : null;
+// Вспомогательная VPS (infra:auxiliary): адрес, домен вебхуков, бакет и ключ бэкапов restic
+export const auxiliaryPublicIp = auxiliaryFloatingIp?.address ?? null;
+export const hooksDomain = auxiliaryEnabled ? hooksDomainName ?? null : null;
+export const auxiliaryBackupBucket = auxiliaryBackupBucketResource?.bucket ?? null;
+export const auxiliaryBackupAccessKey = auxiliaryBackupCredentials?.accessKey ?? null;
+export const auxiliaryBackupSecretKey = auxiliaryBackupCredentials ? pulumi.secret(auxiliaryBackupCredentials.secretKey) : null;

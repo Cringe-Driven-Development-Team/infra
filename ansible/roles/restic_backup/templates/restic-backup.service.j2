@@ -1,6 +1,6 @@
 # Managed by Ansible. Ручной запуск: systemctl start restic-backup; журнал: journalctl -u restic-backup
 [Unit]
-Description=restic backup of Coolify data to S3
+Description=restic backup of auxiliary VPS data to S3
 Wants=network-online.target
 After=network-online.target docker.service
 

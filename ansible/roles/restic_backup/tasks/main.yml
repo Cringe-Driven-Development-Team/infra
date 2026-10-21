@@ -2,13 +2,13 @@
 - name: Ключи бэкапа заданы в Vault
   ansible.builtin.assert:
     that:
-      - vault_coolify_restic_password | default('') | length > 0
-      - vault_coolify_backup_access_key | default('') | length > 0
-      - vault_coolify_backup_secret_key | default('') | length > 0
+      - vault_auxiliary_restic_password | default('') | length > 0
+      - vault_auxiliary_backup_access_key | default('') | length > 0
+      - vault_auxiliary_backup_secret_key | default('') | length > 0
     fail_msg: >-
-      В inventory/group_vars/all/vault.yml нет vault_coolify_restic_password,
-      vault_coolify_backup_access_key или vault_coolify_backup_secret_key
-      (ключ — выходы Pulumi coolifyBackupAccessKey/coolifyBackupSecretKey; RUNBOOK, «Coolify»).
+      В inventory/group_vars/all/vault.yml нет vault_auxiliary_restic_password,
+      vault_auxiliary_backup_access_key или vault_auxiliary_backup_secret_key
+      (ключ — выходы Pulumi auxiliaryBackupAccessKey/auxiliaryBackupSecretKey; RUNBOOK, «Вспомогательная VPS»).
     quiet: true
 
 - name: Пакет restic
