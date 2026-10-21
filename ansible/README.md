@@ -264,6 +264,9 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 - сертификат от Let's Encrypt;
 - на публичном IP открыты 22/80/443 и закрыты 5432, 8080, 2375, 2376 (ловит порты Docker
   в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
+- вспомогательная VPS (группа `auxiliary`, если она есть в inventory): `https://<hooks_domain>/health` — 200 с
+  действительным сертификатом Let's Encrypt на этот домен; снаружи закрыты внутренний порт сервиса
+  (`hooks_port`) и Docker API 2375/2376;
 - ufw: active, `deny (incoming)`, разрешающих правил ровно `firewall_rules` из
   `group_vars/gateway` (22/80/443 tcp);
 - `sshd -T`: `permitrootlogin no`, `passwordauthentication no`,

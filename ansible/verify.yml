@@ -243,3 +243,51 @@
           (host_listen.stdout | from_json)
           | difference(firewall_rules | map(attribute='port') | map('int') | list) | length == 0
         fail_msg: "Слушаются порты {{ host_listen.stdout }} — наружу смотрит лишнее (Docker -p?)"
+
+# Вспомогательная VPS (infra#54, auxiliary.yml): сервис вебхуков отвечает по HTTPS с действительным
+# сертификатом, а его внутренний порт и Docker снаружи закрыты (security group и сеть Compose без ports).
+- name: "Проверки вспомогательной VPS"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    auxiliary_host: "{{ (groups['auxiliary'] | default([]) + [''])[0] }}"
+    auxiliary_hooks_domain: "{{ hostvars[auxiliary_host]['hooks_domain'] | default('') if auxiliary_host else '' }}"
+    auxiliary_hooks_port: "{{ hostvars[auxiliary_host]['hooks_port'] | default(8080) if auxiliary_host else 8080 }}"
+  tasks:
+    - name: Вспомогательной VPS нет в inventory
+      ansible.builtin.meta: end_play
+      when: auxiliary_host == ''
+
+    # uri проверяет цепочку доверия: недействительный сертификат — ошибка, а не статус
+    - name: "https://{{ auxiliary_hooks_domain }}/health отвечает 200"
+      ansible.builtin.uri:
+        url: "https://{{ auxiliary_hooks_domain }}/health"
+        status_code: 200
+      register: auxiliary_health
+      until: auxiliary_health is succeeded
+      retries: 3
+      delay: 5
+
+    - name: Сертификат домена вебхуков выдан Let's Encrypt на этот домен
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          echo | openssl s_client -connect {{ auxiliary_hooks_domain }}:443 -servername {{ auxiliary_hooks_domain }} 2>/dev/null
+          | grep -E '^(issuer|subject)='
+        executable: /bin/bash
+      register: auxiliary_cert
+      changed_when: false
+      failed_when: >-
+        auxiliary_cert.rc != 0
+        or auxiliary_cert.stdout is not search("Encrypt|ISRG")
+        or auxiliary_cert.stdout is not search(auxiliary_hooks_domain | regex_escape)
+
+    - name: "Снаружи закрыты внутренний порт сервиса и Docker API"
+      ansible.builtin.wait_for:
+        host: "{{ auxiliary_hooks_domain }}"
+        port: "{{ item }}"
+        state: stopped
+        connect_timeout: 3
+        timeout: 10
+        msg: "На {{ auxiliary_hooks_domain }} снаружи открыт {{ item }}/tcp"
+      loop: ["{{ auxiliary_hooks_port | int }}", 2375, 2376]
