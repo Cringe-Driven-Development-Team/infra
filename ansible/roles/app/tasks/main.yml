@@ -11,6 +11,25 @@
     mode: "0600"
   no_log: true
 
+- name: Redis configuration directory
+  ansible.builtin.file:
+    path: "{{ app_compose_dir }}/redis"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Пароль Redis внутри: файл читает только пользователь redis контейнера
+- name: Write the Redis configuration
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "{{ app_compose_dir }}/redis/redis.conf"
+    owner: "{{ app_redis_uid }}"
+    group: "{{ app_redis_gid }}"
+    mode: "0600"
+  notify: Recreate Redis with the new configuration
+  no_log: true
+
 - name: Write the full application Compose project
   ansible.builtin.template:
     src: compose.yml.j2
@@ -28,6 +47,7 @@
     services:
       - caddy
       - postgres
+      - redis
     policy: missing
 
 - name: Start the application and wait for healthchecks
@@ -37,6 +57,10 @@
     pull: never
     wait: true
     wait_timeout: "{{ app_wait_timeout }}"
+
+# Новый redis.conf — до маршрута API и итоговой проверки (handler пересоздаёт Redis и ждёт healthy)
+- name: Apply the Redis configuration
+  ansible.builtin.meta: flush_handlers
 
 - name: Enable the API route in Caddy
   ansible.builtin.template:

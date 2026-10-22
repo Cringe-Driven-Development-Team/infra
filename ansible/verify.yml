@@ -145,7 +145,7 @@
     # Docker API (2375/2376) по умолчанию выключен. Проба с управляющей машины ловит и
     # порты, которые Docker открыл в обход ufw (DNAT раньше INPUT): доходит до хоста,
     # где docker-proxy слушает на 0.0.0.0.
-    - name: "На публичном IP закрыты 5432, 8080, 2375, 2376"
+    - name: "На публичном IP закрыты 5432, 6379, 8080, 2375, 2376"
       ansible.builtin.wait_for:
         host: "{{ public_ip }}"
         port: "{{ item }}"
@@ -153,13 +153,31 @@
         connect_timeout: 3
         timeout: 10
         msg: "На публичном IP {{ public_ip }} принимает соединения {{ item }}/tcp"
-      loop: [5432, 8080, 2375, 2376]
+      loop: [5432, 6379, 8080, 2375, 2376]
 
 - name: "Проверки на VPS"
   hosts: gateway
   gather_facts: false
   become: true
   tasks:
+    # Redis (infra#46) поднимает роль app вместе с бэком (deploy-backend.yml): пока выкатки с Redis
+    # не было, нет и его конфига — проверка пропускается
+    - name: Выкачен ли Redis на VPS
+      ansible.builtin.stat:
+        path: "{{ app_compose_dir }}/redis/redis.conf"
+      register: verify_redis_conf
+
+    # Клиент — одноразовый контейнер сервиса redis в сети app, как Go API. Пароль (REDISCLI_AUTH)
+    # он берёт из .env Compose: через environment Ansible секрет попал бы в verbose-логи (-vvv)
+    - name: Redis отвечает на PING из сети app
+      ansible.builtin.command:
+        cmd: docker compose run --rm --no-deps redis redis-cli -h redis ping
+        chdir: "{{ app_compose_dir }}"
+      register: verify_redis_ping
+      changed_when: false
+      failed_when: verify_redis_ping.rc != 0 or verify_redis_ping.stdout | trim != 'PONG'
+      when: verify_redis_conf.stat.exists
+
     - name: Правила ufw
       ansible.builtin.command: ufw status verbose
       register: ufw_status

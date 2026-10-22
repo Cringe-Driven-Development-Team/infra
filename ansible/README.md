@@ -262,7 +262,9 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 - до первой выкатки API отвечает `503 API is not deployed`, после неё
   `/api/v1/users/me` без токена возвращает JSON/401;
 - сертификат от Let's Encrypt;
-- на публичном IP открыты 22/80/443 и закрыты 5432, 8080, 2375, 2376 (ловит порты Docker
+- после выкатки бэка с Redis (есть `redis/redis.conf`) Redis отвечает `PONG` на `redis-cli -h redis ping` из сети `app` (одноразовый
+  контейнер, пароль — через окружение);
+- на публичном IP открыты 22/80/443 и закрыты 5432, 6379, 8080, 2375, 2376 (ловит порты Docker
   в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
 - вспомогательная VPS (группа `auxiliary`, если она есть в inventory): `https://<hooks_domain>/health` — 200 с
   действительным сертификатом Let's Encrypt на этот домен; снаружи закрыты внутренний порт сервиса
@@ -332,10 +334,11 @@ Ansible в CI ходит по статическому `inventory/ci.yml` сво
 
 ## Go API: первая выкатка и откат
 
-В одном проекте `/opt/cellestial` роль `app` управляет API и PostgreSQL 18, роль
-`caddy` — общим Caddyfile. API и Postgres доступны только в сети `app`. Данные
-Postgres сохраняются в `cellestial_postgres_data`, сертификаты — в существующих
-`cellestial_caddy_data` и `cellestial_caddy_config`. Не выполнять `down -v`.
+В одном проекте `/opt/cellestial` роль `app` управляет API, PostgreSQL 18 и Redis 8, роль
+`caddy` — общим Caddyfile. API, Postgres и Redis доступны только в сети `app`. Данные
+Postgres сохраняются в `cellestial_postgres_data`, Redis — в `cellestial_redis_data` (AOF),
+сертификаты — в существующих `cellestial_caddy_data` и `cellestial_caddy_config`.
+Не выполнять `down -v`.
 
 Пакет GHCR остаётся приватным. Постоянный токен на VPS и в Vault не хранится.
 Денис создаёт
@@ -410,6 +413,15 @@ S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_S
 `S3_AVATARS_PUBLIC_URL`. Источники — `group_vars/all/vars.yml` и существующий Vault.
 Go API хранит файлы блокнотов в `S3_NOTEBOOKS_BUCKET`, используя параметры `AWS_*`.
 Параметры аватарок передаются конфигурацией, но текущий API их ещё не читает.
+
+Redis (infra#46) — refresh-сессии бэка. API получает `REDIS_HOST=redis`, `REDIS_PORT=6379`,
+`REDIS_PASSWORD` (Vault: `vault_redis_password`, 16+ символов `[A-Za-z0-9_-]` — например
+`openssl rand -hex 32`) и `REDIS_DB=0`. Пароль лежит в `/opt/cellestial/redis/redis.conf`
+(`requirepass`, права `0600`, владелец — пользователь `redis` контейнера), а не в аргументах
+`redis-server`; каталог `redis/` смонтирован целиком, после изменения конфига handler роли пересоздаёт
+Redis и ждёт `healthy` (таймаут — ошибка выкатки). `appendonly yes` — сессии переживают перезапуск; `maxmemory 128mb` с
+`noeviction` — при нехватке памяти Redis отвечает ошибкой, а не вытесняет сессии. Redis
+появляется на VPS с выкаткой бэка (`deploy-backend.yml`): `site.yml` проект приложения не меняет.
 
 Проверка после выкатки:
 
