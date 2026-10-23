@@ -1,0 +1,7 @@
+name: actionlint selftest
+on: workflow_dispatch
+jobs:
+  broken:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.no_such_property }}"
