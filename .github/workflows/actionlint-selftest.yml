@@ -4,4 +4,4 @@ jobs:
   broken:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "${{ github.no_such_property }}"
+      - run: echo "${{ github.sha }}"
