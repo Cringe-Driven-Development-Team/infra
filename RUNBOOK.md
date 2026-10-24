@@ -323,40 +323,168 @@ for p in 22 80 443 8080; do nc -z -G3 hooks.cellestial.ru $p && echo "$p open" |
 curl -sI https://cellestial.ru | head -1                          # прод отвечает как раньше
 ```
 
-### Развёртывание сервиса
+### Развёртывание сервиса (infra#70, .github#20)
 
-Сервис — образ из GHCR или Docker Hub с `GET /health` (200) и данными в `hooks_data_path`. Переменные
-(секреты GitHub webhook и Apidog, токен бота, chat/topic IDs) — только в Vault, в Git и CI их нет:
+Роль `hooks` разворачивает публичный GHCR image по registry manifest digest:
+`ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:30718ed06926bff66627502361185c2ca6ebca78b20b044ce4d8bba92f12e858`.
+Соответствующий SHA-тег — `sha-08e7968fa0d39dd5f25fe8495c58d78006a26653`
+(`.github` Task 8, image workflow run `40103993724`). В defaults он сохранён как
+`hooks_image_source_tag` для трассировки; Compose использует только `hooks_image`.
+Локальный Docker image ID нельзя использовать вместо manifest digest.
+
+Перед первой выкаткой:
+
+1. Через `ansible-vault edit inventory/group_vars/all/vault.yml` добавить
+   `vault_hooks_env`: непустые `GITHUB_WEBHOOK_SECRET`, `APIDOG_SIGNATURE_KEY`,
+   `APIDOG_SIGNATURE_HEADER` (фактическое имя заголовка Apidog). Это обязательные
+   параметры даже при выключенном sender. `DATABASE_PATH=/data/queue.sqlite`,
+   `PORT=8080`, `WEBHOOK_ALERTS_SEND_ENABLED=false` заданы ролью. Значения env в
+   Vault хранить строками; не включать worker до приёмки Task 10. Его дополнительные
+   переменные и переключение описаны в [runbook сервиса](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/services/webhook-alerts/README.md).
+2. Проверить, что package `webhook-alerts` опубликован как **public**, и
+   анонимный pull закреплённого digest с VPS проходит с чистым Docker config.
+   Публичность исходного `.github` репозитория сама по себе не делает GHCR package
+   публичным. Изменение visibility package — отдельный шаг владельца;
+   этот PR его не выполняет. Пока anonymous pull недоступен, выкатка не готова.
+3. Проверить SSH host key по консоли сервера и сохранить доверенную запись в
+   `SSH_KNOWN_HOSTS` обоих environments; не принимать ключ по одному `ssh-keyscan`.
+
+`auxiliary.yml` проверяет обязательные webhook env до изменений VPS. Роль явно
+скачивает закреплённый образ `hooks` без login перед подготовкой контейнера;
+при ошибке pull playbook прекращается с указанием проверить visibility, digest
+и доступность GHCR. Registry credentials и package permissions для auxiliary
+не требуются. Caddy скачивается отдельно; запуск использует `pull: never`. Существующий
+том от busybox перед запуском получает владельца `bun:bun` из нового образа;
+`/data` и `/data/snapshots` получают права `0700`.
 
 ```bash
-ansible-vault edit inventory/group_vars/all/vault.yml   # vault_hooks_env: { GITHUB_WEBHOOK_SECRET: ..., ... }
+cd ansible
+. ./env.sh
+ansible-playbook auxiliary.yml --check --diff
+ansible-playbook auxiliary.yml
 ```
 
-Образ и порт — в `inventory/group_vars/auxiliary/vars.yml`: `hooks_image` (с тегом, не `latest`),
-`hooks_port`, `hooks_command: []` (команда образа), при необходимости `hooks_data_path`. PR → CI прогонит
-`auxiliary.yml`; вручную — `ansible-playbook auxiliary.yml`. Плейбук ждёт `200` на
-`https://hooks.cellestial.ru/health`. Обновление — новый тег в `hooks_image`; откат — прежний тег и тот же
-прогон. Логи: `ssh deploy@hooks.cellestial.ru 'cd /opt/hooks && sudo docker compose logs -n 100 hooks'`.
-Что пришло от GitHub — Settings → Webhooks → Recent Deliveries (там же Redeliver).
+Плейбук ждёт `200` на `https://hooks.cellestial.ru/health`; сервис работает от
+`bun` и сохраняет очередь в `hooks_hooks_data`. Перед первым `verify.yml` выполнить
+первый бэкап по процедуре ниже: проверка теперь обнаруживает отсутствие snapshot.
+Обновление или откат образа — новый проверенный digest и соответствующий SHA-тег
+в defaults роли, затем тот же playbook. Очередь не удалять. Логи:
+`ssh deploy@hooks.cellestial.ru 'cd /opt/hooks && sudo docker compose logs -n 100 hooks'`.
 
-### Бэкап и восстановление
+### Бэкап и изолированное восстановление
 
-Ночью таймер `restic-backup.timer` снимает тома Docker (`hooks_hooks_data`, сертификаты Caddy) и
-`/opt/hooks`; хранятся 7 дневных и 4 недельных снимка.
+`restic-backup.timer` запускается ночью, хранит 7 дневных и 4 недельных снимка.
+`ExecStartPre` вызывает в работающем контейнере:
+
+```bash
+docker compose -f /opt/hooks/compose.yml exec -T hooks bun run src/cli.ts snapshot --output /data/snapshots/queue.sqlite
+```
+
+CLI проверяет целостность и атомарно заменяет snapshot. Ошибка `ExecStartPre`
+останавливает unit до `restic backup` и `forget`: старый файл не становится новым
+бэкапом. В архив входят только:
+
+- `/var/lib/docker/volumes/hooks_hooks_data/_data/snapshots/queue.sqlite`;
+- `/var/lib/docker/volumes/hooks_caddy_data/_data` и `hooks_caddy_config/_data`;
+- `/opt/hooks` (включая `.env`, поэтому Restic password нужен для восстановления).
+
+Живые `queue.sqlite`, `queue.sqlite-wal`, `queue.sqlite-shm` исключены явным списком
+путей. Для восстановления очереди нужен один snapshot, исходный WAL не нужен.
+
+Первый бэкап и проверка журнала:
 
 ```bash
 ssh deploy@hooks.cellestial.ru
-sudo systemctl start restic-backup && sudo journalctl -u restic-backup -n 20
-sudo bash -c 'set -a; . /etc/restic/env; restic snapshots'
+sudo systemctl start restic-backup
+sudo journalctl -u restic-backup -n 30
+sudo bash -c 'set -a; . /etc/restic/env; restic snapshots --host auxiliary'
 ```
 
-Восстановление (на этой же или новой VPS после `auxiliary.yml`):
+В журнале требуется успешный новый snapshot Restic. Затем восстановить в отдельный
+каталог, сохранив ID выбранного бэкапа из `restic snapshots` в журнале приёмки:
 
 ```bash
+restore_dir=$(sudo mktemp -d /var/tmp/hooks-restore.XXXXXX)
 sudo bash -c 'set -a; . /etc/restic/env
-  cd /opt/hooks && docker compose stop
-  restic restore latest --target / --include /var/lib/docker/volumes/hooks_hooks_data
-  docker compose start'
+  restic restore latest --host auxiliary --target "$1" \
+    --include /var/lib/docker/volumes/hooks_hooks_data/_data/snapshots/queue.sqlite' bash "$restore_dir"
+image=$(sudo docker inspect --format '{{.Config.Image}}' hooks-hooks-1)
+# Запускается только Bun-скрипт: нет main.ts, сети и worker; отправка явно выключена.
+sudo docker run --rm -i --network none --pull never --user root \
+  -e WEBHOOK_ALERTS_SEND_ENABLED=false \
+  -v "$restore_dir/var/lib/docker/volumes/hooks_hooks_data/_data/snapshots:/restore" \
+  --entrypoint bun "$image" - <<'JS'
+import { Database } from "bun:sqlite";
+import { openStore } from "./src/store";
+const path = "/restore/queue.sqlite";
+const db = new Database(path, { readonly: true });
+let row;
+try {
+  const integrity = db.query("PRAGMA integrity_check").get().integrity_check;
+  if (integrity !== "ok") throw new Error("integrity_check failed");
+  console.log("integrity_check:", integrity);
+  console.log(db.query("SELECT id, source, delivery_id, prepared FROM deliveries ORDER BY id").all());
+  console.log(db.query("SELECT id, origin_type, origin_id, status, telegram_message_id FROM outbox ORDER BY id").all());
+  row = db.query("SELECT source, delivery_id, event, raw FROM deliveries WHERE dedupe_kind = ? LIMIT 1").get("id");
+} finally { db.close(); }
+if (!row) throw new Error("A stable-ID delivery is required for the duplicate check");
+const store = openStore(path);
+try {
+  if (store.accept({source: row.source, deliveryId: row.delivery_id, event: row.event, raw: row.raw}) !== "duplicate")
+    throw new Error("Restored delivery was not deduplicated");
+} finally { store.close(); }
+console.log("Restored stable-ID duplicate rejected");
+JS
 ```
 
-Проверка: данные тома на месте, `https://hooks.cellestial.ru/health` отвечает.
+Сравнить ID и состояния `pending`/`sent`, `telegram_message_id` с исходной очередью
+и ожидаемыми тестовыми доставками; пустая очередь не доказывает их сохранность.
+Успешный `verify.yml` проверяет наличие непустого snapshot, но не заменяет эту
+проверку содержимого Restic и восстановления. Не удалять проверочный каталог до
+фиксации результата. Telegram при проверке не вызывается.
+
+При реальном восстановлении: сначала в Vault выставить
+`WEBHOOK_ALERTS_SEND_ENABLED: "false"`, применить `hooks`,
+затем остановить сервис `docker compose -f /opt/hooks/compose.yml stop hooks`.
+Сохранить текущие `queue.sqlite` и sidecar-файлы отдельно. Скопировать проверенный
+snapshot в `_data/queue.sqlite`, убрать прежние WAL/SHM после сохранения, назначить
+владельца `bun:bun` (UID/GID взять из закреплённого образа), права файла `0600`.
+Запустить сервис с выключенным worker, проверить HTTPS health, очередь и dedupe.
+Включение отправки и сверка уже отправленных сообщений — отдельная процедура Task 10.
+Не восстанавливать весь `hooks_hooks_data` поверх работающей базы.
+
+### Фактическая проверка infra#70, 2026-10-24 UTC
+
+- Auxiliary VPS анонимно скачала образ с пустым Docker config:
+  `ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:30718ed06926bff66627502361185c2ca6ebca78b20b044ce4d8bba92f12e858`
+  (исходный SHA `08e7968fa0d39dd5f25fe8495c58d78006a26653`).
+  `auxiliary.yml` завершился `ok=45 changed=6 failed=0`; контейнер `healthy`,
+  HTTPS `/health` вернул 200, `WEBHOOK_ALERTS_SEND_ENABLED=false`, `/opt/hooks/.env`
+  имеет права `0600`. `verify.yml --limit auxiliary` подтвердил непустой snapshot.
+- При выключенном sender в рабочей очереди созданы две **синтетические** строки
+  `cdd-restore-bf4d07eb4fd8-sent` и `cdd-restore-bf4d07eb4fd8-pending`.
+  Статус `sent` и `telegram_message_id=900000001` заданы тестовым скриптом:
+  реального сообщения в Telegram не было. `systemctl start restic-backup`
+  завершился `Result=success`, `ExecMainStatus=0`. Restic snapshot
+  `d8b71852ca25c0c3bedd7faa0f4a47a20c41f20261972cf79785b99f75b8e20e`
+  создан в `2026-10-24T21:33:58Z`.
+- Этот ID восстановлен через `restic restore d8b71852ca25c0c3bedd7faa0f4a47a20c41f20261972cf79785b99f75b8e20e
+  --host auxiliary --target /var/tmp/hooks-restore.K7QIjA --include
+  /var/lib/docker/volumes/hooks_hooks_data/_data/snapshots/queue.sqlite`.
+  Проверка внутри закреплённого образа с `--network none` и выключенным sender
+  дала `PRAGMA integrity_check=ok`, сохранила `pending`/`sent` и тестовый ID,
+  а повторный `Store.accept` с тем же delivery ID вернул `duplicate`.
+- Подписанные тестовые HTTP-доставки GitHub и Apidog дали 401 при неверной подписи,
+  202 при первой доставке, 200 при повторе; GitHub вернул 409 при том же ID
+  и другом теле. Это проверка локально заданного заголовка Apidog; фактический
+  заголовок настоящей доставки остаётся предметом Task 10.
+- Тестовые строки удалены из рабочей очереди. Повторный `systemctl start
+  restic-backup` создал snapshot
+  `837743262111103e2929288a77b24cb46376c94ec3c71c4a55158abdfd7b1088`
+  в `2026-10-24T21:37:06Z`. Его отдельное восстановление дало
+  `integrity_check=ok`, ноль тестовых доставок и ноль строк outbox. Для
+  обычного восстановления выбирать этот или более поздний чистый snapshot;
+  первый тестовый snapshot содержит синтетическую строку `pending`.
+
+GitHub organization webhook и настоящий Apidog target пока не подключены;
+worker остаётся выключенным до приёмки Task 10.

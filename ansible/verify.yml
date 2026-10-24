@@ -211,7 +211,7 @@
       when: auxiliary_host == ''
 
     # uri проверяет цепочку доверия: недействительный сертификат — ошибка, а не статус
-    - name: "https://{{ auxiliary_hooks_domain }}/health отвечает 200"
+    - name: "HTTPS health отвечает 200 на {{ auxiliary_hooks_domain }}"
       ansible.builtin.uri:
         url: "https://{{ auxiliary_hooks_domain }}/health"
         status_code: 200
@@ -243,3 +243,15 @@
         timeout: 10
         msg: "На {{ auxiliary_hooks_domain }} снаружи открыт {{ item }}/tcp"
       loop: ["{{ auxiliary_hooks_port | int }}", 2375, 2376]
+
+# На первом развёртывании сначала systemctl start restic-backup (RUNBOOK).
+# HTTPS может работать даже если ни одного snapshot очереди ещё не создано.
+- name: "Проверка snapshot на вспомогательной VPS"
+  hosts: auxiliary
+  gather_facts: false
+  become: true
+  vars_files:
+    - roles/restic_backup/defaults/main.yml
+  tasks:
+    - name: Проверить результат snapshot
+      ansible.builtin.import_tasks: tasks/verify-hooks-snapshot.yml

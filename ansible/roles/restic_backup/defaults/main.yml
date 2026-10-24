@@ -3,9 +3,13 @@ restic_backup_bucket: cellestial-auxiliary-backups-0
 # Пул бакета — выход Pulumi auxiliaryBackupPoolName (infra:auxiliaryBackupPool)
 restic_backup_pool: ru-1
 restic_backup_s3_endpoint: "https://s3.{{ restic_backup_pool }}.storage.selcloud.ru"
-# Тома Docker: данные сервиса (hooks_data) и сертификаты Caddy; /opt/hooks — compose.yml, Caddyfile, .env
+# Только проверенный CLI snapshot: живую WAL-базу и её sidecar-файлы не копируем.
+restic_backup_snapshot_path: /var/lib/docker/volumes/hooks_hooks_data/_data/snapshots/queue.sqlite
+# Явный список исключает queue.sqlite, queue.sqlite-wal и queue.sqlite-shm.
 restic_backup_paths:
-  - /var/lib/docker/volumes
+  - "{{ restic_backup_snapshot_path }}"
+  - /var/lib/docker/volumes/hooks_caddy_data/_data
+  - /var/lib/docker/volumes/hooks_caddy_config/_data
   - /opt/hooks
 restic_backup_keep_daily: 7
 restic_backup_keep_weekly: 4
