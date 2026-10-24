@@ -435,7 +435,38 @@ snapshot в `_data/queue.sqlite`, убрать прежние WAL/SHM после
 Включение отправки и сверка уже отправленных сообщений — отдельная процедура Task 10.
 Не восстанавливать весь `hooks_hooks_data` поверх работающей базы.
 
-Живая проверка Task 9 в этом коммите **не выполнена**. В infra PR необходимо
-записать UTC-время, registry digest/SHA, результат анонимного pull, ID Restic
-snapshot, `integrity_check: ok`, сохранённые pending/sent ID и результат duplicate
-check. Пока эти результаты отсутствуют, Task 9 не принята и worker остаётся выключенным.
+### Фактическая проверка infra#70, 2026-10-24 UTC
+
+- Auxiliary VPS анонимно скачала образ с пустым Docker config:
+  `ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:30718ed06926bff66627502361185c2ca6ebca78b20b044ce4d8bba92f12e858`
+  (исходный SHA `08e7968fa0d39dd5f25fe8495c58d78006a26653`).
+  `auxiliary.yml` завершился `ok=45 changed=6 failed=0`; контейнер `healthy`,
+  HTTPS `/health` вернул 200, `WEBHOOK_ALERTS_SEND_ENABLED=false`, `/opt/hooks/.env`
+  имеет права `0600`. `verify.yml --limit auxiliary` подтвердил непустой snapshot.
+- При выключенном sender в рабочей очереди созданы две **синтетические** строки
+  `cdd-restore-bf4d07eb4fd8-sent` и `cdd-restore-bf4d07eb4fd8-pending`.
+  Статус `sent` и `telegram_message_id=900000001` заданы тестовым скриптом:
+  реального сообщения в Telegram не было. `systemctl start restic-backup`
+  завершился `Result=success`, `ExecMainStatus=0`. Restic snapshot
+  `d8b71852ca25c0c3bedd7faa0f4a47a20c41f20261972cf79785b99f75b8e20e`
+  создан в `2026-10-24T21:33:58Z`.
+- Этот ID восстановлен через `restic restore d8b71852ca25c0c3bedd7faa0f4a47a20c41f20261972cf79785b99f75b8e20e
+  --host auxiliary --target /var/tmp/hooks-restore.K7QIjA --include
+  /var/lib/docker/volumes/hooks_hooks_data/_data/snapshots/queue.sqlite`.
+  Проверка внутри закреплённого образа с `--network none` и выключенным sender
+  дала `PRAGMA integrity_check=ok`, сохранила `pending`/`sent` и тестовый ID,
+  а повторный `Store.accept` с тем же delivery ID вернул `duplicate`.
+- Подписанные тестовые HTTP-доставки GitHub и Apidog дали 401 при неверной подписи,
+  202 при первой доставке, 200 при повторе; GitHub вернул 409 при том же ID
+  и другом теле. Это проверка локально заданного заголовка Apidog; фактический
+  заголовок настоящей доставки остаётся предметом Task 10.
+- Тестовые строки удалены из рабочей очереди. Повторный `systemctl start
+  restic-backup` создал snapshot
+  `837743262111103e2929288a77b24cb46376c94ec3c71c4a55158abdfd7b1088`
+  в `2026-10-24T21:37:06Z`. Его отдельное восстановление дало
+  `integrity_check=ok`, ноль тестовых доставок и ноль строк outbox. Для
+  обычного восстановления выбирать этот или более поздний чистый snapshot;
+  первый тестовый snapshot содержит синтетическую строку `pending`.
+
+GitHub organization webhook и настоящий Apidog target пока не подключены;
+worker остаётся выключенным до приёмки Task 10.
