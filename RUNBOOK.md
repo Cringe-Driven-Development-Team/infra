@@ -307,7 +307,7 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
 
 ### Развёртывание сервиса (infra#70, .github#20)
 
-Роль `hooks` разворачивает private GHCR image по registry manifest digest:
+Роль `hooks` разворачивает публичный GHCR image по registry manifest digest:
 `ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:30718ed06926bff66627502361185c2ca6ebca78b20b044ce4d8bba92f12e858`.
 Соответствующий SHA-тег — `sha-08e7968fa0d39dd5f25fe8495c58d78006a26653`
 (`.github` Task 8, image workflow run `40103993724`). В defaults он сохранён как
@@ -323,31 +323,27 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
    `PORT=8080`, `WEBHOOK_ALERTS_SEND_ENABLED=false` заданы ролью. Значения env в
    Vault хранить строками; не включать worker до приёмки Task 10. Его дополнительные
    переменные и переключение описаны в [runbook сервиса](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/services/webhook-alerts/README.md).
-2. Дать workflow репозитория `infra` доступ к private package `webhook-alerts`:
-   в package Settings → Manage Actions access добавить `infra` с ролью Read.
-   CI передаёт только шагу `auxiliary.yml` временный `GITHUB_TOKEN` с
-   `packages: read`. Наличие этого permission само по себе не даёт доступа к
-   package другого репозитория. Для ручного запуска нужны `GHCR_USERNAME` и
-   `GHCR_TOKEN` с `read:packages` и доступом к package; не сохранять токен в Vault
-   или на VPS. Проверить manifest и pull закреплённого digest с VPS во временной
-   сессии login, затем logout. Ошибка доступа запрещает считать выкатку готовой.
+2. Проверить, что package `webhook-alerts` опубликован как **public**, и
+   анонимный pull закреплённого digest с VPS проходит с чистым Docker config.
+   Публичность исходного `.github` репозитория сама по себе не делает GHCR package
+   публичным. Изменение visibility package — отдельный шаг владельца;
+   этот PR его не выполняет. Пока anonymous pull недоступен, выкатка не готова.
 3. Проверить SSH host key по консоли сервера и сохранить доверенную запись в
    `SSH_KNOWN_HOSTS` обоих environments; не принимать ключ по одному `ssh-keyscan`.
 
-`auxiliary.yml` проверяет обязательные env и наличие GHCR credentials до изменений
-VPS. Роль выполняет login → pull только `hooks` → logout в `always`, включая
-ошибку login/pull. Caddy скачивается после logout; запуск использует `pull: never`.
-При ошибке logout проверить Docker config root до повторного запуска. Существующий
+`auxiliary.yml` проверяет обязательные webhook env до изменений VPS. Роль явно
+скачивает закреплённый образ `hooks` без login перед подготовкой контейнера;
+при ошибке pull playbook прекращается с указанием проверить visibility, digest
+и доступность GHCR. Registry credentials и package permissions для auxiliary
+не требуются. Caddy скачивается отдельно; запуск использует `pull: never`. Существующий
 том от busybox перед запуском получает владельца `bun:bun` из нового образа;
 `/data` и `/data/snapshots` получают права `0700`.
 
 ```bash
 cd ansible
 . ./env.sh
-# GHCR_USERNAME/GHCR_TOKEN задать в окружении безопасным способом, без записи в Git.
 ansible-playbook auxiliary.yml --check --diff
 ansible-playbook auxiliary.yml
-unset GHCR_TOKEN GHCR_USERNAME
 ```
 
 Плейбук ждёт `200` на `https://hooks.cellestial.ru/health`; сервис работает от
@@ -430,7 +426,7 @@ JS
 фиксации результата. Telegram при проверке не вызывается.
 
 При реальном восстановлении: сначала в Vault выставить
-`WEBHOOK_ALERTS_SEND_ENABLED: "false"`, применить `hooks` с нужными GHCR credentials,
+`WEBHOOK_ALERTS_SEND_ENABLED: "false"`, применить `hooks`,
 затем остановить сервис `docker compose -f /opt/hooks/compose.yml stop hooks`.
 Сохранить текущие `queue.sqlite` и sidecar-файлы отдельно. Скопировать проверенный
 snapshot в `_data/queue.sqlite`, убрать прежние WAL/SHM после сохранения, назначить
@@ -440,6 +436,6 @@ snapshot в `_data/queue.sqlite`, убрать прежние WAL/SHM после
 Не восстанавливать весь `hooks_hooks_data` поверх работающей базы.
 
 Живая проверка Task 9 в этом коммите **не выполнена**. В infra PR необходимо
-записать UTC-время, registry digest/SHA, результат private pull/logout, ID Restic
+записать UTC-время, registry digest/SHA, результат анонимного pull, ID Restic
 snapshot, `integrity_check: ok`, сохранённые pending/sent ID и результат duplicate
 check. Пока эти результаты отсутствуют, Task 9 не принята и worker остаётся выключенным.

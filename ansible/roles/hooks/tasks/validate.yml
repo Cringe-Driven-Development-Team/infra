@@ -30,20 +30,3 @@
     quiet: true
   loop: "{{ hooks_env | dict2items }}"
   no_log: true
-
-- name: Проверить наличие GHCR credentials на управляющей машине
-  ansible.builtin.set_fact:
-    hooks_ghcr_credentials_present:
-      GHCR_USERNAME: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | trim | length > 0 }}"
-      GHCR_TOKEN: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') | trim | length > 0 }}"
-  no_log: true
-
-- name: Потребовать временные GHCR credentials
-  ansible.builtin.assert:
-    that:
-      - hooks_ghcr_credentials_present[item]
-    fail_msg: "Задайте {{ item }} в окружении управляющей машины; токену нужен read:packages и доступ к webhook-alerts."
-    quiet: true
-  loop:
-    - GHCR_USERNAME
-    - GHCR_TOKEN

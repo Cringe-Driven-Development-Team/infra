@@ -1,4 +1,4 @@
-"""Exercise rendered backup paths with real Restic and private pulls with Ansible.
+"""Exercise rendered backup paths with real Restic and anonymous pulls with Ansible.
 
 RESTIC_CLI may point to an unpacked binary; tests never contact a VPS or registry.
 """
@@ -26,10 +26,10 @@ class HooksChecks(unittest.TestCase):
         directory = tempfile.TemporaryDirectory(prefix="cdd-hooks-test-")
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
-        self.environment = dict(os.environ, GHCR_USERNAME="test-user",
-                                GHCR_TOKEN="fake-hooks-token-only",
-                                ANSIBLE_LOCAL_TEMP=str(self.root / "ansible-tmp"),
+        self.environment = dict(os.environ, ANSIBLE_LOCAL_TEMP=str(self.root / "ansible-tmp"),
                                 ANSIBLE_REMOTE_TEMP=str(self.root / "remote-tmp"))
+        self.environment.pop("GHCR_USERNAME", None)
+        self.environment.pop("GHCR_TOKEN", None)
         self.environment.pop("ANSIBLE_VAULT_PASSWORD_FILE", None)
         self.environment.pop("ANSIBLE_VAULT_PASSWORD", None)
         self.inventory = self.root / "inventory.yml"
@@ -56,7 +56,7 @@ class HooksChecks(unittest.TestCase):
     def import_task(self, path):
         return [{"name": "Run production tasks", "ansible.builtin.import_tasks": str(ANSIBLE / path)}]
 
-    def test_preflight_rejects_missing_credentials_and_webhook_configuration(self):
+    def test_preflight_accepts_no_registry_credentials_and_rejects_invalid_webhook_configuration(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
         result = self.play(tasks)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -68,14 +68,6 @@ class HooksChecks(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(key, result.stdout + result.stderr)
                 self.assertNotIn("fake-github-secret", result.stdout + result.stderr)
-        for key in ["GHCR_USERNAME", "GHCR_TOKEN"]:
-            with self.subTest(missing=key):
-                value = self.environment.pop(key)
-                result = self.play(tasks)
-                self.environment[key] = value
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(key, result.stdout + result.stderr)
-                self.assertNotIn("fake-hooks-token-only", result.stdout + result.stderr)
         for key, value in [("DATABASE_PATH", "/data/wrong.sqlite"), ("PORT", "9000"),
                            ("WEBHOOK_ALERTS_SEND_ENABLED", False)]:
             with self.subTest(invalid=key):
@@ -83,35 +75,37 @@ class HooksChecks(unittest.TestCase):
                 result = self.play(tasks, variables)
                 self.assertNotEqual(result.returncode, 0)
 
-    def test_private_pull_removes_credentials_on_success_and_failures(self):
+    def test_anonymous_pull_runs_without_login_and_stops_deployment_on_registry_error(self):
         binary_directory = self.root / "bin"
         binary_directory.mkdir()
         docker = binary_directory / "docker"
         shutil.copyfile(ANSIBLE / "tests/docker_stub.py", docker)
         docker.chmod(0o700)
         self.environment.update(PATH=str(binary_directory) + os.pathsep + self.environment["PATH"],
-                                TEST_DOCKER_ROOT=str(self.root))
+                                TEST_DOCKER_ROOT=str(self.root), TEST_DOCKER_ANONYMOUS_PULL="1")
         (self.root / "compose.yml").write_text("services: {}\n")
-        for failure in ["", "login", "pull"]:
+        marker = self.root / "prepared"
+        tasks = self.import_task("roles/hooks/tasks/pull-image.yml") + [{
+            "name": "Mark that deployment reached container preparation",
+            "ansible.builtin.copy": {"dest": str(marker), "content": "ready", "mode": "0600"}}]
+        for failure in ["", "pull"]:
             with self.subTest(failure=failure):
                 events_path = self.root / "docker-events.jsonl"
                 events_path.unlink(missing_ok=True)
+                marker.unlink(missing_ok=True)
                 self.environment["TEST_DOCKER_FAILURE"] = failure
-                result = self.play(self.import_task("roles/hooks/tasks/pull-image.yml"),
-                                   self.variables | {"hooks_compose_dir": str(self.root)})
+                result = self.play(tasks, self.variables | {"hooks_compose_dir": str(self.root)})
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode == 0, failure == "", output)
                 self.assertTrue(events_path.exists(), output)
                 events = [json.loads(line) for line in events_path.read_text().splitlines()]
-                self.assertEqual([event["command"] for event in events],
-                                 ["login", "logout"] if failure == "login" else ["login", "compose", "logout"])
-                if failure != "login":
-                    self.assertIn("hooks", events[1]["args"])
-                    self.assertNotIn("caddy", events[1]["args"])
-                self.assertNotIn("ghcr.io", json.loads((self.root / "docker-config.json").read_text())["auths"])
-                self.assertNotIn("fake-hooks-token-only", output)
+                self.assertEqual([event["command"] for event in events], ["compose"])
+                self.assertIn("hooks", events[0]["args"])
+                self.assertNotIn("caddy", events[0]["args"])
+                self.assertFalse((self.root / "docker-config.json").exists())
+                self.assertEqual(marker.exists(), failure == "")
                 if failure:
-                    self.assertIn("Manage Actions access", output)
+                    self.assertIn("публичный", output)
 
     def test_compose_uses_image_entrypoint_and_preserves_webhook_secrets(self):
         templates = Environment(undefined=StrictUndefined)

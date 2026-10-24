@@ -1,5 +1,5 @@
 ---
-- name: Проверить параметры сервиса и доступ к GHCR
+- name: Проверить параметры сервиса
   ansible.builtin.import_tasks: validate.yml
 
 - name: Каталог проекта Compose
@@ -28,10 +28,10 @@
     dest: "{{ hooks_compose_dir }}/compose.yml"
     mode: "0644"
 
-- name: Скачать приватный образ с временной авторизацией
+- name: Скачать публичный образ без авторизации
   ansible.builtin.import_tasks: pull-image.yml
 
-- name: Скачать недостающий публичный образ Caddy после logout
+- name: Скачать недостающий публичный образ Caddy
   community.docker.docker_compose_v2_pull:
     project_src: "{{ hooks_compose_dir }}"
     services:

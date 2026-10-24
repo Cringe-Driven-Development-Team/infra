@@ -5,7 +5,7 @@
   hosts: auxiliary
   become: true
   pre_tasks:
-    # До изменений пользователей, firewall и конфигов: Vault и GHCR должны быть готовы.
+    # До изменений пользователей, firewall и конфигов: webhook env должны быть готовы.
     - name: Проверить параметры сервиса до изменений VPS
       ansible.builtin.import_tasks: roles/hooks/tasks/validate.yml
 

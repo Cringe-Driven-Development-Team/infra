@@ -70,9 +70,6 @@ jobs:
   # Предпросмотр по проду: в PR видно, что изменит мерж. На проде ничего не меняется.
   preview:
     name: Предпросмотр прода
-    permissions:
-      contents: read
-      packages: read
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     needs: checks
     runs-on: ubuntu-latest
@@ -148,9 +145,6 @@ jobs:
       # Вспомогательная VPS (infra#54): её host key (hooks.cellestial.ru) — тоже в SSH_KNOWN_HOSTS
       - name: auxiliary.yml --check --diff
         working-directory: ansible
-        env:
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -o pipefail
           ansible-playbook -i inventory/ci.yml auxiliary.yml --check --diff \
@@ -184,9 +178,6 @@ jobs:
   # пустой prod.json (pulumi/README.md, «Разбор ошибок»), поэтому очередь без cancel-in-progress.
   apply:
     name: Выкатка на прод
-    permissions:
-      contents: read
-      packages: read
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: checks
     runs-on: ubuntu-latest
@@ -229,9 +220,6 @@ jobs:
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
       - name: auxiliary.yml
         working-directory: ansible
-        env:
-          GHCR_USERNAME: ${{ github.actor }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ansible-playbook -i inventory/ci.yml auxiliary.yml \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"

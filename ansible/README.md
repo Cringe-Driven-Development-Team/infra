@@ -190,7 +190,7 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: `/api/v1/*` — Go API (пока `503`), остальные пути — `index.html` клиента из бакета релизов (`frontend_s3_domain`); сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
-| hooks | auxiliary | Проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Private image `webhook-alerts` по registry digest; временный GHCR login/pull/logout; worker по умолчанию выключен |
+| hooks | auxiliary | Проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Публичный image `webhook-alerts` по registry digest; анонимный pull; worker по умолчанию выключен |
 | restic_backup | auxiliary | ночной CLI snapshot очереди перед `restic backup`; только snapshot, тома Caddy и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
 Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
@@ -447,7 +447,7 @@ ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 каталог `inventory` целиком, иначе Ansible объединит динамический и статический
 хосты. Для CI всегда передавайте `-i inventory/ci.yml`.
 
-В CI только шаг с playbook получает `GHCR_USERNAME` из `github.actor` и `GHCR_TOKEN`
+В CI выкатки бэка только шаг с playbook получает `GHCR_USERNAME` из `github.actor` и `GHCR_TOKEN`
 из `secrets.GITHUB_TOKEN` с разрешением job `packages: read`. Отдельного GHCR secret
 нет. После успешной или упавшей на pull выкатки проверьте отсутствие `ghcr.io` в
 Docker config пользователя, под которым выполнялся login (`become: true` — root).
@@ -489,15 +489,16 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' \
 
 `auxiliary.yml` не меняет прод-VPS. Перед его запуском нужны `vault_hooks_env`
 с `GITHUB_WEBHOOK_SECRET`, `APIDOG_SIGNATURE_KEY`, `APIDOG_SIGNATURE_HEADER`,
-доверенный SSH host key и GHCR credentials управляющей машины. Роль закрепляет
-private image по registry digest и оставляет `WEBHOOK_ALERTS_SEND_ENABLED=false`.
-Preflight выполняется до изменения VPS; отсутствие env/credentials останавливает
-playbook. Временный login → pull hooks → logout повторяет подход роли `app`;
-постоянный registry token в Vault/VPS не сохраняется. CI jobs preview/apply
-получают `packages: read`, только шаги `auxiliary.yml` — `GHCR_USERNAME`/`GHCR_TOKEN`
-из `github.actor`/`secrets.GITHUB_TOKEN`. В package Settings → Manage Actions access
-необходимо отдельно предоставить `infra` роль Read; доступ cross-repository
-проверяется реальным pull, а не наличием permission.
+доверенный SSH host key и публичный GHCR package `webhook-alerts`. Роль закрепляет
+image по registry digest и оставляет `WEBHOOK_ALERTS_SEND_ENABLED=false`.
+Preflight выполняется до изменения VPS; отсутствие обязательных webhook env
+останавливает playbook. Роль явно выполняет анонимный pull перед подготовкой
+тома и запуском контейнера; ошибка registry прекращает playbook. Auxiliary CI
+не требует registry credentials и `packages: read`. До первой выкатки владелец
+должен отдельно обеспечить публичную visibility package и проверить анонимный
+pull закреплённого digest с VPS с чистым Docker config. Публичность `.github`
+source repo сама по себе не означает публичность package. Этот PR не меняет
+visibility; до подтверждения public pull live-приёмка остаётся незавершённой.
 
 Старый том busybox автоматически получает владельца `bun:bun` перед запуском
 нового образа. Env сериализуется с сохранением буквальных `$`, кавычек и слешей.

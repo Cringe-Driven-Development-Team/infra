@@ -9,11 +9,14 @@ manifest digest `sha256:30718ed06926bff66627502361185c2ca6ebca78b20b044ce4d8bba9
 Compose разворачивает digest, SHA-тег остаётся для трассировки. Worker выключен.
 HTTPS healthcheck и изоляция auxiliary/gateway сохранены.
 
-Перед изменениями VPS preflight проверяет обязательные webhook env и наличие
-GHCR credentials. Private pull использует временный controller credential,
-logout выполняется в always. CI использует short-lived GITHUB_TOKEN с
-packages:read; package Actions access для infra проверяет оператор. В Vault
-registry token не сохраняется. Существующий root-owned volume подготавливается
+Перед изменениями VPS preflight проверяет обязательные webhook env.
+Контракт развёртывания — публичный GHCR package, анонимный pull закреплённого
+registry digest перед подготовкой контейнера. Login, registry credentials и
+package permissions в auxiliary CI не нужны. Ошибка pull блокирует дальнейшие
+задачи и указывает проверить public visibility, digest и доступность GHCR.
+Публичность `.github` source repo не означает публичность package: изменение
+visibility и проверка anonymous pull с чистым Docker config — gate владельца.
+Исполнитель visibility не меняет. Существующий root-owned volume подготавливается
 одноразовым контейнером от root; владельца bun определяет сам закреплённый image.
 
 Snapshot CLI вызывается ExecStartPre до backup. В архиве только файл
@@ -25,13 +28,14 @@ verify обнаруживает отсутствие snapshot; целостно�
 Порядок локального исполнения:
 
 - [x] RED: проверки реального rendered unit и фактических файлов в локальном
-  Restic, Compose image/entrypoint/env, preflight и logout при ошибках.
-- [x] Минимальная реализация roles/hooks, roles/restic_backup и workflow env.
+  Restic, Compose image/entrypoint/env, preflight и анонимный pull, блокирующий
+  подготовку при ошибках.
+- [x] Минимальная реализация roles/hooks, roles/restic_backup и CI без registry credentials.
 - [x] RED/GREEN: root-owned volume → запись пользователя bun на реальном Docker.
 - [x] Проверка отсутствующего snapshot в verify, документация restore.
 - [x] Полный suite, syntax/check, lint и self-review; результат в отчёте Task 9.
 
-Внешние gates принадлежат контроллеру: package Actions read для infra и private
+Внешние gates принадлежат контроллеру: публичная visibility package и anonymous
 pull с VPS; Vault webhook env; применение роли; snapshot → Restic → isolated
 restore с pending/sent и dedupe; PR/merge. Исполнитель не меняет VPS/Vault,
 не принимает новый SSH host key, не публикует ветку. Живая приёмка не завершена.
