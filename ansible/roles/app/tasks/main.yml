@@ -2,6 +2,9 @@
 - name: Validate the deployment inputs
   ansible.builtin.import_tasks: validate.yml
 
+- name: Choose the image tags
+  ansible.builtin.import_tasks: tags.yml
+
 - name: Write the application environment from Vault
   ansible.builtin.template:
     src: env.j2
@@ -38,8 +41,8 @@
     group: root
     mode: "0644"
 
-- name: Pull the API with temporary registry authentication
-  ansible.builtin.import_tasks: pull-api.yml
+- name: Pull the deployed image with temporary registry authentication
+  ansible.builtin.import_tasks: pull-image.yml
 
 - name: Pull missing public service images after GHCR logout
   community.docker.docker_compose_v2_pull:
@@ -58,11 +61,12 @@
     wait: true
     wait_timeout: "{{ app_wait_timeout }}"
 
-# Новый redis.conf — до маршрута API и итоговой проверки (handler пересоздаёт Redis и ждёт healthy)
+# Новый redis.conf — до маршрута BFF и итоговой проверки (handler пересоздаёт Redis и ждёт healthy)
 - name: Apply the Redis configuration
   ansible.builtin.meta: flush_handlers
 
-- name: Enable the API route in Caddy
+# Caddy ведёт на BFF, только когда тот выкачен; до первой выкатки BFF — заглушка 503
+- name: Route Caddy to the BFF
   ansible.builtin.template:
     src: "{{ role_path }}/../caddy/templates/Caddyfile.j2"
     dest: "{{ app_compose_dir }}/caddy/Caddyfile"
@@ -73,7 +77,7 @@
       docker run --rm -v %s:/tmp/Caddyfile:ro {{ caddy_image }}
       caddy validate --config /tmp/Caddyfile --adapter caddyfile
   vars:
-    caddy_api_enabled: true
+    caddy_bff_enabled: "{{ app_bff_tag | length > 0 }}"
   notify: Reload caddy
 
 - name: Apply the Caddy route before the public probe
