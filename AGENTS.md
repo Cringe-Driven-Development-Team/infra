@@ -11,6 +11,16 @@
 и [Ansible README](ansible/README.md). Задачи и PR веди по
 [правилам команды](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md).
 
+## Общепроектная wiki
+
+[OpenWiki в docs](https://github.com/Cringe-Driven-Development-Team/docs/tree/main/openwiki) — производный указатель; начни с [quickstart](https://github.com/Cringe-Driven-Development-Team/docs/blob/main/openwiki/quickstart.md).
+Обращайся к wiki при конкретном общепроектном вопросе или неясности; не загружай её в начале каждой задачи.
+При наличии MCP используй `openwiki_search` / `openwiki_read` с `root` — абсолютным Git-корнем актуального локального клона `docs`, а не компонента.
+Без MCP читай `openwiki/quickstart.md` и найденные Markdown-страницы напрямую; без wiki или при исчезнувшем пути ищи в `docs`.
+Перед использованием проверь актуальность клона и в его корне выполни `bun run wiki:check --against <SHA>`, передав полный актуальный SHA `docs/main`.
+Если wiki устарела, используй её только для поиска путей. Каждое нужное утверждение сверь с каноническим документом на актуальном SHA; исходный SHA wiki не подтверждает текущий код.
+Факты о реализации проверяй по актуальному коду компонента и контракту API; состояние прода — по стенду.
+
 ## Учебный проект: совместимость и прод
 
 У проекта нет живых пользователей; преподаватели проверяют прод примерно раз в месяц.
