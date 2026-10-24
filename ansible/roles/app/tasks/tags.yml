@@ -1,0 +1,31 @@
+---
+# Выкатка меняет один образ, второй остаётся тем, что уже выкачен: тег — из .env на VPS.
+- name: Read the deployed environment
+  ansible.builtin.slurp:
+    src: "{{ app_compose_dir }}/.env"
+  register: app_deployed_env
+  failed_when: false
+  no_log: true
+
+- name: Choose the image tags of this deployment
+  ansible.builtin.set_fact:
+    app_backend_tag: >-
+      {{ backend_image_tag | default(app_deployed_tags.BACKEND_IMAGE_TAG) }}
+    app_bff_tag: >-
+      {{ bff_image_tag | default(app_deployed_tags.BFF_IMAGE_TAG) }}
+  vars:
+    app_deployed_text: "{{ app_deployed_env.content | default('') | b64decode }}"
+    app_deployed_tags:
+      BACKEND_IMAGE_TAG: >-
+        {{ app_deployed_text | regex_findall('(?m)^BACKEND_IMAGE_TAG=(sha-[0-9a-f]{7,40})$')
+        | first | default('') }}
+      BFF_IMAGE_TAG: >-
+        {{ app_deployed_text | regex_findall('(?m)^BFF_IMAGE_TAG=(sha-[0-9a-f]{7,40})$')
+        | first | default('') }}
+
+# BFF ждёт healthy Go: без выкаченного бэка Compose его не поднимет
+- name: Require a deployed backend
+  ansible.builtin.assert:
+    that:
+      - app_backend_tag | length > 0
+    fail_msg: No backend is deployed on the VPS. Run deploy-backend.yml with backend_image_tag first.
