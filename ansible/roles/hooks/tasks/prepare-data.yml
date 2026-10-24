@@ -1,0 +1,22 @@
+---
+# Старый busybox создавал root-owned volume. Новый образ работает от bun;
+# uid/gid определяются внутри закреплённого образа, а не дублируются в inventory.
+- name: Подготовить существующий том для пользователя bun
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "{{ hooks_compose_dir }}/compose.yml"
+      - run
+      - --rm
+      - --no-deps
+      - --pull
+      - never
+      - --user
+      - root
+      - hooks
+      - sh
+      - -c
+      - mkdir -p /data/snapshots && chown -R bun:bun /data && chmod 700 /data /data/snapshots
+  changed_when: true

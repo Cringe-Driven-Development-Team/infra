@@ -190,8 +190,8 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: `/api/v1/*` — Go API (пока `503`), остальные пути — `index.html` клиента из бакета релизов (`frontend_s3_domain`); сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
-| hooks | auxiliary | Проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Пока сервиса нет — тестовый контейнер с `/health` |
-| restic_backup | auxiliary | ночной `restic backup` томов Docker и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
+| hooks | auxiliary | Проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Private image `webhook-alerts` по registry digest; временный GHCR login/pull/logout; worker по умолчанию выключен |
+| restic_backup | auxiliary | ночной CLI snapshot очереди перед `restic backup`; только snapshot, тома Caddy и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
 Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
 вспомогательная VPS (группа `auxiliary`, RUNBOOK, «Вспомогательная VPS»).
@@ -439,7 +439,7 @@ ssh deploy@cellestial.ru 'cd /opt/cellestial && sudo docker compose ps'
 Локальные проверки без VPS и настоящих секретов:
 
 ```bash
-COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
+RESTIC_CLI=restic COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
 ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 ```
 
@@ -484,3 +484,45 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' \
 перед возвращением автоматических выкаток согласовать image/tag в infra и снова
 включить production. Повторное скачивание старого package из GHCR по-прежнему
 требует отдельного read credential его организации.
+
+## Webhook alerts на auxiliary (infra#70)
+
+`auxiliary.yml` не меняет прод-VPS. Перед его запуском нужны `vault_hooks_env`
+с `GITHUB_WEBHOOK_SECRET`, `APIDOG_SIGNATURE_KEY`, `APIDOG_SIGNATURE_HEADER`,
+доверенный SSH host key и GHCR credentials управляющей машины. Роль закрепляет
+private image по registry digest и оставляет `WEBHOOK_ALERTS_SEND_ENABLED=false`.
+Preflight выполняется до изменения VPS; отсутствие env/credentials останавливает
+playbook. Временный login → pull hooks → logout повторяет подход роли `app`;
+постоянный registry token в Vault/VPS не сохраняется. CI jobs preview/apply
+получают `packages: read`, только шаги `auxiliary.yml` — `GHCR_USERNAME`/`GHCR_TOKEN`
+из `github.actor`/`secrets.GITHUB_TOKEN`. В package Settings → Manage Actions access
+необходимо отдельно предоставить `infra` роль Read; доступ cross-repository
+проверяется реальным pull, а не наличием permission.
+
+Старый том busybox автоматически получает владельца `bun:bun` перед запуском
+нового образа. Env сериализуется с сохранением буквальных `$`, кавычек и слешей.
+Путь `/data/queue.sqlite` фиксирован контрактом snapshot и проверяется preflight;
+секреты env хранить строками и без переводов строк.
+
+`restic-backup.service` сначала вызывает snapshot CLI в контейнере. При ошибке
+Restic не запускается. Архивируется только согласованный snapshot, тома Caddy и
+`/opt/hooks`; живые SQLite/WAL/SHM не входят в список. `verify.yml` обнаруживает
+отсутствие непустого snapshot; на первом развёртывании сначала вручную запустить
+`systemctl start restic-backup`. Полная проверка Restic/isolated restore, порядок
+возврата файла и журнал приёмки — [RUNBOOK](../RUNBOOK.md#бэкап-и-изолированное-восстановление).
+
+Проверки без VPS и секретов (Ansible dependencies из `deploy-requirements.txt`,
+коллекции из `requirements.yml`; Docker Compose и Restic из локальной установки):
+
+```bash
+RESTIC_CLI=restic COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
+ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml auxiliary.yml
+ansible-lint auxiliary.yml roles/hooks roles/restic_backup tasks/verify-hooks-snapshot.yml verify.yml
+```
+
+Restic-тест использует локальный repository, проверяет фактический состав архива
+и восстановленную SQLite. Если Restic не установлен, этот тест пропускается;
+CI устанавливает пакет явно. Для дополнительной проверки перехода root-owned
+volume → bun на локальном Docker установить `WEBHOOK_ALERTS_TEST_IMAGE` в имя
+локально собранного image сервиса (например `webhook-alerts:test`). Тест создаёт
+и удаляет только собственный Compose project/volume; registry не используется.

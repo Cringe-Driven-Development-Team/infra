@@ -1,4 +1,7 @@
 ---
+- name: Проверить параметры сервиса и доступ к GHCR
+  ansible.builtin.import_tasks: validate.yml
+
 - name: Каталог проекта Compose
   ansible.builtin.file:
     path: "{{ hooks_compose_dir }}"
@@ -25,11 +28,24 @@
     dest: "{{ hooks_compose_dir }}/compose.yml"
     mode: "0644"
 
+- name: Скачать приватный образ с временной авторизацией
+  ansible.builtin.import_tasks: pull-image.yml
+
+- name: Скачать недостающий публичный образ Caddy после logout
+  community.docker.docker_compose_v2_pull:
+    project_src: "{{ hooks_compose_dir }}"
+    services:
+      - caddy
+    policy: missing
+
+- name: Подготовить данные перед запуском образа от bun
+  ansible.builtin.import_tasks: prepare-data.yml
+
 - name: Поднять проект
   community.docker.docker_compose_v2:
     project_src: "{{ hooks_compose_dir }}"
     state: present
-    pull: missing
+    pull: never
     wait: true
     wait_timeout: 180
 

@@ -1,0 +1,39 @@
+---
+- name: Скачать приватный образ hooks с временными GHCR credentials
+  block:
+    - name: Войти в GHCR с окружением управляющей машины
+      ansible.builtin.command:
+        argv:
+          - docker
+          - login
+          - ghcr.io
+          - --username
+          - "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') }}"
+          - --password-stdin
+        stdin: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') }}"
+      no_log: true
+      changed_when: true
+
+    - name: Скачать закреплённый образ hooks
+      community.docker.docker_compose_v2_pull:
+        project_src: "{{ hooks_compose_dir }}"
+        services:
+          - hooks
+        policy: always
+
+  rescue:
+    - name: Объяснить обязательный доступ к приватному package
+      ansible.builtin.fail:
+        msg: >-
+          Не удалось войти в GHCR или скачать webhook-alerts. Проверьте GHCR_USERNAME/GHCR_TOKEN,
+          packages:read и package Settings → Manage Actions access → infra (Read).
+          До успешного pull запуск нового образа запрещён.
+
+  always:
+    - name: Удалить GHCR credentials даже при ошибке login или pull
+      ansible.builtin.command:
+        argv:
+          - docker
+          - logout
+          - ghcr.io
+      changed_when: true

@@ -7,3 +7,5 @@ firewall_rules:
 
 # Домен сервиса — выход Pulumi hooksDomain
 hooks_domain: hooks.cellestial.ru
+# Общий с ролью caddy параметр, поэтому он задан в inventory, а не defaults hooks.
+caddy_image: caddy:2.11-alpine

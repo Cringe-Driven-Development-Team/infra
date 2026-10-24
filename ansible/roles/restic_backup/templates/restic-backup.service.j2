@@ -10,5 +10,7 @@ EnvironmentFile=/etc/restic/env
 # Кэш restic: без него (у юнита нет $HOME) каждый запуск заново читает индекс репозитория из S3
 CacheDirectory=restic
 Environment=RESTIC_CACHE_DIR=/var/cache/restic
+# Ошибка snapshot прерывает запуск: старый снимок не выдаётся за свежий бэкап.
+ExecStartPre=/usr/bin/docker compose -f /opt/hooks/compose.yml exec -T hooks bun run src/cli.ts snapshot --output /data/snapshots/queue.sqlite
 ExecStart=/usr/bin/restic backup --host {{ restic_backup_host }} {{ restic_backup_paths | join(' ') }}
 ExecStartPost=/usr/bin/restic forget --host {{ restic_backup_host }} --keep-daily {{ restic_backup_keep_daily }} --keep-weekly {{ restic_backup_keep_weekly }} --prune
