@@ -1,0 +1,33 @@
+---
+# Выкатка и откат BFF (infra#58, CD/rollback frontend#4): bff_image_tag=sha-<commit> опубликованного
+# образа, без пересборки. Go остаётся на своём теге; Caddy переключается на BFF после healthy.
+- name: Deploy BFF to the single VPS
+  hosts: gateway
+  become: true
+  gather_facts: false
+  vars:
+    app_deploy_service: bff
+    app_deploy_tag: bff_image_tag
+  pre_tasks:
+    - name: Require exactly one deployment host
+      ansible.builtin.assert:
+        that:
+          - groups['gateway'] | length == 1
+          - ansible_play_hosts_all | length == 1
+        fail_msg: Supply bff_image_tag=sha-<commit> and an inventory with one gateway.
+      tags: validation
+
+    - name: Validate before changing the server
+      ansible.builtin.import_tasks: roles/app/tasks/validate.yml
+      tags: validation
+
+    - name: Gather server facts
+      ansible.builtin.setup:
+  roles:
+    - caddy
+    - app
+  post_tasks:
+    - name: Check the BFF through public Caddy
+      ansible.builtin.import_tasks: roles/app/tasks/probe-bff.yml
+      vars:
+        bff_probe_tag: "{{ bff_image_tag }}"

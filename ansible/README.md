@@ -72,6 +72,8 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 | `vault_csrf_secret` | `csrf_secret` |
 | `vault_notebooks_s3_access_key` | `notebooks_s3_access_key` |
 | `vault_notebooks_s3_secret_key` | `notebooks_s3_secret_key` |
+| `vault_session_key` | `session_key` |
+| `vault_bff_api_key` | `bff_api_key` |
 
 `notebooks_s3_*` — S3-ключ Go API к приватному бакету ноутбуков, значения — выходы Pulumi
 `notebooksAccessKey` и `notebooksSecretKey` (`pulumi stack output <имя> --show-secrets`, оба секретные;
@@ -86,6 +88,12 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 
 `app_cors_allowed_origins` там же — origin'ы, которым Go API подтверждает CORS (`CORS_ALLOWED_ORIGINS`
 в `.env`): на проде только `https://cellestial.ru`, без `localhost`. Не секрет, в vault не кладётся.
+
+`session_key` — ключ AES-256-GCM сессии BFF (`SESSION_KEY`): base64 ровно 32 байт
+(`openssl rand -base64 32`). Он один для выпуска и отката: смена ключа сбрасывает все сессии.
+`bff_api_key` — S2S-ключ запросов BFF к Go (`X-BFF-Key`, backend#41): BFF получает его как `BFF_KEY`,
+Go — как `BFF_API_KEY`; 32+ символов `[A-Za-z0-9_-]` (`openssl rand -hex 32`). Без них или в неверном
+формате выкатка останавливается до изменений VPS.
 
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
@@ -188,20 +196,19 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 | ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
 | firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
-| caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: `/api/v1/*` — Go API (пока `503`), остальные пути — `index.html` клиента из бакета релизов (`frontend_s3_domain`); сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
+| caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: все пути, кроме закрытого `/health`, — BFF (до его первой выкатки — `503 BFF is not deployed`), раздел «Клиент и BFF»; сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
 | hooks | auxiliary | Проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Публичный image `webhook-alerts` по registry digest; анонимный pull; worker по умолчанию выключен |
 | restic_backup | auxiliary | ночной CLI snapshot очереди перед `restic backup`; только snapshot, тома Caddy и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
-Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
+Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml`, `deploy-bff.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
 вспомогательная VPS (группа `auxiliary`, RUNBOOK, «Вспомогательная VPS»).
 
 ## Проект Compose
 
-Всё приложение — один проект Compose в `/opt/cellestial` на VPS. Сейчас в нём только Caddy
-(роль `caddy`); Go API и Postgres добавит задача деплоя
-([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)) в тот же `compose.yml`,
-в сеть `app` и **без** `ports:` — Caddy достаёт их по имени сервиса (`reverse_proxy api:8080`).
+Всё приложение — один проект Compose в `/opt/cellestial` на VPS: Caddy (роль `caddy`), BFF, Go API,
+Postgres и Redis (роль `app`). Сервисы приложения — в сети `app` и **без** `ports:`: Caddy достаёт BFF
+по имени сервиса (`reverse_proxy bff:3000`), BFF — Go (`http://api:8080/api/v1`).
 Смена Caddyfile применяется `caddy reload` внутри контейнера, без рестарта.
 
 ## Порты контейнеров и ufw (одна VPS)
@@ -210,7 +217,7 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 `nat`/`DOCKER`, которые обрабатываются **до** ufw: опубликованный порт откроется наружу,
 даже при `deny incoming`. Правила на стенде:
 
-- **Postgres и Go API наружу не публикуются**: только внутренняя сеть Compose
+- **Postgres, Go API и BFF наружу не публикуются**: только внутренняя сеть Compose
   (`expose`, без `-p`); при прямом доступе с хоста — bind на `127.0.0.1`
   (`-p 127.0.0.1:8080:8000`), не `0.0.0.0`;
 - наружу смотрит **только Caddy** (80/443) и ssh (22); floating IP — 1:1 DNAT на адрес
@@ -223,24 +230,32 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
   (в `DOCKER-USER` порт уже после DNAT — порт контейнера; у Caddy он те же 80/443).
   Такое правило не переживает перезагрузку — после reboot его нужно вернуть (или завести в Ansible).
 
-## Клиент
+## Клиент и BFF
 
-Клиент выкатывает CI фронта, Ansible в выкатке не участвует: сборка лежит в бакете релизов
-(`releases/{sha}/`), корневой `index.html` бакета — копия `index.html` текущего релиза.
+Браузер ходит только в BFF (infra#58, [трек BFF](https://docs.cellestial.ru/modules/2/tracks/bff)):
 
-- Caddy на всех путях, кроме `/api/v1/*`, отдаёт этот `index.html`: `rewrite` на `/index.html` и
-  `reverse_proxy` на публичный домен бакета `frontend_s3_domain` (`pulumi stack output
-  s3PublicDomain`) с `Host` бакета. `Cookie` и `Authorization` в хранилище не уходят, в ответе —
-  `Cache-Control: no-cache`.
-- В бакет уходят только `GET` и `HEAD` и без query string запроса; остальные методы получают `405`.
-- Все ответы Caddy несут `X-Content-Type-Options: nosniff`, ответ с `index.html` — ещё и
+| Путь | Куда |
+|---|---|
+| `/health` | `404` от Caddy: внутренний health BFF снаружи не виден |
+| остальные | `reverse_proxy bff:3000` |
+
+BFF сам разбирает остальное: `/api/trpc` и `/api/trpc/*` — tRPC; `/api/v1/*` и прочие `/api/*` —
+`404`, в Go не проксируются и не становятся HTML; публичные файлы сборки — по списку;
+`GET`/`HEAD` страниц с `Accept: text/html` — HTML клиента с пользователем в
+`<script id="bootstrap">` и `Cache-Control: private, no-store`. Go API напрямую снаружи недоступен.
+
+- HTML берётся из образа BFF своего коммита, не из бакета: S3-указатель `current.json` и копия
+  корневого `index.html` версию на проде больше не меняют. Чанки JS и CSS браузер грузит с CDN
+  каталога своего релиза `releases/{sha}/` (`frontend_cdn_domain`), через Caddy они не идут.
+- До первой выкатки BFF (в `.env` на VPS нет `BFF_IMAGE_TAG`) Caddy на всех путях, кроме `/health`,
+  отвечает `503` с телом `BFF is not deployed`.
+- Все ответы Caddy несут `X-Content-Type-Options: nosniff`, ответы BFF — ещё и
   `Content-Security-Policy`: скрипты и стили — только с `frontend_cdn_domain`, картинки — с него,
   `frontend_static_domain`, `avatars_public_domain` и из `data:` (иконки-маски), шрифты — с
   `frontend_static_domain`, запросы — на свой домен. Пока `caddy_csp_report_only: true`
   (`inventory/group_vars/all/vars.yml`), заголовок называется `Content-Security-Policy-Report-Only`: браузер
   пишет нарушения в консоль и ничего не блокирует. Новый источник у клиента (воркер, инлайновый
   стиль, чужой домен) — правка политики в `Caddyfile.j2`.
-- `/api/v1/*` отвечает `503` с телом `API is not deployed`, пока Go API нет в Compose.
 - Чанки браузер грузит с CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
   настраивать не нужно: CDN-ресурс Selectel на запрос с `Origin` сам отвечает
   `Access-Control-Allow-Origin: *`. Проверка:
@@ -253,14 +268,12 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 ## Проверки verify.yml
 
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
-- `https://<app_domain>/` отдаёт `index.html` клиента из бакета релизов с `Cache-Control: no-cache`,
-  в нём `<meta name="release">` — релиз `stable` из `current.json` бакета
-  (`https://<frontend_s3_domain>/current.json`). `404` от хранилища допустим, только пока
-  `current.json` нет — клиент ещё не выкатан. Домен бакета кэширует ответы на 60 секунд: сразу после
-  выкатки клиента проверка может отстать, повторить через минуту;
-- вложенный маршрут SPA (`/notebooks/…`) отдаёт тот же ответ, `POST` на него — `405`;
-- до первой выкатки API отвечает `503 API is not deployed`, после неё
-  `/api/v1/users/me` без токена возвращает JSON/401;
+- до первой выкатки BFF `https://<app_domain>/` отвечает `503 BFF is not deployed` с `nosniff`;
+- после неё (в `.env` на VPS есть `BFF_IMAGE_TAG`) — те же проверки, что в конце `deploy-bff.yml`
+  (`roles/app/tasks/probe-bff.yml`): гостевой HTML с ровно одним `<script id="bootstrap">` и
+  `{"user":null}`, `<meta name="release">` выкаченного тега, `Cache-Control: private, no-store`,
+  `nosniff` и CSP; `users.me` без сессии — tRPC `UNAUTHORIZED` (401); `/api/v1/users/me`,
+  `/api/unknown` и `/health` — `404` и не HTML;
 - сертификат от Let's Encrypt;
 - после выкатки бэка с Redis (есть `redis/redis.conf`) Redis отвечает `PONG` на `redis-cli -h redis ping` из сети `app` (одноразовый
   контейнер, пароль — через окружение);
@@ -332,6 +345,43 @@ Ansible в CI ходит по статическому `inventory/ci.yml` сво
 4. Файлы `selectel-ci.env` и `~/.ssh/cdd-ci-infra` после загрузки удалить с машины. Отозвать доступ
    CI — удалить сервисного пользователя в панели и `ci-infra.pub` из репозитория.
 
+## BFF: выкатка, проверка и откат
+
+Образ `ghcr.io/cringe-driven-development-team/bff:sha-<commit>` публикует CI фронта
+([frontend#4](https://github.com/Cringe-Driven-Development-Team/frontend/issues/4)); в нём `bff.js` и
+`index.html` клиента того же коммита. Выкатка и откат — один entrypoint `deploy-bff.yml` с явным
+тегом уже опубликованного образа, без пересборки и без `latest`:
+
+```bash
+cd ansible
+export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
+# аккаунт с доступом на чтение package bff (CI фронта — его GITHUB_TOKEN)
+export GHCR_USERNAME="$(gh api user --jq .login)"
+export GHCR_TOKEN="$(gh auth token)"
+ansible-playbook -i inventory/ci.yml deploy-bff.yml \
+  -e bff_image_tag=sha-1234567 \
+  -e deploy_key_path="$HOME/.ssh/selectel_release" \
+  --ssh-common-args='-o StrictHostKeyChecking=yes'
+unset GHCR_TOKEN GHCR_USERNAME
+```
+
+- До изменений VPS проверяются тег (`^sha-[0-9a-f]{7,40}$`), GHCR credentials в окружении и секреты
+  BFF (`session_key`, `bff_api_key`); ошибка останавливает выкатку.
+- Тег Go берётся из `.env` на VPS: выкатка BFF не трогает API, выкатка Go (`deploy-backend.yml`) —
+  BFF. Без выкаченного Go BFF не выкатывается (он ждёт `api` в состоянии healthy). Передать оба
+  тега можно и сразу: `-e backend_image_tag=… -e bff_image_tag=…` проверяются оба, скачивается тот
+  образ, который выкатывает playbook.
+- Скачивается только образ BFF (вход в GHCR — на время pull, logout всегда), Compose поднимается с
+  `--pull never --wait`: сервис должен стать healthy (`wget /health` внутри контейнера). Затем Caddy
+  переключается на BFF и выполняются проверки снаружи (`roles/app/tasks/probe-bff.yml`, раздел
+  «Проверки verify.yml»). Провал любой проверки — ошибка playbook, а не успех.
+- `SESSION_KEY` — из Vault и одинаков у выпуска и отката: действительные cookie сессии остаются
+  читаемыми. `GO_API_URL` — `app_bff_go_api_url` (`roles/app/defaults/main.yml`,
+  `http://api:8080/api/v1`); при переносе Go на VPS2 (infra#59) — её приватный адрес.
+- Откат — та же команда с прежним `bff_image_tag`: возвращаются его HTML и ссылки на ассеты его SHA
+  (их хранит retention фронта). Откат BFF не откатывает Go и БД.
+- `site.yml` тег BFF не меняет: `compose.yml` и `.env` после первой выкатки ведёт только роль `app`.
+
 ## Go API: первая выкатка и откат
 
 В одном проекте `/opt/cellestial` роль `app` управляет API, PostgreSQL 18 и Redis 8, роль
@@ -382,8 +432,9 @@ unset GHCR_TOKEN GHCR_USERNAME
 правами `0600` и `no_log`, выполняет login через stdin с `no_log`, скачивает API и
 всегда делает logout, в том числе при ошибке login или pull. Ошибка не подавляется.
 Затем скачивает отсутствующие публичные образы Caddy/Postgres и запускает Compose
-с `--pull never --wait`, чтобы API не скачивался после logout, включает API-маршрут
-и проверяет JSON/401 на `/api/v1/users/me`. `/health` доступен только внутри сети.
+с `--pull never --wait`, чтобы API не скачивался после logout. Go API наружу не
+публикуется (раздел «Клиент и BFF»): готовность — healthcheck Compose. BFF, если он
+выкачен, остаётся на своём теге из `.env` на VPS.
 
 По умолчанию образ берётся из ghcr.io/cringe-driven-development-team/backend.
 Изменение default нельзя вливать до публикации нового package и остановки старого
@@ -405,7 +456,7 @@ goose Down не запускается, прежний API должен подд
 
 `site.yml` проходит до первой выкатки без тега. После неё он сохраняет полный
 `compose.yml` и `.env`, управляет только сервисом Caddy и не меняет образ API.
-Он продолжает обновлять общий Caddyfile: клиент отдаётся из S3 как раньше.
+Он продолжает обновлять общий Caddyfile: маршрут на BFF — по тому, выкачен ли он.
 GHCR credentials для `site.yml` не нужны, API он не скачивает.
 
 S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,

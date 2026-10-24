@@ -1,8 +1,13 @@
 ---
+# Go API снаружи не публикуется (infra#58): готовность — healthcheck Compose, пользовательский путь
+# проверяет deploy-bff.yml. BFF, если выкачен, остаётся на своём теге.
 - name: Deploy backend to the single VPS
   hosts: gateway
   become: true
   gather_facts: false
+  vars:
+    app_deploy_service: api
+    app_deploy_tag: backend_image_tag
   pre_tasks:
     - name: Require exactly one deployment host
       ansible.builtin.assert:
@@ -21,21 +26,3 @@
   roles:
     - caddy
     - app
-  post_tasks:
-    - name: Check the API through public Caddy
-      ansible.builtin.uri:
-        url: "https://{{ app_domain }}/api/v1/users/me"
-        status_code: 401
-        return_content: true
-      delegate_to: localhost
-      become: false
-      register: backend_api_probe
-      until: backend_api_probe is succeeded
-      retries: 6
-      delay: 5
-
-    - name: Confirm that the API returned JSON
-      ansible.builtin.assert:
-        that:
-          - backend_api_probe.json is defined
-        fail_msg: Caddy did not return an API JSON response.
