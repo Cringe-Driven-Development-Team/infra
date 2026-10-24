@@ -20,6 +20,8 @@ from jinja2 import Environment, StrictUndefined
 import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1]
+# Секреты BFF в формате, который принимает validate.yml
+BFF_VAULT = b"vault_session_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nvault_bff_api_key: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\n"
 
 
 class DeploymentChecks(unittest.TestCase):
@@ -61,6 +63,8 @@ class DeploymentChecks(unittest.TestCase):
             'jwt_secret: "{{ vault_jwt_secret }}"\n'
             'csrf_secret: "{{ vault_csrf_secret }}"\n'
             'redis_password: "{{ vault_redis_password }}"\n'
+            'session_key: "{{ vault_session_key }}"\n'
+            'bff_api_key: "{{ vault_bff_api_key }}"\n'
             'notebooks_s3_access_key: fake-key\nnotebooks_s3_secret_key: fake-secret\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
@@ -73,6 +77,7 @@ class DeploymentChecks(unittest.TestCase):
             vault.encrypt(
                 b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
                 b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n"
+                + BFF_VAULT
             )
         )
         password_file = self.root / "vault-pass"
@@ -80,17 +85,20 @@ class DeploymentChecks(unittest.TestCase):
         password_file.chmod(0o600)
         self.environment["ANSIBLE_VAULT_PASSWORD_FILE"] = str(password_file)
 
-    def validate(self, tag=None):
+    def validate(self, tag=None, playbook="deploy-backend.yml", variable="backend_image_tag",
+                 extra=None):
         command = [
             shutil.which("ansible-playbook") or "ansible-playbook",
             "-i",
             str(self.inventory),
-            str(ANSIBLE / "deploy-backend.yml"),
+            str(ANSIBLE / playbook),
             "--tags",
             "validation",
         ]
         if tag is not None:
-            command += ["-e", json.dumps({"backend_image_tag": tag})]
+            command += ["-e", json.dumps({variable: tag})]
+        if extra:
+            command += ["-e", json.dumps(extra)]
         return subprocess.run(
             command,
             cwd=ANSIBLE,
@@ -110,6 +118,82 @@ class DeploymentChecks(unittest.TestCase):
                 result = self.validate(tag)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("sha-", result.stdout + result.stderr)
+
+    def test_bff_deploy_requires_its_own_tag(self):
+        result = self.validate("sha-1234567", "deploy-bff.yml", "bff_image_tag")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for tag in [None, "", "latest", "sha-1234567;echo bad"]:
+            with self.subTest(tag=tag):
+                result = self.validate(tag, "deploy-bff.yml", "bff_image_tag")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("bff_image_tag=sha-", result.stdout + result.stderr)
+        # тег бэка необязателен, но если передан — проверяется
+        result = self.validate("sha-1234567", "deploy-bff.yml", "bff_image_tag",
+                               {"backend_image_tag": "main"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("backend_image_tag=sha-", result.stdout + result.stderr)
+
+    def test_invalid_bff_secrets_are_rejected_without_leaks(self):
+        vault = VaultLib([("default", VaultSecret(b"test-vault-password-only"))])
+        base = (b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
+                b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n")
+        for secrets in [
+            b"vault_session_key: c2hvcnQ=\nvault_bff_api_key: " + b"f" * 64 + b"\n",
+            b"vault_session_key: " + b"A" * 43 + b"=\nvault_bff_api_key: short-leaky-key\n",
+        ]:
+            with self.subTest(secrets=secrets):
+                (self.root / "group_vars/all/vault.yml").write_bytes(vault.encrypt(base + secrets))
+                result = self.validate("sha-1234567", "deploy-bff.yml", "bff_image_tag")
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("vault_session_key must be base64", output)
+                self.assertNotIn("short-leaky-key", output)
+
+    def test_deployment_keeps_the_other_deployed_tag(self):
+        playbook = self.root / "tags-test.yml"
+        playbook.write_text(yaml.safe_dump([{
+            "name": "Exercise the real tag selection", "hosts": "gateway", "gather_facts": False,
+            "vars": {"app_compose_dir": str(self.root),
+                     "ansible_python_interpreter": sys.executable},
+            "tasks": [
+                {"name": "Choose tags",
+                 "ansible.builtin.import_tasks": str(ANSIBLE / "roles/app/tasks/tags.yml")},
+                {"name": "Show tags", "ansible.builtin.debug": {
+                    "msg": "TAGS {{ app_backend_tag }} {{ app_bff_tag | default('-', true) }}"}},
+            ],
+        }]))
+
+        def run(env_file, **tags):
+            env_path = self.root / ".env"
+            env_path.unlink(missing_ok=True)
+            if env_file is not None:
+                env_path.write_text(env_file)
+            command = [shutil.which("ansible-playbook") or "ansible-playbook",
+                       "-i", str(self.inventory), str(playbook)]
+            if tags:
+                command += ["-e", json.dumps(tags)]
+            return subprocess.run(command, cwd=ANSIBLE, env=self.environment,
+                                  capture_output=True, text=True, timeout=30)
+
+        deployed = "BACKEND_IMAGE_TAG=sha-aaaaaaa\nBFF_IMAGE_TAG=sha-bbbbbbb\nJWT_SECRET=\"leaky\"\n"
+        cases = [
+            (deployed, {"bff_image_tag": "sha-ccccccc"}, "TAGS sha-aaaaaaa sha-ccccccc"),
+            (deployed, {"backend_image_tag": "sha-ddddddd"}, "TAGS sha-ddddddd sha-bbbbbbb"),
+            ("BACKEND_IMAGE_TAG=sha-aaaaaaa\n", {"backend_image_tag": "sha-ddddddd"},
+             "TAGS sha-ddddddd -"),
+            (None, {"backend_image_tag": "sha-ddddddd"}, "TAGS sha-ddddddd -"),
+        ]
+        for env_file, tags, expected in cases:
+            with self.subTest(tags=tags, deployed=env_file):
+                result = run(env_file, **tags)
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, output)
+                self.assertIn(expected, output)
+                self.assertNotIn("leaky", output)
+        # BFF без выкаченного бэка не выкатывается
+        result = run(None, bff_image_tag="sha-ccccccc")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("deploy-backend.yml", result.stdout + result.stderr)
 
     def test_missing_registry_credentials_are_rejected_without_leaks(self):
         for name in ["GHCR_USERNAME", "GHCR_TOKEN"]:
@@ -150,7 +234,7 @@ class DeploymentChecks(unittest.TestCase):
         (self.root / "group_vars/all/vault.yml").write_bytes(
             vault.encrypt(
                 b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
-                b"vault_redis_password: fake-redis-password-0123\n"
+                b"vault_redis_password: fake-redis-password-0123\n" + BFF_VAULT
             )
         )
         result = self.validate("sha-1234567")
@@ -165,6 +249,7 @@ class DeploymentChecks(unittest.TestCase):
                     vault.encrypt(
                         b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
                         b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: \"" + password + b"\"\n"
+                        + BFF_VAULT
                     )
                 )
                 result = self.validate("sha-1234567")
@@ -182,11 +267,11 @@ class DeploymentChecks(unittest.TestCase):
         playbook.write_text(yaml.safe_dump([{
             "name": "Exercise the real registry-auth tasks with a Docker CLI substitute",
             "hosts": "gateway", "gather_facts": False,
-            "vars": {"app_compose_dir": str(self.root),
+            "vars": {"app_compose_dir": str(self.root), "app_deploy_service": "bff",
                      "ansible_python_interpreter": sys.executable},
             "tasks": [{"name": "Run the production auth block",
                        "ansible.builtin.import_tasks": str(
-                           ANSIBLE / "roles/app/tasks/pull-api.yml")}],
+                           ANSIBLE / "roles/app/tasks/pull-image.yml")}],
         }]))
         self.environment["PATH"] = str(binary_directory) + os.pathsep + self.environment["PATH"]
         self.environment["TEST_DOCKER_ROOT"] = str(self.root)
@@ -226,7 +311,8 @@ class DeploymentChecks(unittest.TestCase):
         variables.update(
             yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text())
         )
-        variables.update(backend_image_tag="sha-1234567", s3_region="ru-7",
+        variables.update(app_backend_tag="sha-1234567", app_bff_tag="sha-7654321",
+                         app_domain="app.example.org", s3_region="ru-7",
                          s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
                          avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
                          app_cors_allowed_origins="https://app.example.org")
@@ -251,7 +337,7 @@ class DeploymentChecks(unittest.TestCase):
         ]:
             with self.subTest(secret=secret):
                 variables.update(postgres_password=secret, jwt_secret=secret, csrf_secret=secret,
-                                 redis_password=secret,
+                                 redis_password=secret, session_key=secret, bff_api_key=secret,
                                  notebooks_s3_access_key=secret, notebooks_s3_secret_key=secret)
                 (self.root / ".env").write_text(env_template.render(variables))
                 compose_environment = dict(os.environ)
@@ -331,6 +417,27 @@ class DeploymentChecks(unittest.TestCase):
                                  "https://avatars.example.org")
                 self.assertEqual(services["api"]["environment"]["CORS_ALLOWED_ORIGINS"],
                                  "https://app.example.org")
+                # BFF: свой тег, ключи из Vault, один S2S-ключ с Go, порт не публикуется
+                bff = services["bff"]
+                self.assertEqual(bff["image"], "ghcr.io/cringe-driven-development-team/bff:sha-7654321")
+                for name in ["SESSION_KEY", "BFF_KEY"]:
+                    self.assertEqual(bff["environment"][name].replace("$$", "$"), secret)
+                self.assertEqual(services["api"]["environment"]["BFF_API_KEY"].replace("$$", "$"),
+                                 secret)
+                self.assertEqual(bff["environment"]["APP_ORIGIN"], "https://app.example.org")
+                self.assertEqual(bff["environment"]["GO_API_URL"], "http://api:8080/api/v1")
+                self.assertNotIn("PORT", bff["environment"])
+                self.assertEqual(bff["depends_on"]["api"]["condition"], "service_healthy")
+                self.assertFalse(bff.get("ports"))
+        # до первой выкатки BFF сервиса нет, Compose поднимает остальное
+        variables.update(app_bff_tag="")
+        (self.root / "compose.yml").write_text(compose_template.render(variables))
+        (self.root / ".env").write_text(env_template.render(variables))
+        result = subprocess.run(
+            [*compose, "-f", str(self.root / "compose.yml"), "config", "--format", "json"],
+            capture_output=True, text=True, timeout=30, check=True, env=compose_environment)
+        self.assertNotIn("bff", json.loads(result.stdout)["services"])
+        self.assertNotIn("BFF_IMAGE_TAG", (self.root / ".env").read_text())
 
     def test_registry_switch_and_explicit_rollback_image(self):
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
@@ -340,7 +447,7 @@ class DeploymentChecks(unittest.TestCase):
         expected = "ghcr.io/cringe-driven-development-team/backend"
         for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
             with self.subTest(override=override):
-                values = dict(variables)
+                values = dict(variables, app_bff_tag="")
                 if override is not None:
                     values["app_backend_image"] = override
                 rendered = template.render(values).replace(
@@ -352,52 +459,49 @@ class DeploymentChecks(unittest.TestCase):
                                  {"caddy_data", "caddy_config", "postgres_data", "redis_data"})
                 self.assertFalse(data["services"]["api"].get("ports"))
 
-    def test_caddy_preserves_frontend_in_both_states(self):
+    def render_caddy(self, **values):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["bool"] = to_bool
         template = templates.from_string(
             (ANSIBLE / "roles/caddy/templates/Caddyfile.j2").read_text()
         )
+        return template.render(dict(app_domain="cellestial.ru",
+            frontend_cdn_domain="cdn.example.org",
+            frontend_static_domain="static.example.org",
+            avatars_public_domain="avatars.example.org"), **values)
+
+    def test_caddy_routes_to_bff_once_it_is_deployed(self):
         csp = ("default-src 'none'; script-src https://cdn.example.org; "
                "style-src https://cdn.example.org; "
                "img-src https://cdn.example.org https://static.example.org "
                "https://avatars.example.org data:; "
                "font-src https://static.example.org; connect-src 'self'; base-uri 'none'; "
                "form-action 'self'; frame-ancestors 'none'")
-        for deployed in [False, True]:
-            rendered = template.render(app_domain="cellestial.ru",
-                frontend_s3_domain="frontend.example.org",
-                frontend_cdn_domain="cdn.example.org",
-                frontend_static_domain="static.example.org",
-                avatars_public_domain="avatars.example.org",
-                caddy_app_environment={"stat": {"exists": deployed}})
-            self.assertIn("reverse_proxy https://frontend.example.org", rendered)
-            self.assertIn("header_up -Cookie", rendered)
-            self.assertIn("header_up -Authorization", rendered)
-            self.assertIn("rewrite * /index.html?", rendered)
-            self.assertEqual("reverse_proxy api:8080" in rendered, deployed)
-            self.assertEqual('respond "API is not deployed" 503' in rendered, not deployed)
-            self.assertIn("\tX-Content-Type-Options nosniff\n", rendered)
-            # по умолчанию политика только сообщает о нарушениях
-            self.assertIn(f'header_down Content-Security-Policy-Report-Only "{csp}"', rendered)
-            # блок с политикой не съедает перевод строки перед адресом сайта
-            self.assertIn("\ncellestial.ru {\n", rendered)
+        # caddy_bff_enabled — из роли app, caddy_bff_deployed — из .env в роли caddy
+        for values, deployed in [({"caddy_bff_deployed": False}, False),
+                                 ({"caddy_bff_deployed": True}, True),
+                                 ({"caddy_bff_deployed": False, "caddy_bff_enabled": "True"}, True),
+                                 ({"caddy_bff_deployed": True, "caddy_bff_enabled": False}, False)]:
+            with self.subTest(values=values):
+                rendered = self.render_caddy(**values)
+                self.assertEqual("reverse_proxy bff:3000" in rendered, deployed)
+                self.assertEqual('respond "BFF is not deployed" 503' in rendered, not deployed)
+                # Go и бакет релизов наружу больше не проксируются, внутренний /health закрыт
+                self.assertNotIn("api:8080", rendered)
+                self.assertNotIn("selstorage", rendered)
+                self.assertNotIn("header_up -Cookie", rendered)
+                self.assertIn("handle /health {\n\t\trespond 404\n\t}", rendered)
+                self.assertIn("\tX-Content-Type-Options nosniff\n", rendered)
+                self.assertEqual(
+                    f'header_down Content-Security-Policy-Report-Only "{csp}"' in rendered, deployed)
+                # блок с политикой не съедает перевод строки перед адресом сайта
+                self.assertIn("\ncellestial.ru {\n", rendered)
 
     def test_caddy_enforces_csp_when_report_only_is_off(self):
-        templates = Environment(undefined=StrictUndefined)
-        templates.filters["bool"] = to_bool
-        template = templates.from_string(
-            (ANSIBLE / "roles/caddy/templates/Caddyfile.j2").read_text()
-        )
         # строка "false" — значение из -e caddy_csp_report_only=false
         for report_only in [False, "false"]:
-            rendered = template.render(app_domain="cellestial.ru",
-                frontend_s3_domain="frontend.example.org",
-                frontend_cdn_domain="cdn.example.org",
-                frontend_static_domain="static.example.org",
-                avatars_public_domain="avatars.example.org",
-                caddy_csp_report_only=report_only,
-                caddy_app_environment={"stat": {"exists": True}})
+            rendered = self.render_caddy(caddy_csp_report_only=report_only,
+                                         caddy_bff_deployed=True)
             self.assertIn('header_down Content-Security-Policy "default-src ', rendered)
             self.assertNotIn("Content-Security-Policy-Report-Only", rendered)
 

@@ -263,6 +263,24 @@ healthy у API и Postgres, сохранность данных после от�
 Архив, его SHA256 и результаты load-проверки хранить в журнале окна вне checkout;
 повторный pull старого package остаётся отдельной операцией с прежним read credential.
 
+## Выкатка BFF (infra#58)
+
+Схема: браузер → Caddy → BFF (`bff:3000`) → Go (`api:8080`, только сеть `app`). Снаружи — HTML,
+`/api/trpc` и публичные файлы через BFF; `/api/v1/*` и прочие `/api/*` — `404` от BFF (не HTML),
+`/health` — `404` от Caddy. Чанки JS и CSS — с CDN каталога своего релиза. До первой выкатки BFF
+домен отвечает `503 BFF is not deployed`. Подробно — [ansible/README.md](ansible/README.md#клиент-и-bff).
+
+1. Go выкачен (`deploy-backend.yml`), в Vault есть `vault_session_key` и `vault_bff_api_key`.
+2. `deploy-bff.yml -e bff_image_tag=sha-<commit>` с GHCR credentials, читающими package `bff`
+   (команда — [ansible/README.md](ansible/README.md#bff-выкатка-проверка-и-откат)). Playbook сам
+   проверяет снаружи гостевой HTML с bootstrap и релизом своего тега, `UNAUTHORIZED` у `users.me`
+   без сессии и `404` на `/api/v1`, `/api/unknown`, `/health`.
+3. Руками — пользовательский путь: вход, защищённый RPC (список блокнотов), прямое открытие
+   `/notebooks/<id>`. Затем `verify.yml`.
+4. Откат — шаг 2 с прежним тегом; после него те же проверки. `SESSION_KEY` не меняется, сессия
+   остаётся. Go и БД откат BFF не трогает.
+5. Недоступность Go: RPC отвечает tRPC `BAD_GATEWAY` (502), HTML — `503` без приложения, а не SPA.
+
 ## Вспомогательная VPS (infra#54)
 
 Отдельная VPS под сервис вебхуков GitHub/Apidog → Telegram: `https://hooks.cellestial.ru`. Caddy и

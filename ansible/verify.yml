@@ -14,110 +14,44 @@
           - groups['all'] | difference(groups['gateway']) | difference(groups['auxiliary'] | default([])) | length == 0
         fail_msg: "Ожидалась одна прод-VPS и вспомогательные (auxiliary), в inventory: {{ groups['all'] }}"
 
-    # current.json в бакете релизов пишет CI фронта при выкатке: { "stable": "{sha}", ... }; пока
-    # его нет, клиент не выкатан. Устаревший frontend_s3_domain (стек пересоздан, бакет новый)
-    # здесь не отвечает вовсе — под видом «клиент ещё не выкатан» он проверку не пройдёт.
-    - name: Указатель релиза в бакете релизов
-      ansible.builtin.uri:
-        url: "https://{{ frontend_s3_domain }}/current.json"
-        status_code: [200, 404]
-        return_content: true
-      register: release_pointer
-
-    - name: Релиз клиента, который обязан отдавать домен
-      ansible.builtin.set_fact:
-        client_release: >-
-          {{ (release_pointer.content | from_json).stable if release_pointer.status == 200 else '' }}
-
-    # Caddy отдаёт корневой index.html бакета релизов клиента. 404 от хранилища допустим, только
-    # пока клиент не выкатан.
-    - name: HTTPS на домене отвечает
-      ansible.builtin.uri:
-        url: "https://{{ app_domain }}/"
-        status_code: [200, 404]
-        return_content: true
-      register: https_ok
-      until: https_ok is succeeded
-      retries: 5
-      delay: 5
-
-    - name: Ответ пришёл из бакета релизов и не кэшируется
-      ansible.builtin.assert:
-        that:
-          - https_ok.cache_control | default('') == 'no-cache'
-          - https_ok.status == 404 or https_ok.content is search('<meta name="release"')
-        fail_msg: >-
-          Домен {{ app_domain }} отвечает не index.html клиента:
-          статус {{ https_ok.status }}, Cache-Control {{ https_ok.cache_control | default('нет') }}
-
-    # Заголовки, ограничивающие последствия XSS. Политика — в одном из двух заголовков: до прохода
-    # по экранам без нарушений она только сообщает о них (caddy_csp_report_only).
-    - name: Ответ несёт nosniff и Content-Security-Policy
-      ansible.builtin.assert:
-        that:
-          - https_ok.x_content_type_options | default('') == 'nosniff'
-          - >-
-            (https_ok.content_security_policy_report_only
-            if caddy_csp_report_only | default(true) | bool
-            else https_ok.content_security_policy) | default('') is search("default-src 'none'")
-        fail_msg: >-
-          {{ app_domain }} отвечает без X-Content-Type-Options: nosniff или без
-          Content-Security-Policy{{ '-Report-Only' if caddy_csp_report_only | default(true) | bool else '' }}
-
-    - name: Клиент ещё не выкатан
-      ansible.builtin.debug:
-        msg: "В бакете нет current.json: {{ app_domain }} отвечает {{ https_ok.status }} до первой выкатки клиента"
-      when: client_release == ''
-
-    # Домен бакета кэширует ответы на 60 секунд: сразу после выкатки корень может отставать от
-    # current.json — повторить через минуту.
-    - name: Домен отдаёт релиз stable из current.json
-      ansible.builtin.assert:
-        that:
-          - https_ok.status == 200
-          - https_ok.content is search('<meta name="release" content="' ~ client_release ~ '"')
-        fail_msg: >-
-          В бакете stable = {{ client_release }}, а {{ app_domain }} отвечает другим:
-          статус {{ https_ok.status }}
-      when: client_release != ''
-
-    # Прямой заход на маршрут SPA: тот же index.html, а не 404 от несуществующего ключа
-    - name: Вложенный маршрут отдаёт тот же ответ
-      ansible.builtin.uri:
-        url: "https://{{ app_domain }}/notebooks/verify?from=verify"
-        status_code: [200, 404]
-        return_content: true
-      register: spa_route
-      failed_when: spa_route.status != https_ok.status or spa_route.content != https_ok.content
-
-    # В бакет уходят только GET и HEAD
-    - name: Запись на путь клиента отклоняется
-      ansible.builtin.uri:
-        url: "https://{{ app_domain }}/notebooks/verify"
-        method: POST
-        status_code: 405
-
-    - name: Detect a backend deployment on the VPS
-      ansible.builtin.stat:
-        path: "{{ app_compose_dir }}/.env"
+    # BFF выкачен, если в .env на VPS есть BFF_IMAGE_TAG (роль app); до первой выкатки Caddy отвечает
+    # заглушкой. Тег — для проверки релиза в HTML.
+    - name: Окружение приложения на VPS
+      ansible.builtin.slurp:
+        src: "{{ app_compose_dir }}/.env"
       delegate_to: "{{ groups['gateway'][0] }}"
       become: true
-      register: verify_backend_environment
+      register: verify_app_environment
+      failed_when: false
+      no_log: true
 
-    - name: Check the API route before or after deployment
+    - name: Выкачен ли BFF
+      ansible.builtin.set_fact:
+        verify_bff_tag: >-
+          {{ verify_app_environment.content | default('') | b64decode
+          | regex_findall('(?m)^BFF_IMAGE_TAG=(sha-[0-9a-f]{7,40})$')
+          | first | default('') }}
+
+    - name: До первой выкатки BFF домен отвечает заглушкой
       ansible.builtin.uri:
-        url: "https://{{ app_domain }}/api/v1/users/me"
-        status_code: "{{ 401 if verify_backend_environment.stat.exists else 503 }}"
+        url: "https://{{ app_domain }}/"
+        status_code: 503
         return_content: true
-      register: api_route
+      register: verify_placeholder
+      until: verify_placeholder is succeeded
+      retries: 5
+      delay: 5
+      failed_when: >-
+        verify_placeholder.status != 503
+        or verify_placeholder.content != 'BFF is not deployed'
+        or verify_placeholder.x_content_type_options | default('') != 'nosniff'
+      when: verify_bff_tag == ''
 
-    - name: Confirm the expected API response
-      ansible.builtin.assert:
-        that:
-          - >-
-            (api_route.json is defined) if verify_backend_environment.stat.exists
-            else (api_route.content == 'API is not deployed')
-        fail_msg: The API route must return API JSON after deployment, or the initial placeholder.
+    - name: BFF отвечает снаружи как положено
+      ansible.builtin.import_tasks: roles/app/tasks/probe-bff.yml
+      vars:
+        bff_probe_tag: "{{ verify_bff_tag }}"
+      when: verify_bff_tag != ''
 
     - name: Выдать информацию о сертификате
       ansible.builtin.shell:

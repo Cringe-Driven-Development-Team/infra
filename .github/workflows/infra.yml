@@ -63,7 +63,7 @@ jobs:
       - name: Ansible — синтаксис и тесты
         working-directory: ansible
         run: |
-          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml auxiliary.yml
+          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-bff.yml auxiliary.yml
           COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
 
   # Предпросмотр по проду: в PR видно, что изменит мерж. На проде ничего не меняется.

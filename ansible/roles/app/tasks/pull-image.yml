@@ -1,5 +1,7 @@
 ---
-- name: Pull the private API image with temporary GHCR credentials
+# app_deploy_service — выкатываемый сервис (api или bff), задаёт playbook. Второй частный образ уже
+# на VPS: он выкачен прежней выкаткой.
+- name: Pull the private image with temporary GHCR credentials
   block:
     - name: Log in to GHCR using the controller environment
       ansible.builtin.command:
@@ -14,11 +16,11 @@
       no_log: true
       changed_when: true
 
-    - name: Pull the requested private API image
+    - name: Pull the requested private image
       community.docker.docker_compose_v2_pull:
         project_src: "{{ app_compose_dir }}"
         services:
-          - api
+          - "{{ app_deploy_service }}"
         policy: always
 
   always:
