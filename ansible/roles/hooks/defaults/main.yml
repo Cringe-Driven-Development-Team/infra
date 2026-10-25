@@ -1,13 +1,15 @@
 # Проект Compose: наружу публикуется только Caddy.
 hooks_compose_dir: /opt/hooks
 # Registry manifest digest публикации .github main (Task 8), не локальный Docker image ID.
-hooks_image: ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:30718ed06926bff66627502361185c2ca6ebca78b20b044ce4d8bba92f12e858
+hooks_image: ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:4424881b11af1f32a690831d5c9b87351852b4767e182e28f8703e68a90d7622
 # Только трассировка исходного коммита; Compose разворачивает hooks_image по digest.
-hooks_image_source_tag: ghcr.io/cringe-driven-development-team/webhook-alerts:sha-08e7968fa0d39dd5f25fe8495c58d78006a26653
+hooks_image_source_tag: ghcr.io/cringe-driven-development-team/webhook-alerts:sha-4a4064dd70939cfc043cfb625d86e07956616212
+hooks_proxy_image: ghcr.io/xtls/xray-core@sha256:d5c3729dfeed7c412af17a63b941c48c76ba68afee5b6184fe4078f8fa8bedcc
 hooks_port: 8080
 hooks_command: []
 hooks_data_path: /data
 # Worker выключен до отдельной приёмки/переключения Task 10. Секреты — только Vault.
 hooks_env: >-
-  {{ {'DATABASE_PATH': '/data/queue.sqlite', 'PORT': '8080', 'WEBHOOK_ALERTS_SEND_ENABLED': 'false'}
+  {{ {'DATABASE_PATH': '/data/queue.sqlite', 'PORT': '8080', 'WEBHOOK_ALERTS_SEND_ENABLED': 'false',
+       'TELEGRAM_PROXY_URL': 'http://telegram-proxy:2080'}
      | combine(vault_hooks_env | default({})) }}

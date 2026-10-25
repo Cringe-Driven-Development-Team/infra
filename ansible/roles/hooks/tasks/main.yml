@@ -22,6 +22,25 @@
     mode: "0600"
   no_log: true
 
+- name: Каталог конфигурации Telegram proxy
+  ansible.builtin.file:
+    path: "{{ hooks_compose_dir }}/proxy"
+    state: directory
+    mode: "0700"
+    owner: "65532"
+    group: "65532"
+
+- name: Конфигурация Telegram proxy
+  ansible.builtin.template:
+    src: xray.json.j2
+    dest: "{{ hooks_compose_dir }}/proxy/config.json"
+    mode: "0600"
+    owner: "65532"
+    group: "65532"
+  no_log: true
+  diff: false
+  notify: Restart telegram proxy
+
 - name: Файл compose.yml
   ansible.builtin.template:
     src: compose.yml.j2
@@ -36,6 +55,13 @@
     project_src: "{{ hooks_compose_dir }}"
     services:
       - caddy
+    policy: missing
+
+- name: Скачать публичный образ Telegram proxy
+  community.docker.docker_compose_v2_pull:
+    project_src: "{{ hooks_compose_dir }}"
+    services:
+      - telegram-proxy
     policy: missing
 
 - name: Подготовить данные перед запуском образа от bun

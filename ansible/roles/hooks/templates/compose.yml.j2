@@ -24,6 +24,8 @@ services:
 {% endif %}
     restart: unless-stopped
     env_file: .env
+    depends_on:
+      - telegram-proxy
     volumes:
       - hooks_data:{{ hooks_data_path }}
     healthcheck:
@@ -33,9 +35,20 @@ services:
       retries: 3
     networks:
       - hooks
+      - telegram_proxy
+
+  telegram-proxy:
+    image: {{ hooks_proxy_image }}
+    restart: unless-stopped
+    command: ["run", "-c", "/etc/xray/config.json"]
+    volumes:
+      - ./proxy:/etc/xray:ro
+    networks:
+      - telegram_proxy
 
 networks:
   hooks: {}
+  telegram_proxy: {}
 
 volumes:
   caddy_data: {}
