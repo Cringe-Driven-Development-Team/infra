@@ -15,8 +15,10 @@
 
 [OpenWiki в docs](https://github.com/Cringe-Driven-Development-Team/docs/tree/main/openwiki) — производный указатель; начни с [quickstart](https://github.com/Cringe-Driven-Development-Team/docs/blob/main/openwiki/quickstart.md).
 Обращайся к wiki при конкретном общепроектном вопросе или неясности; не загружай её в начале каждой задачи.
-При наличии MCP используй `openwiki_search` / `openwiki_read` с `root` — абсолютным Git-корнем актуального локального клона `docs`, а не компонента.
-Без MCP читай `openwiki/quickstart.md` и найденные Markdown-страницы напрямую; без wiki или при исчезнувшем пути ищи в `docs`.
+При наличии MCP найди соседний клон `docs` относительно основного checkout (работает и из worktree):
+`git -C "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/../docs" rev-parse --show-toplevel`.
+Проверь, что его `origin` указывает на `Cringe-Driven-Development-Team/docs`; полученный абсолютный путь передавай как `root` в `openwiki_search` / `openwiki_read`, а не корень компонента. Определяй путь заново, не рассчитывай на память между сессиями.
+Без MCP читай `openwiki/quickstart.md` в соседнем `docs` или по ссылке выше. Если соседнего клона нет, используй GitHub Markdown и предложи клонировать `docs` рядом; при исчезнувшем пути ищи в `docs` напрямую.
 Перед использованием проверь актуальность клона и в его корне выполни `bun run wiki:check --against <SHA>`, передав полный актуальный SHA `docs/main`.
 Если wiki устарела, используй её только для поиска путей. Каждое нужное утверждение сверь с каноническим документом на актуальном SHA; исходный SHA wiki не подтверждает текущий код.
 Факты о реализации проверяй по актуальному коду компонента и контракту API; состояние прода — по стенду.
