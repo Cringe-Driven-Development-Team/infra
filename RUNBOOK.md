@@ -486,8 +486,10 @@ snapshot в `_data/queue.sqlite`, убрать прежние WAL/SHM после
   обычного восстановления выбирать этот или более поздний чистый snapshot;
   первый тестовый snapshot содержит синтетическую строку `pending`.
 
-GitHub organization webhook и настоящий Apidog target пока не подключены;
-worker остаётся выключенным до приёмки Task 10.
+На момент проверки 2026-10-24 GitHub organization webhook и настоящий Apidog
+target ещё не были подключены. На 2026-10-25 оба настроены; доставка от настоящего
+Apidog target ещё не подтверждена. Worker остаётся выключенным
+(`WEBHOOK_ALERTS_SEND_ENABLED=false`), cutover ожидает отдельной приёмки Task 10.
 
 ## Telegram proxy на auxiliary
 
