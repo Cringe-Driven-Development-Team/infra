@@ -493,22 +493,22 @@ worker остаётся выключенным до приёмки Task 10.
 
 Секретная конфигурация VLESS Reality хранится как `vault_hooks_proxy_config`
 в Ansible Vault. Не печатать URI, config JSON, `.env` и token-bearing URL.
-На VPS `/opt/hooks/proxy/sing-box.json` должен иметь режим 0600, каталог —
-0700. Только `hooks` и `telegram-proxy` разделяют сеть `telegram_proxy`;
+На VPS `/opt/hooks/proxy/config.json` должен иметь режим 0600, каталог —
+0700, оба принадлежат UID/GID 65532. Только `hooks` и `telegram-proxy` разделяют сеть `telegram_proxy`;
 порт 2080 не публикуется. Разрешён ровно `api.telegram.org`, остальные
-назначения отклоняются. Caddy и очередь сохраняют прежние сети и volumes.
+назначения попадают в первый blackhole outbound. Caddy и очередь сохраняют прежние сети и volumes.
 
 Проверки с VPS без раскрытия конфигурации:
 
 ```bash
 sudo docker compose -f /opt/hooks/compose.yml config --quiet
 sudo docker compose -f /opt/hooks/compose.yml ps
-sudo docker compose -f /opt/hooks/compose.yml run --rm --no-deps telegram-proxy check -c /etc/sing-box/sing-box.json
-sudo stat -c '%a' /opt/hooks/proxy /opt/hooks/proxy/sing-box.json
+sudo docker compose -f /opt/hooks/compose.yml run --rm --no-deps telegram-proxy run -c /etc/xray/config.json -test
+sudo stat -c '%a %u:%g' /opt/hooks/proxy /opt/hooks/proxy/config.json
 sudo docker compose -f /opt/hooks/compose.yml port telegram-proxy 2080
 ```
 
-Ожидаются валидный config, работающий sidecar, 700/600, отсутствие опубликованного
+Ожидаются валидный config, работающий sidecar, 700/600 и UID/GID 65532, отсутствие опубликованного
 порта. `getMe` и тестовое сообщение выполняются отдельным скриптом, который
 читает токен из Vault и выводит только HTTP status и ожидаемую идентичность бота;
 не передавать токен аргументом curl или в URL командной строки.

@@ -40,14 +40,17 @@ class HooksChecks(unittest.TestCase):
         self.group_vars = yaml.safe_load((ANSIBLE / "inventory/group_vars/auxiliary/vars.yml").read_text())
         self.variables = self.defaults | self.group_vars
         self.variables["vault_hooks_proxy_config"] = {
-            "inbounds": [{"type": "mixed", "listen": "0.0.0.0", "listen_port": 2080}],
-            "outbounds": [{"type": "vless", "tag": "telegram-vless", "server": "proxy.example.invalid",
-                           "server_port": 443, "flow": "xtls-rprx-vision", "uuid": "00000000-0000-4000-8000-000000000000",
-                           "tls": {"enabled": True, "server_name": "example.invalid",
-                                   "utls": {"enabled": True, "fingerprint": "chrome"},
-                                   "reality": {"enabled": True, "public_key": "A" * 43, "short_id": "0123456789abcdef"}}}],
-            "route": {"rules": [{"domain": ["api.telegram.org"], "action": "route", "outbound": "telegram-vless"},
-                                {"action": "reject"}]}}
+            "inbounds": [{"listen": "0.0.0.0", "port": 2080, "protocol": "http", "settings": {}}],
+            "outbounds": [{"tag": "blocked", "protocol": "blackhole"}, {
+                "tag": "telegram-vless", "protocol": "vless",
+                "settings": {"vnext": [{"address": "proxy.example.invalid", "port": 443,
+                    "users": [{"id": "00000000-0000-4000-8000-000000000000",
+                               "encryption": "none", "flow": "xtls-rprx-vision"}]}]},
+                "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {
+                    "fingerprint": "chrome", "serverName": "example.invalid",
+                    "password": "A" * 43, "shortId": "0123456789abcdef"}}}],
+            "routing": {"domainStrategy": "AsIs", "rules": [{"type": "field",
+                "domain": ["full:api.telegram.org"], "outboundTag": "telegram-vless"}]}}
         self.variables["vault_hooks_env"] = {
             "GITHUB_WEBHOOK_SECRET": "fake-github-secret",
             "APIDOG_SIGNATURE_KEY": "fake-apidog-secret",
@@ -90,15 +93,22 @@ class HooksChecks(unittest.TestCase):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
         configurations = [None, {}, "secret-marker", {"inbounds": []}]
         for path, value in [(("inbounds", 0, "listen"), "127.0.0.1"),
-                            (("inbounds", 0, "listen_port"), 1080),
-                            (("outbounds", 0, "tls", "insecure"), True),
-                            (("outbounds", 0, "tls", "utls", "enabled"), False),
-                            (("outbounds", 0, "tls", "reality", "enabled"), False),
-                            (("outbounds", 0, "server"), ""),
-                            (("outbounds", 0, "flow"), "invalid-flow"),
-                            (("outbounds", 0, "flow"), None),
-                            (("route", "rules", 0, "domain"), ["example.invalid"]),
-                            (("route", "rules", 1, "action"), "route")]:
+                            (("inbounds", 0, "port"), 1080),
+                            (("inbounds", 0, "protocol"), "socks"),
+                            (("outbounds", 0, "protocol"), "freedom"),
+                            (("outbounds", 1, "protocol"), "freedom"),
+                            (("outbounds", 1, "settings", "vnext", 0, "address"), ""),
+                            (("outbounds", 1, "settings", "vnext", 0, "users", 0, "flow"), "invalid-flow"),
+                            (("outbounds", 1, "settings", "vnext", 0, "users", 0, "flow"), None),
+                            (("outbounds", 1, "streamSettings", "network"), "ws"),
+                            (("outbounds", 1, "streamSettings", "security"), "none"),
+                            (("outbounds", 1, "streamSettings", "realitySettings", "password"), ""),
+                            (("outbounds", 1, "streamSettings", "realitySettings", "password"), int("1" * 43)),
+                            (("outbounds", 1, "streamSettings", "realitySettings", "shortId"), 10),
+                            (("outbounds", 1, "streamSettings", "realitySettings", "fingerprint"), "invalid-fingerprint"),
+                            (("outbounds", 1, "streamSettings", "realitySettings", "insecure"), True),
+                            (("routing", "rules", 0, "domain"), ["example.invalid"]),
+                            (("routing", "rules", 0, "outboundTag"), "blocked")]:
             config = copy.deepcopy(self.variables["vault_hooks_proxy_config"])
             target = config
             for part in path[:-1]:
@@ -117,24 +127,18 @@ class HooksChecks(unittest.TestCase):
                 self.assertNotIn("proxy.example.invalid", result.stdout + result.stderr)
                 self.assertNotIn("secret-marker", result.stdout + result.stderr)
 
-    def test_proxy_preflight_accepts_optional_empty_or_absent_flow(self):
-        for flow in [None, ""]:
-            variables = copy.deepcopy(self.variables)
-            outbound = variables["vault_hooks_proxy_config"]["outbounds"][0]
-            if flow is None:
-                del outbound["flow"]
-            else:
-                outbound["flow"] = flow
-            result = self.play(self.import_task("roles/hooks/tasks/validate.yml"), variables)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
     def test_proxy_config_render_is_private_and_matches_input(self):
-        path = self.root / "proxy/sing-box.json"
+        path = self.root / "proxy/config.json"
         path.parent.mkdir()
         tasks = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
-        render = next(task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "sing-box.json.j2")
+        render = next(task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "xray.json.j2")
         render = copy.deepcopy(render)
-        render["ansible.builtin.template"]["src"] = str(ANSIBLE / "roles/hooks/templates/sing-box.json.j2")
+        render["ansible.builtin.template"]["src"] = str(ANSIBLE / "roles/hooks/templates/xray.json.j2")
+        self.assertEqual(render["ansible.builtin.template"]["owner"], "65532")
+        self.assertEqual(render["ansible.builtin.template"]["group"], "65532")
+        # Keep local rendering unprivileged; assert deployment ownership above.
+        render["ansible.builtin.template"]["owner"] = str(os.getuid())
+        render["ansible.builtin.template"]["group"] = str(os.getgid())
         result = self.play([render], self.variables | {"hooks_compose_dir": str(self.root)})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -189,7 +193,8 @@ class HooksChecks(unittest.TestCase):
         service = services["hooks"]
         proxy = services["telegram-proxy"]
         self.assertFalse(proxy.get("ports"))
-        self.assertRegex(proxy["image"], r"^ghcr.io/sagernet/sing-box@sha256:[0-9a-f]{64}$")
+        self.assertEqual(proxy["command"], ["run", "-c", "/etc/xray/config.json"])
+        self.assertRegex(proxy["image"], r"^ghcr.io/xtls/xray-core@sha256:[0-9a-f]{64}$")
         self.assertEqual(set(proxy["networks"]), {"telegram_proxy"})
         self.assertIn("telegram_proxy", service["networks"])
         self.assertNotIn("telegram_proxy", services["caddy"]["networks"])

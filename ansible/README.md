@@ -536,7 +536,7 @@ curl --silent --output /dev/null --write-out '%{http_code}\n' \
 включить production. Повторное скачивание старого package из GHCR по-прежнему
 требует отдельного read credential его организации.
 
-## Webhook alerts на auxiliary (infra#70)
+## Webhook alerts на auxiliary (infra#76)
 
 `auxiliary.yml` не меняет прод-VPS. Перед его запуском нужны `vault_hooks_env`
 с `GITHUB_WEBHOOK_SECRET`, `APIDOG_SIGNATURE_KEY`, `APIDOG_SIGNATURE_HEADER`,
@@ -582,26 +582,27 @@ volume → bun на локальном Docker установить `WEBHOOK_ALER
 ### Telegram через VLESS Reality
 
 `hooks` передаёт только Telegram API в `http://telegram-proxy:2080` через
-`TELEGRAM_PROXY_URL`; GitHub enrichment остаётся прямым. Sidecar sing-box 1.14.4
+`TELEGRAM_PROXY_URL`; GitHub enrichment остаётся прямым. Sidecar Xray Core 26.10.21
 закреплён digest, не публикует портов и подключён к сети `telegram_proxy` только
-вместе с `hooks`. Caddy использует прежнюю сеть `hooks`. Proxy принимает mixed
-HTTP/SOCKS на `0.0.0.0:2080` внутри Docker, разрешает ровно `api.telegram.org`
-через единственный VLESS Reality outbound и отклоняет остальные назначения.
+вместе с `hooks`. Caddy использует прежнюю сеть `hooks`. Proxy принимает HTTP
+на `0.0.0.0:2080` внутри Docker, разрешает ровно `api.telegram.org`
+через единственный VLESS Reality outbound и отправляет остальные назначения в первый blackhole outbound.
 
 Полный JSON-объект — `vault_hooks_proxy_config` в зашифрованном
 `inventory/group_vars/all/vault.yml`; править через `ansible-vault edit`.
 URI, UUID, адрес сервера, Reality key и токен бота не помещать в команды, Git и
 логи. Preflight до изменений VPS проверяет inbound, TLS/Reality без `insecure`
-и точный allowlist маршрута. Файл `/opt/hooks/proxy/sing-box.json` имеет режим
-0600 в каталоге 0700; template использует `no_log` и `diff: false`.
+и точный allowlist маршрута. Файл `/opt/hooks/proxy/config.json` имеет режим
+0600 в каталоге 0700; оба принадлежат UID/GID 65532
+(пользователь official Xray image); template использует `no_log` и `diff: false`.
 Каталог смонтирован read-only, изменение JSON вызывает restart sidecar.
 
 Проверка синтаксиса JSON, в том числе синтетического конфига без секретов:
 
 ```bash
-sudo docker compose -f /opt/hooks/compose.yml run --rm --no-deps telegram-proxy check -c /etc/sing-box/sing-box.json
+sudo docker compose -f /opt/hooks/compose.yml run --rm --no-deps telegram-proxy run -c /etc/xray/config.json -test
 sudo docker compose -f /opt/hooks/compose.yml ps
-sudo stat -c '%a' /opt/hooks/proxy/sing-box.json
+sudo stat -c '%a %u:%g' /opt/hooks/proxy/config.json
 ```
 
 `docker compose config` использовать локально только с синтетическим `.env`:

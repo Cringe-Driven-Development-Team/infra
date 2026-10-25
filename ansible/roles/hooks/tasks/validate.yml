@@ -34,42 +34,64 @@
 - name: Проверить закреплённый образ Telegram proxy
   ansible.builtin.assert:
     that:
-      - hooks_proxy_image is match('^ghcr.io/sagernet/sing-box@sha256:[0-9a-f]{64}$')
+      - hooks_proxy_image is match('^ghcr.io/xtls/xray-core@sha256:[0-9a-f]{64}$')
       - hooks_env.TELEGRAM_PROXY_URL == 'http://telegram-proxy:2080'
     fail_msg: Telegram proxy должен использовать закреплённый образ и внутренний URL.
 
 - name: Проверить структуру секретной конфигурации Telegram proxy
   ansible.builtin.assert:
     that:
-      - vault_hooks_proxy_config is defined
-      - vault_hooks_proxy_config is mapping
-      - "vault_hooks_proxy_config.inbounds == [{'type': 'mixed', 'listen': '0.0.0.0', 'listen_port': 2080}]"
-      - vault_hooks_proxy_config.outbounds is sequence
-      - vault_hooks_proxy_config.outbounds | length == 1
-      - vault_hooks_proxy_config.outbounds[0] is mapping
-      - vault_hooks_proxy_config.outbounds[0].type == 'vless'
-      - vault_hooks_proxy_config.outbounds[0].tag == 'telegram-vless'
-      - vault_hooks_proxy_config.outbounds[0].flow | default('') in ['', 'xtls-rprx-vision']
-      - vault_hooks_proxy_config.outbounds[0].server is string
-      - vault_hooks_proxy_config.outbounds[0].server | trim | length > 0
-      - vault_hooks_proxy_config.outbounds[0].server_port is integer
-      - vault_hooks_proxy_config.outbounds[0].server_port > 0
-      - vault_hooks_proxy_config.outbounds[0].server_port <= 65535
-      - vault_hooks_proxy_config.outbounds[0].uuid is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
-      - vault_hooks_proxy_config.outbounds[0].tls is mapping
-      - vault_hooks_proxy_config.outbounds[0].tls.enabled == true
-      - vault_hooks_proxy_config.outbounds[0].tls.insecure | default(false) == false
-      - vault_hooks_proxy_config.outbounds[0].tls.server_name is string
-      - vault_hooks_proxy_config.outbounds[0].tls.server_name | trim | length > 0
-      - vault_hooks_proxy_config.outbounds[0].tls.utls is mapping
-      - vault_hooks_proxy_config.outbounds[0].tls.utls.enabled == true
-      - vault_hooks_proxy_config.outbounds[0].tls.utls.fingerprint is string
-      - vault_hooks_proxy_config.outbounds[0].tls.utls.fingerprint | trim | length > 0
-      - vault_hooks_proxy_config.outbounds[0].tls.reality is mapping
-      - vault_hooks_proxy_config.outbounds[0].tls.reality.enabled == true
-      - vault_hooks_proxy_config.outbounds[0].tls.reality.public_key is match('^[A-Za-z0-9_-]{43}$')
-      - vault_hooks_proxy_config.outbounds[0].tls.reality.short_id is match('^([0-9a-fA-F]{2}){0,8}$')
-      - "vault_hooks_proxy_config.route == {'rules': [{'domain': ['api.telegram.org'], 'action': 'route', 'outbound': 'telegram-vless'}, {'action': 'reject'}]}"
+      - "vault_hooks_proxy_config is defined"
+      - "vault_hooks_proxy_config is mapping"
+      - "vault_hooks_proxy_config.keys() | difference(['log', 'inbounds', 'outbounds', 'routing']) | length == 0"
+      - "vault_hooks_proxy_config.inbounds == [{'listen': '0.0.0.0', 'port': 2080, 'protocol': 'http', 'settings': {}}]"
+      - "vault_hooks_proxy_config.outbounds is sequence"
+      - "vault_hooks_proxy_config.outbounds | length == 2"
+      - "vault_hooks_proxy_config.outbounds[0] == {'tag': 'blocked', 'protocol': 'blackhole'}"
+      - "vault_hooks_proxy_config.outbounds[1] is mapping"
+      - "vault_hooks_proxy_config.outbounds[1].keys() | sort == ['protocol', 'settings', 'streamSettings', 'tag']"
+      - "vault_hooks_proxy_config.outbounds[1].protocol == 'vless'"
+      - "vault_hooks_proxy_config.outbounds[1].tag == 'telegram-vless'"
+      - "vault_hooks_proxy_config.outbounds[1].settings is mapping"
+      - "vault_hooks_proxy_config.outbounds[1].settings.keys() | list == ['vnext']"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext is sequence"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext | length == 1"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0] is mapping"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].keys() | sort == ['address', 'port', 'users']"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].address is string"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].address | trim | length > 0"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].port is integer"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].port > 0"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].port <= 65535"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].users is sequence"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].users | length == 1"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].users[0] is mapping"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].users[0].keys() | sort == ['encryption', 'flow', 'id']"
+      - >-
+          vault_hooks_proxy_config.outbounds[1].settings.vnext[0].users[0].id
+          is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].users[0].encryption == 'none'"
+      - "vault_hooks_proxy_config.outbounds[1].settings.vnext[0].users[0].flow == 'xtls-rprx-vision'"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings is mapping"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.keys() | sort == ['network', 'realitySettings', 'security']"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.network == 'raw'"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.security == 'reality'"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings is mapping"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.keys() | sort == ['fingerprint', 'password', 'serverName', 'shortId']"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.fingerprint is string"
+      - >-
+          vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.fingerprint
+          in ['chrome', 'firefox', 'safari', 'ios', 'android', 'edge', '360', 'qq', 'random', 'randomized']
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.serverName is string"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.serverName | trim | length > 0"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.password is string"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.password is match('^[A-Za-z0-9_-]{43}$')"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.shortId is string"
+      - "vault_hooks_proxy_config.outbounds[1].streamSettings.realitySettings.shortId is match('^([0-9a-fA-F]{2}){0,8}$')"
+      - "vault_hooks_proxy_config.routing is mapping"
+      - "vault_hooks_proxy_config.routing.keys() | difference(['domainStrategy', 'rules']) | length == 0"
+      - "vault_hooks_proxy_config.routing.domainStrategy | default('AsIs') == 'AsIs'"
+      - "vault_hooks_proxy_config.routing.rules == [{'type': 'field', 'domain': ['full:api.telegram.org'], 'outboundTag': 'telegram-vless'}]"
     quiet: true
     fail_msg: Проверьте vault_hooks_proxy_config через ansible-vault edit; разрешён только Telegram через VLESS Reality.
   no_log: true

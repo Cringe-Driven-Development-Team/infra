@@ -40,9 +40,9 @@ services:
   telegram-proxy:
     image: {{ hooks_proxy_image }}
     restart: unless-stopped
-    command: ["run", "-c", "/etc/sing-box/sing-box.json"]
+    command: ["run", "-c", "/etc/xray/config.json"]
     volumes:
-      - ./proxy:/etc/sing-box:ro
+      - ./proxy:/etc/xray:ro
     networks:
       - telegram_proxy
 

@@ -27,12 +27,16 @@
     path: "{{ hooks_compose_dir }}/proxy"
     state: directory
     mode: "0700"
+    owner: "65532"
+    group: "65532"
 
 - name: Конфигурация Telegram proxy
   ansible.builtin.template:
-    src: sing-box.json.j2
-    dest: "{{ hooks_compose_dir }}/proxy/sing-box.json"
+    src: xray.json.j2
+    dest: "{{ hooks_compose_dir }}/proxy/config.json"
     mode: "0600"
+    owner: "65532"
+    group: "65532"
   no_log: true
   diff: false
   notify: Restart telegram proxy
