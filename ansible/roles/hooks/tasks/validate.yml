@@ -49,6 +49,7 @@
       - vault_hooks_proxy_config.outbounds[0] is mapping
       - vault_hooks_proxy_config.outbounds[0].type == 'vless'
       - vault_hooks_proxy_config.outbounds[0].tag == 'telegram-vless'
+      - vault_hooks_proxy_config.outbounds[0].flow | default('') in ['', 'xtls-rprx-vision']
       - vault_hooks_proxy_config.outbounds[0].server is string
       - vault_hooks_proxy_config.outbounds[0].server | trim | length > 0
       - vault_hooks_proxy_config.outbounds[0].server_port is integer

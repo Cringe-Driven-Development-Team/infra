@@ -42,7 +42,7 @@ class HooksChecks(unittest.TestCase):
         self.variables["vault_hooks_proxy_config"] = {
             "inbounds": [{"type": "mixed", "listen": "0.0.0.0", "listen_port": 2080}],
             "outbounds": [{"type": "vless", "tag": "telegram-vless", "server": "proxy.example.invalid",
-                           "server_port": 443, "uuid": "00000000-0000-4000-8000-000000000000",
+                           "server_port": 443, "flow": "xtls-rprx-vision", "uuid": "00000000-0000-4000-8000-000000000000",
                            "tls": {"enabled": True, "server_name": "example.invalid",
                                    "utls": {"enabled": True, "fingerprint": "chrome"},
                                    "reality": {"enabled": True, "public_key": "A" * 43, "short_id": "0123456789abcdef"}}}],
@@ -95,6 +95,8 @@ class HooksChecks(unittest.TestCase):
                             (("outbounds", 0, "tls", "utls", "enabled"), False),
                             (("outbounds", 0, "tls", "reality", "enabled"), False),
                             (("outbounds", 0, "server"), ""),
+                            (("outbounds", 0, "flow"), "invalid-flow"),
+                            (("outbounds", 0, "flow"), None),
                             (("route", "rules", 0, "domain"), ["example.invalid"]),
                             (("route", "rules", 1, "action"), "route")]:
             config = copy.deepcopy(self.variables["vault_hooks_proxy_config"])
@@ -114,6 +116,17 @@ class HooksChecks(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertNotIn("proxy.example.invalid", result.stdout + result.stderr)
                 self.assertNotIn("secret-marker", result.stdout + result.stderr)
+
+    def test_proxy_preflight_accepts_optional_empty_or_absent_flow(self):
+        for flow in [None, ""]:
+            variables = copy.deepcopy(self.variables)
+            outbound = variables["vault_hooks_proxy_config"]["outbounds"][0]
+            if flow is None:
+                del outbound["flow"]
+            else:
+                outbound["flow"] = flow
+            result = self.play(self.import_task("roles/hooks/tasks/validate.yml"), variables)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_proxy_config_render_is_private_and_matches_input(self):
         path = self.root / "proxy/sing-box.json"
