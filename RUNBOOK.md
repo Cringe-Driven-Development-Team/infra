@@ -488,3 +488,50 @@ snapshot в `_data/queue.sqlite`, убрать прежние WAL/SHM после
 
 GitHub organization webhook и настоящий Apidog target пока не подключены;
 worker остаётся выключенным до приёмки Task 10.
+
+## Telegram proxy на auxiliary
+
+Секретная конфигурация VLESS Reality хранится как `vault_hooks_proxy_config`
+в Ansible Vault. Не печатать URI, config JSON, `.env` и token-bearing URL.
+На VPS `/opt/hooks/proxy/sing-box.json` должен иметь режим 0600, каталог —
+0700. Только `hooks` и `telegram-proxy` разделяют сеть `telegram_proxy`;
+порт 2080 не публикуется. Разрешён ровно `api.telegram.org`, остальные
+назначения отклоняются. Caddy и очередь сохраняют прежние сети и volumes.
+
+Проверки с VPS без раскрытия конфигурации:
+
+```bash
+sudo docker compose -f /opt/hooks/compose.yml config --quiet
+sudo docker compose -f /opt/hooks/compose.yml ps
+sudo docker compose -f /opt/hooks/compose.yml run --rm --no-deps telegram-proxy check -c /etc/sing-box/sing-box.json
+sudo stat -c '%a' /opt/hooks/proxy /opt/hooks/proxy/sing-box.json
+sudo docker compose -f /opt/hooks/compose.yml port telegram-proxy 2080
+```
+
+Ожидаются валидный config, работающий sidecar, 700/600, отсутствие опубликованного
+порта. `getMe` и тестовое сообщение выполняются отдельным скриптом, который
+читает токен из Vault и выводит только HTTP status и ожидаемую идентичность бота;
+не передавать токен аргументом curl или в URL командной строки.
+`WEBHOOK_ALERTS_SEND_ENABLED` остаётся `false` до сверки очереди и отдельной приёмки.
+
+При ошибке preflight исправить Vault через `ansible-vault edit`, затем повторить
+`auxiliary.yml`. При pull error проверить доступность публичного registry.
+При timeout проверить TCP-доступность VLESS; при handshake error сверить параметры
+Reality, не включать `insecure`. При ошибке proxy Telegram-доставка не должна
+переключаться на прямое соединение; очередь остаётся для повторной доставки.
+
+Откат конфигурации: вернуть предыдущую проверенную версию `vault_hooks_proxy_config`
+через Vault и выполнить `ansible-playbook auxiliary.yml --skip-tags backup` из
+`ansible/`. Это перезапустит proxy при изменении JSON. Если нужно убрать sidecar,
+вернуть код роли и согласованный image webhook, затем повторить playbook;
+удалить остановленный orphan `telegram-proxy` через `docker compose rm -sf telegram-proxy`
+с прежним compose-файлом. Не выполнять `down -v`: volumes Caddy и `hooks_data`
+сохраняются. После отката проверить `/health` и snapshot/backup по разделу выше.
+
+Локальная проверка без VPS и реальных секретов (из `ansible/`):
+
+```bash
+python -m unittest discover -s tests -v
+ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml auxiliary.yml
+ansible-lint auxiliary.yml roles/hooks roles/restic_backup tasks/verify-hooks-snapshot.yml verify.yml
+```

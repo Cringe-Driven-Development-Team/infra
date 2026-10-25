@@ -2,6 +2,7 @@
 
 RESTIC_CLI may point to an unpacked binary; tests never contact a VPS or registry.
 """
+import copy
 import configparser
 import json
 import os
@@ -38,6 +39,15 @@ class HooksChecks(unittest.TestCase):
         self.defaults = yaml.safe_load((ANSIBLE / "roles/hooks/defaults/main.yml").read_text())
         self.group_vars = yaml.safe_load((ANSIBLE / "inventory/group_vars/auxiliary/vars.yml").read_text())
         self.variables = self.defaults | self.group_vars
+        self.variables["vault_hooks_proxy_config"] = {
+            "inbounds": [{"type": "mixed", "listen": "0.0.0.0", "listen_port": 2080}],
+            "outbounds": [{"type": "vless", "tag": "telegram-vless", "server": "proxy.example.invalid",
+                           "server_port": 443, "uuid": "00000000-0000-4000-8000-000000000000",
+                           "tls": {"enabled": True, "server_name": "example.invalid",
+                                   "utls": {"enabled": True, "fingerprint": "chrome"},
+                                   "reality": {"enabled": True, "public_key": "A" * 43, "short_id": "0123456789abcdef"}}}],
+            "route": {"rules": [{"domain": ["api.telegram.org"], "action": "route", "outbound": "telegram-vless"},
+                                {"action": "reject"}]}}
         self.variables["vault_hooks_env"] = {
             "GITHUB_WEBHOOK_SECRET": "fake-github-secret",
             "APIDOG_SIGNATURE_KEY": "fake-apidog-secret",
@@ -47,7 +57,8 @@ class HooksChecks(unittest.TestCase):
         playbook = self.root / "test.yml"
         playbook.write_text(yaml.safe_dump([{
             "name": "Exercise production tasks locally", "hosts": "all", "gather_facts": False,
-            "vars": variables if variables is not None else self.variables, "tasks": tasks}]))
+            "vars": variables if variables is not None else self.variables, "tasks": tasks,
+            "handlers": [{"name": "Restart telegram proxy", "ansible.builtin.debug": {"msg": "render only"}}]}]))
         return subprocess.run([shutil.which("ansible-playbook"), "-i", str(self.inventory),
                                str(playbook), *(["--check", "--diff"] if check else [])],
                               cwd=ANSIBLE, env=self.environment, text=True,
@@ -74,6 +85,49 @@ class HooksChecks(unittest.TestCase):
                 variables = self.variables | {"vault_hooks_env": self.variables["vault_hooks_env"] | {key: value}}
                 result = self.play(tasks, variables)
                 self.assertNotEqual(result.returncode, 0)
+
+    def test_proxy_preflight_rejects_missing_and_unsafe_config_without_disclosure(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        configurations = [None, {}, "secret-marker", {"inbounds": []}]
+        for path, value in [(("inbounds", 0, "listen"), "127.0.0.1"),
+                            (("inbounds", 0, "listen_port"), 1080),
+                            (("outbounds", 0, "tls", "insecure"), True),
+                            (("outbounds", 0, "tls", "utls", "enabled"), False),
+                            (("outbounds", 0, "tls", "reality", "enabled"), False),
+                            (("outbounds", 0, "server"), ""),
+                            (("route", "rules", 0, "domain"), ["example.invalid"]),
+                            (("route", "rules", 1, "action"), "route")]:
+            config = copy.deepcopy(self.variables["vault_hooks_proxy_config"])
+            target = config
+            for part in path[:-1]:
+                target = target[part]
+            target[path[-1]] = value
+            configurations.append(config)
+        for config in configurations:
+            with self.subTest(config=config):
+                variables = self.variables.copy()
+                if config is None:
+                    del variables["vault_hooks_proxy_config"]
+                else:
+                    variables["vault_hooks_proxy_config"] = config
+                result = self.play(tasks, variables, check=True)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertNotIn("proxy.example.invalid", result.stdout + result.stderr)
+                self.assertNotIn("secret-marker", result.stdout + result.stderr)
+
+    def test_proxy_config_render_is_private_and_matches_input(self):
+        path = self.root / "proxy/sing-box.json"
+        path.parent.mkdir()
+        tasks = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
+        render = next(task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "sing-box.json.j2")
+        render = copy.deepcopy(render)
+        render["ansible.builtin.template"]["src"] = str(ANSIBLE / "roles/hooks/templates/sing-box.json.j2")
+        result = self.play([render], self.variables | {"hooks_compose_dir": str(self.root)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(json.loads(path.read_text()), self.variables["vault_hooks_proxy_config"])
+        self.assertTrue(render["no_log"])
+        self.assertFalse(render["diff"])
 
     def test_anonymous_pull_runs_without_login_and_stops_deployment_on_registry_error(self):
         binary_directory = self.root / "bin"
@@ -110,7 +164,7 @@ class HooksChecks(unittest.TestCase):
     def test_compose_uses_image_entrypoint_and_preserves_webhook_secrets(self):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
-        variables = self.variables | {"hooks_env": {"GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash"}}
+        variables = self.variables | {"hooks_env": {"TELEGRAM_PROXY_URL": "http://telegram-proxy:2080", "GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash"}}
         (self.root / "compose.yml").write_text(templates.from_string(
             (ANSIBLE / "roles/hooks/templates/compose.yml.j2").read_text()).render(variables))
         (self.root / ".env").write_text(templates.from_string(
@@ -118,7 +172,17 @@ class HooksChecks(unittest.TestCase):
         result = subprocess.run([*shlex.split(os.environ.get("COMPOSE_CLI", "docker compose")),
                                  "-f", str(self.root / "compose.yml"), "config", "--format", "json"],
                                 capture_output=True, text=True, check=True)
-        service = json.loads(result.stdout)["services"]["hooks"]
+        services = json.loads(result.stdout)["services"]
+        service = services["hooks"]
+        proxy = services["telegram-proxy"]
+        self.assertFalse(proxy.get("ports"))
+        self.assertRegex(proxy["image"], r"^ghcr.io/sagernet/sing-box@sha256:[0-9a-f]{64}$")
+        self.assertEqual(set(proxy["networks"]), {"telegram_proxy"})
+        self.assertIn("telegram_proxy", service["networks"])
+        self.assertNotIn("telegram_proxy", services["caddy"]["networks"])
+        self.assertEqual(service["environment"]["TELEGRAM_PROXY_URL"], "http://telegram-proxy:2080")
+        self.assertTrue(proxy["volumes"][0]["read_only"])
+
         self.assertRegex(service["image"], r"^ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:[0-9a-f]{64}$")
         self.assertIsNone(service.get("command"))
         self.assertFalse(service.get("ports"))

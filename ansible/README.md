@@ -578,3 +578,37 @@ CI устанавливает пакет явно. Для дополнитель
 volume → bun на локальном Docker установить `WEBHOOK_ALERTS_TEST_IMAGE` в имя
 локально собранного image сервиса (например `webhook-alerts:test`). Тест создаёт
 и удаляет только собственный Compose project/volume; registry не используется.
+
+### Telegram через VLESS Reality
+
+`hooks` передаёт только Telegram API в `http://telegram-proxy:2080` через
+`TELEGRAM_PROXY_URL`; GitHub enrichment остаётся прямым. Sidecar sing-box 1.14.4
+закреплён digest, не публикует портов и подключён к сети `telegram_proxy` только
+вместе с `hooks`. Caddy использует прежнюю сеть `hooks`. Proxy принимает mixed
+HTTP/SOCKS на `0.0.0.0:2080` внутри Docker, разрешает ровно `api.telegram.org`
+через единственный VLESS Reality outbound и отклоняет остальные назначения.
+
+Полный JSON-объект — `vault_hooks_proxy_config` в зашифрованном
+`inventory/group_vars/all/vault.yml`; править через `ansible-vault edit`.
+URI, UUID, адрес сервера, Reality key и токен бота не помещать в команды, Git и
+логи. Preflight до изменений VPS проверяет inbound, TLS/Reality без `insecure`
+и точный allowlist маршрута. Файл `/opt/hooks/proxy/sing-box.json` имеет режим
+0600 в каталоге 0700; template использует `no_log` и `diff: false`.
+Каталог смонтирован read-only, изменение JSON вызывает restart sidecar.
+
+Проверка синтаксиса JSON, в том числе синтетического конфига без секретов:
+
+```bash
+sudo docker compose -f /opt/hooks/compose.yml run --rm --no-deps telegram-proxy check -c /etc/sing-box/sing-box.json
+sudo docker compose -f /opt/hooks/compose.yml ps
+sudo stat -c '%a' /opt/hooks/proxy/sing-box.json
+```
+
+`docker compose config` использовать локально только с синтетическим `.env`:
+команда раскрывает environment. Для реального конфига достаточно `config --quiet`.
+Недостающий Vault останавливает preflight; ошибки image pull останавливают
+выкатку до `up`. TCP timeout означает проверку доступности внешнего VLESS;
+TLS/Reality handshake — сверку SNI, public key, short ID, flow и fingerprint
+без отключения проверки сертификата. Отказ другого домена ожидаем.
+Не включать sender до отдельной проверки `getMe`, тестового сообщения и очереди.
+Откат — по [RUNBOOK](../RUNBOOK.md#telegram-proxy-на-auxiliary).
