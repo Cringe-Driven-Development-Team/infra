@@ -24,6 +24,8 @@ services:
 {% endif %}
     restart: unless-stopped
     env_file: .env
+    extra_hosts:
+      - "api.telegram.org:{{ hooks_telegram_api_ip }}"
     volumes:
       - hooks_data:{{ hooks_data_path }}
     healthcheck:

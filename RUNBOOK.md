@@ -332,6 +332,15 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
 `hooks_image_source_tag` для трассировки; Compose использует только `hooks_image`.
 Локальный Docker image ID нельзя использовать вместо manifest digest.
 
+На `2026-10-25` auxiliary VPS не может установить TCP-соединение с выдаваемым DNS
+адресом `api.telegram.org` (`149.154.166.110`), хотя HTTPS к другим сайтам
+работает. Адрес Telegram `149.154.167.220` отвечает по HTTPS с тем же именем
+хоста; роль временно задаёт его через `extra_hosts` **только** контейнеру `hooks`
+(`hooks_telegram_api_ip`). TLS по-прежнему проверяет `api.telegram.org`.
+Перед включением отправки проверить доступность Telegram из контейнера.
+Когда маршрут к обычному DNS-адресу восстановится, убрать pin из роли и повторить
+проверку: статический IP может перестать отвечать.
+
 Перед первой выкаткой:
 
 1. Через `ansible-vault edit inventory/group_vars/all/vault.yml` добавить

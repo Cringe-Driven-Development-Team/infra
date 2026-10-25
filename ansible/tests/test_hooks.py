@@ -110,7 +110,8 @@ class HooksChecks(unittest.TestCase):
     def test_compose_uses_image_entrypoint_and_preserves_webhook_secrets(self):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
-        variables = self.variables | {"hooks_env": {"GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash"}}
+        variables = self.variables | {"hooks_env": {"GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash"},
+                                      "hooks_telegram_api_ip": "149.154.167.220"}
         (self.root / "compose.yml").write_text(templates.from_string(
             (ANSIBLE / "roles/hooks/templates/compose.yml.j2").read_text()).render(variables))
         (self.root / ".env").write_text(templates.from_string(
@@ -122,6 +123,8 @@ class HooksChecks(unittest.TestCase):
         self.assertRegex(service["image"], r"^ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:[0-9a-f]{64}$")
         self.assertIsNone(service.get("command"))
         self.assertFalse(service.get("ports"))
+        self.assertEqual(service["extra_hosts"], ["api.telegram.org=149.154.167.220"])
+        self.assertNotIn("extra_hosts", json.loads(result.stdout)["services"]["caddy"])
         self.assertEqual(service["environment"]["GITHUB_WEBHOOK_SECRET"].replace("$$", "$"),
                          "space # dollar${FOO}'quote\\slash")
 

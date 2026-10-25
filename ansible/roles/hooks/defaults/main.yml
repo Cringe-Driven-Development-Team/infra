@@ -7,6 +7,9 @@ hooks_image_source_tag: ghcr.io/cringe-driven-development-team/webhook-alerts:sh
 hooks_port: 8080
 hooks_command: []
 hooks_data_path: /data
+# Временный маршрут к Telegram: DNS-адрес 149.154.166.110 недоступен с auxiliary VPS.
+# Сохраняем HTTPS hostname для SNI и проверки сертификата; удалить после восстановления маршрута.
+hooks_telegram_api_ip: 149.154.167.220
 # Worker выключен до отдельной приёмки/переключения Task 10. Секреты — только Vault.
 hooks_env: >-
   {{ {'DATABASE_PATH': '/data/queue.sqlite', 'PORT': '8080', 'WEBHOOK_ALERTS_SEND_ENABLED': 'false'}
