@@ -325,10 +325,8 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
 
 ### Развёртывание сервиса (infra#70, .github#20)
 
-Роль `hooks` разворачивает публичный GHCR image по registry manifest digest:
-`ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:30718ed06926bff66627502361185c2ca6ebca78b20b044ce4d8bba92f12e858`.
-Соответствующий SHA-тег — `sha-08e7968fa0d39dd5f25fe8495c58d78006a26653`
-(`.github` Task 8, image workflow run `40103993724`). В defaults он сохранён как
+Роль `hooks` разворачивает публичный GHCR image по registry manifest digest из
+`ansible/roles/hooks/defaults/main.yml`. Соответствующий SHA-тег хранится в
 `hooks_image_source_tag` для трассировки; Compose использует только `hooks_image`.
 Локальный Docker image ID нельзя использовать вместо manifest digest.
 

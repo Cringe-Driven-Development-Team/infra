@@ -89,6 +89,27 @@ class HooksChecks(unittest.TestCase):
                 result = self.play(tasks, variables)
                 self.assertNotEqual(result.returncode, 0)
 
+    def test_sender_preflight_requires_separate_apidog_bot_token(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        env = self.variables["vault_hooks_env"] | {
+            "WEBHOOK_ALERTS_SEND_ENABLED": "true",
+            "TELEGRAM_BOT_TOKEN": "fake-github-bot",
+            "TELEGRAM_CHAT_ID": "-1001",
+            "TELEGRAM_APIDOG_TOPIC_ID": "88",
+            "TELEGRAM_APIDOG_BOT_TOKEN": "fake-apidog-bot",
+        }
+        variables = self.variables | {"vault_hooks_env": env}
+        result = self.play(tasks, variables)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        missing_env = env.copy()
+        del missing_env["TELEGRAM_APIDOG_BOT_TOKEN"]
+        missing_token = self.variables | {"vault_hooks_env": missing_env}
+        result = self.play(tasks, missing_token)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("TELEGRAM_APIDOG_BOT_TOKEN", result.stdout + result.stderr)
+        self.assertNotIn("fake-apidog-bot", result.stdout + result.stderr)
+
     def test_proxy_preflight_rejects_missing_and_unsafe_config_without_disclosure(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
         configurations = [None, {}, "secret-marker", {"inbounds": []}]

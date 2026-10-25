@@ -1,9 +1,9 @@
 # Проект Compose: наружу публикуется только Caddy.
 hooks_compose_dir: /opt/hooks
 # Registry manifest digest публикации .github main (Task 8), не локальный Docker image ID.
-hooks_image: ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:8ca5549293a571ae2de60c638bc9cd9a67f59aa158df1d2f8b0d2ce5ddbe6901
+hooks_image: ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:bc6d1010bd7bc67b60617c0db4981f953d1f5c488f9c67bfbcab2a597e5a6652
 # Только трассировка исходного коммита; Compose разворачивает hooks_image по digest.
-hooks_image_source_tag: ghcr.io/cringe-driven-development-team/webhook-alerts:sha-722ee9db38957a160b3bd1f2a5f92b0e3c576bcc
+hooks_image_source_tag: ghcr.io/cringe-driven-development-team/webhook-alerts:sha-36b89cb17381a04cd0063cc52add7cf591ce4f27
 hooks_proxy_image: ghcr.io/xtls/xray-core@sha256:d5c3729dfeed7c412af17a63b941c48c76ba68afee5b6184fe4078f8fa8bedcc
 hooks_port: 8080
 hooks_command: []
