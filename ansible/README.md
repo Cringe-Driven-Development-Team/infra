@@ -441,6 +441,11 @@ production secret `DEPLOY_SSH_KEY`. После ревью PR с public key оп�
 `ci.pub` сохраняется для отката. Host key нового CI проверен по fingerprint
 из аутентифицированной консоли провайдера; личный ключ оператора в CI не передаётся.
 
+Для `team/frontend` (CD и Rollback BFF, `deploy-bff.yml`) — своя пара CI: public key —
+`files/authorized_keys/gateway/ci-team-frontend.pub` (только на gateway), private key — только в secret `DEPLOY_SSH_KEY`
+environment `production` фронта, там же `SSH_KNOWN_HOSTS` gateway и `ANSIBLE_VAULT_PASSWORD`.
+На gateway ключ попадает через `site.yml` при мерже PR с ним.
+
 Для выкатки Selectel и Pulumi не нужны. Не подключайте `env.sh`: используйте
 статический inventory `inventory/ci.yml` и явно экспортируйте путь к паролю:
 

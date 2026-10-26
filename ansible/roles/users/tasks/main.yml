@@ -7,12 +7,18 @@
     append: true
     create_home: true
 
+# files/authorized_keys/*.pub — на все хосты; files/authorized_keys/<группа>/*.pub — только на хосты
+# этой группы (сервисный ключ не получает доступ к остальным VPS). find без recurse подкаталоги не читает.
 - name: Найти публичные ключи команды в репозитории
   ansible.builtin.find:
-    paths: "{{ playbook_dir }}/files/authorized_keys"
+    paths: >-
+      {{ [users_keys_dir] + (group_names | map('regex_replace', '^', users_keys_dir ~ '/')
+         | select('directory') | list) }}
     patterns: "*.pub"
   delegate_to: localhost
   become: false
+  vars:
+    users_keys_dir: "{{ playbook_dir }}/files/authorized_keys"
   register: users_team_key_files
 
 - name: Прочитать ключи
