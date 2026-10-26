@@ -573,24 +573,28 @@ Ansible ходит на VPS2 через gateway (`ProxyCommand` из `group_vars
    числу строк и md5 содержимого (в том числе таблицу миграций) и поднимает на VPS2 Go того же тега.
    Расхождение — ошибка до переключения: см. «Откат». Redis (refresh-сессии) не переносится:
    пользователи входят заново.
-6. **Переключение BFF.** `ansible-playbook deploy-bff.yml -e app_backend_split=true
+6. **Переключение BFF.** `ansible-playbook deploy-bff.yml -e '{"app_backend_split": true}'
    -e bff_image_ref=<BFF_IMAGE_REF из .env gateway> -e bff_release_sha=<BFF_RELEASE_SHA>`: на gateway
    остаются Caddy и BFF с `GO_API_URL` на VPS2, контейнеры api/postgres/redis удаляются (тома
    `cellestial_postgres_data` и `cellestial_redis_data` на gateway остаются — не удалять до успешной
    проверки).
-7. **Проверка.** `verify.yml -e app_backend_split=true`: ufw и sshd обеих машин, Redis на VPS2, с gateway
+7. **Проверка.** `verify.yml -e '{"app_backend_split": true}'`: ufw и sshd обеих машин, Redis на VPS2, с gateway
    Go отвечает с верным `X-BFF-Key` (401 без Bearer) и даёт `403 s2s_forbidden` без ключа и с неверным.
    Руками — вход, список и изменение блокнота на cellestial.ru.
 8. **Закрепить.** PR: `app_backend_split: true` в `group_vars/all/vars.yml` и группа `backend` в
    `inventory/ci.yml`. После него `deploy-backend.yml` (CD бэка) выкатывает Go на VPS2; CD бэка
    передаёт `-e jump_known_hosts=<файл>` и держит в `SSH_KNOWN_HOSTS` ещё и host key VPS2.
 
+Переменную раскладки передавать JSON (`-e '{"app_backend_split": false}'`): так она — boolean.
+Роли и плейбуки и так приводят её через `| bool`, поэтому `-e app_backend_split=false` тоже работает.
+
 Откат:
 
 - **До шага 6** (данные не сошлись, VPS2 не поднялась): `docker compose start api` на gateway — данные
   там не менялись. VPS2 можно очистить и повторить шаг 5.
-- **После шага 6:** `deploy-bff.yml -e app_backend_split=false …` и `deploy-backend.yml
-  -e app_backend_split=false -e backend_image_tag=<тег>`: на gateway снова Go, Postgres и Redis на
-  прежних томах. Данные, записанные на VPS2 после переключения, сюда не попадают — перенести их тем же
+- **После шага 6:** одна команда — `deploy-backend.yml -e '{"app_backend_split": false}'
+  -e backend_image_tag=<тег Go>` с GHCR credentials. Она выкатывает на gateway Go, Postgres и Redis на
+  прежних томах и заодно BFF из `.env` gateway с `GO_API_URL` на `api`; тег Go передаётся явно, потому
+  что в `.env` gateway раздельной раскладки его нет. `deploy-bff.yml` для отката не нужен. Данные, записанные на VPS2 после переключения, сюда не попадают — перенести их тем же
   `pg_dump`/`pg_restore` в обратную сторону до повторного запуска Go на gateway.
 - Старые тома на gateway удалять только после стабильной работы на VPS2 и свежего бэкапа.

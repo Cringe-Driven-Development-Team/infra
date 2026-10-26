@@ -59,7 +59,7 @@ services:
       timeout: 3s
       start_period: 30s
       retries: 20
-{% if app_backend_split %}
+{% if app_backend_split | bool %}
     # BFF на gateway ходит сюда по приватной сети: порт — только на приватном адресе VPS2, снаружи его
     # закрывают security group (только с gateway) и отсутствие публичного IP
     ports:

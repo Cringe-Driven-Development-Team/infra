@@ -650,11 +650,15 @@ class DeploymentChecks(unittest.TestCase):
             False: {"test-vps": "caddy,api,postgres,redis,bff", "test-backend": "caddy,api,postgres,redis,bff"},
             True: {"test-vps": "caddy,bff", "test-backend": "api,postgres,redis"},
         }
-        for split, expected in cases.items():
-            with self.subTest(split=split):
+        # и строкой, как из -e app_backend_split=false: непустая строка "false" не должна быть истиной
+        runs = [(split, json.dumps({"app_backend_split": split})) for split in cases]
+        runs += [(split, f"app_backend_split={str(split).lower()}") for split in cases]
+        for split, extra in runs:
+            expected = cases[split]
+            with self.subTest(extra=extra):
                 result = subprocess.run(
                     [shutil.which("ansible-playbook") or "ansible-playbook", "-i", str(self.inventory),
-                     str(playbook), "-e", json.dumps({"app_backend_split": split})],
+                     str(playbook), "-e", extra],
                     cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=60)
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode, 0, output)

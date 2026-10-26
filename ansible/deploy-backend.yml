@@ -15,7 +15,7 @@
         that:
           - groups['gateway'] | length == 1
           - groups.get('backend', []) | length <= 1
-          - not app_backend_split or groups.get('backend', []) | length == 1
+          - not (app_backend_split | bool) or groups.get('backend', []) | length == 1
         fail_msg: >-
           Supply backend_image_tag=sha-<commit> and an inventory with one gateway (and one backend VPS
           when app_backend_split is true).
@@ -24,8 +24,8 @@
     - name: Go runs on another host
       ansible.builtin.meta: end_host
       when: >-
-        (app_backend_split and inventory_hostname not in groups.get('backend', []))
-        or (not app_backend_split and inventory_hostname not in groups['gateway'])
+        ((app_backend_split | bool) and inventory_hostname not in groups.get('backend', []))
+        or (not (app_backend_split | bool) and inventory_hostname not in groups['gateway'])
 
     - name: Validate before changing the server
       ansible.builtin.import_tasks: roles/app/tasks/validate.yml

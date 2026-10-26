@@ -2,7 +2,8 @@
 # Перенос Postgres с gateway на приватную VPS2 (infra#59). Порядок, окно и откат — RUNBOOK.md,
 # «Перенос Go и Postgres на VPS2». Плейбук только копирует и сверяет данные: Go на gateway
 # останавливается (сайт отвечает 503), на VPS2 поднимается Go того же тега с восстановленной базой.
-# Gateway на раздельную раскладку переключает следующий шаг — deploy-bff.yml -e app_backend_split=true.
+# Gateway на раздельную раскладку переключает следующий шаг —
+# deploy-bff.yml -e '{"app_backend_split": true}'.
 # Данные и том Postgres на gateway не удаляются.
 #
 #   ansible-playbook -i inventory/ci.yml migrate-backend.yml -e migrate_confirm=yes
@@ -25,7 +26,7 @@
           - migrate_confirm | default('') == 'yes'
           - groups['gateway'] | length == 1
           - groups.get('backend', []) | length == 1
-          - not app_backend_split
+          - not (app_backend_split | bool)
         fail_msg: >-
           Run with -e migrate_confirm=yes during the agreed window, with one gateway and one backend in
           the inventory and app_backend_split still false (the data is still on the gateway).
