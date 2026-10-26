@@ -6,13 +6,20 @@
     public_ip: "{{ hostvars[groups['gateway'][0]]['ansible_host'] }}"
   tasks:
     # Inventory строится из серверов проекта (openstack.yml): прод-VPS (gateway) ровно одна, кроме
-    # неё допускается только вспомогательная VPS (группа auxiliary, auxiliary.yml).
+    # неё допускаются приватная VPS2 (группа backend, не больше одной, infra#59) и вспомогательная VPS
+    # (группа auxiliary, auxiliary.yml).
     - name: В проекте ровно одна прод-VPS
       ansible.builtin.assert:
         that:
           - groups['gateway'] | length == 1
-          - groups['all'] | difference(groups['gateway']) | difference(groups['auxiliary'] | default([])) | length == 0
-        fail_msg: "Ожидалась одна прод-VPS и вспомогательные (auxiliary), в inventory: {{ groups['all'] }}"
+          - groups['backend'] | default([]) | length <= 1
+          - >-
+            groups['all'] | difference(groups['gateway']) | difference(groups['backend'] | default([]))
+            | difference(groups['auxiliary'] | default([])) | length == 0
+        fail_msg: >-
+          Ожидались одна прод-VPS, не больше одной VPS2 (backend) и вспомогательные (auxiliary),
+          в inventory: {{ groups['all'] }}
+      tags: inventory
 
     # BFF выкачен, если в .env на VPS есть BFF_IMAGE_REF (роль app); до первой выкатки Caddy отвечает
     # заглушкой. BFF_RELEASE_SHA — для проверки релиза в HTML.

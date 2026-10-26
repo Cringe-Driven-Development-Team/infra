@@ -93,9 +93,6 @@
         project_src: "{{ app_compose_dir }}"
         state: present
         pull: never
-        # migrate-backend.yml сначала поднимает на VPS2 только Postgres и Redis: база восстанавливается
-        # до первого запуска Go
-        services: "{{ app_start_only | default(omit) }}"
         # переезд Go на VPS2: сервисы, которых больше нет в compose.yml, останавливаются; тома остаются
         remove_orphans: true
         wait: true

@@ -30,8 +30,8 @@ docker_users:
 
 # Раскладка приложения (infra#59). false — всё на gateway (Caddy, BFF, Go API, Postgres, Redis в одном
 # проекте Compose). true — на gateway Caddy и BFF, на приватной VPS2 (группа backend) Go API, Postgres и
-# Redis; BFF ходит в Go по приватному адресу. Переключается только переносом данных (migrate-backend.yml,
-# RUNBOOK.md «Перенос Go и Postgres на VPS2»); обратно — откатом по тому же разделу.
+# Redis; BFF ходит в Go по приватному адресу. Данные не переносятся: на VPS2 новая пустая база.
+# Переключение и откат — RUNBOOK.md, «Go и Postgres на VPS2».
 app_backend_split: false
 # Приватный адрес VPS2 (выход Pulumi backendPrivateIp): из inventory, где он ansible_host группы backend
 app_backend_address: "{{ hostvars[groups['backend'][0]]['ansible_host'] if groups.get('backend') else '' }}"

@@ -667,6 +667,27 @@ class DeploymentChecks(unittest.TestCase):
                 for host, services in expected.items():
                     self.assertIn(f"SERVICES {host} {services}", output)
 
+    def test_verify_accepts_the_backend_vps_in_the_inventory(self):
+        def run(groups):
+            data = {"all": {"children": {group: {"hosts": {host: {
+                "ansible_host": "127.0.0.1", "ansible_connection": "local"} for host in hosts}}
+                for group, hosts in groups.items()}}}
+            inventory = self.root / "verify-inventory.yml"
+            inventory.write_text(yaml.safe_dump(data))
+            return subprocess.run(
+                [shutil.which("ansible-playbook") or "ansible-playbook", "-i", str(inventory),
+                 str(ANSIBLE / "verify.yml"), "--tags", "inventory"],
+                cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=60)
+
+        allowed = {"gateway": ["gw"], "backend": ["vps2"], "auxiliary": ["aux"]}
+        result = run(allowed)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for groups in [dict(allowed, backend=["vps2", "vps3"]), dict(allowed, other=["stray"])]:
+            with self.subTest(groups=groups):
+                result = run(groups)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("не больше одной VPS2", result.stdout + result.stderr)
+
     def test_split_layout_needs_one_backend_host(self):
         result = self.validate("sha-1234567", extra={"app_backend_split": True})
         self.assertNotEqual(result.returncode, 0)

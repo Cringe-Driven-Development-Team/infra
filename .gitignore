@@ -26,5 +26,3 @@ __pycache__/
 *.bak
 
 Claude outputs/
-# дамп переноса Postgres (migrate-backend.yml) — данные пользователей
-ansible/.migrate/

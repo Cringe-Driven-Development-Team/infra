@@ -414,8 +414,9 @@ gateway пускает пересылку только на `VPS2:22` (`ssh_hard
 порт API опубликован только на приватном адресе VPS2. В `.env` каждой машины — только секреты её
 сервисов; `BFF_API_KEY` — на обеих. `deploy-backend.yml` идёт по `gateway:backend` и выкатывает Go туда,
 где он живёт в текущей раскладке; `deploy-bff.yml` на раздельной раскладке требует, чтобы Go на VPS2
-отвечал с gateway. Переход между раскладками — только переносом данных `migrate-backend.yml`:
-[RUNBOOK.md, «Перенос Go и Postgres на VPS2»](../RUNBOOK.md#перенос-go-и-postgres-на-vps2-infra59).
+отвечал с gateway. Данные Postgres с gateway не переносятся: на VPS2 новые пустые тома, схему создают
+миграции Go при старте; тома на gateway остаются для отката. Порядок переключения и отката —
+[RUNBOOK.md, «Go и Postgres на VPS2»](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
 
 ## Go API: первая выкатка и откат
 
