@@ -73,6 +73,7 @@ class DeploymentChecks(unittest.TestCase):
             'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
+            'app_backend_split: false\napp_backend_address: ""\n'
         )
         password = b"test-vault-password-only"
         vault = VaultLib([("default", VaultSecret(password))])
@@ -189,6 +190,7 @@ class DeploymentChecks(unittest.TestCase):
             "name": "Exercise the real tag selection", "hosts": "gateway", "gather_facts": False,
             "vars": {"app_compose_dir": str(self.root),
                      "app_bff_image": "ghcr.io/cringe-driven-development-team/bff",
+                     "app_backend_split": False,
                      "ansible_python_interpreter": sys.executable},
             "tasks": [
                 {"name": "Choose tags",
@@ -426,6 +428,9 @@ class DeploymentChecks(unittest.TestCase):
         variables.update(
             yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text())
         )
+        variables.update(app_backend_split=False, app_backend_address="",
+                         app_bff_go_api_url="http://api:8080/api/v1",
+                         app_services=["caddy", "api", "postgres", "redis", "bff"])
         variables.update(app_backend_tag="sha-1234567", app_bff_ref=BFF_REF, app_bff_release=BFF_SHA,
                          app_domain="app.example.org", s3_region="ru-7",
                          s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
@@ -548,7 +553,8 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertFalse(bff.get("ports"))
         # до первой выкатки BFF сервиса нет, Compose поднимает остальное
         self.assertIn(f"BFF_RELEASE_SHA={BFF_SHA}\n", (self.root / ".env").read_text())
-        variables.update(app_bff_ref="", app_bff_release="")
+        variables.update(app_bff_ref="", app_bff_release="",
+                         app_services=["caddy", "api", "postgres", "redis"])
         (self.root / "compose.yml").write_text(compose_template.render(variables))
         (self.root / ".env").write_text(env_template.render(variables))
         result = subprocess.run(
@@ -556,6 +562,109 @@ class DeploymentChecks(unittest.TestCase):
             capture_output=True, text=True, timeout=30, check=True, env=compose_environment)
         self.assertNotIn("bff", json.loads(result.stdout)["services"])
         self.assertNotIn("BFF_IMAGE_REF", (self.root / ".env").read_text())
+
+    def render_host(self, services, split):
+        """compose.yml и .env одного хоста по реальным шаблонам роли app; Compose проверяет результат."""
+        variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
+        variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
+        address = "192.168.199.10"
+        variables.update(
+            app_backend_split=split, app_backend_address=address if split else "",
+            app_bff_go_api_url=f"http://{address}:8080/api/v1" if split else "http://api:8080/api/v1",
+            app_services=services, app_backend_tag="sha-1234567", app_bff_ref=BFF_REF,
+            app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
+            s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
+            avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
+            app_cors_allowed_origins="https://app.example.org", postgres_password="pg-secret",
+            jwt_secret="jwt-secret", csrf_secret="csrf-secret", redis_password="redis-secret",
+            session_key="session-secret", bff_api_key="s2s-secret",
+            notebooks_s3_access_key="s3-key", notebooks_s3_secret_key="s3-secret")
+        templates = Environment(undefined=StrictUndefined)
+        templates.filters["to_json"] = to_json
+        compose = templates.from_string(
+            (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text()).render(variables)
+        env = templates.from_string((ANSIBLE / "roles/app/templates/env.j2").read_text()).render(variables)
+        (self.root / "compose.yml").write_text(compose)
+        (self.root / ".env").write_text(env)
+        command = shlex.split(os.environ.get("COMPOSE_CLI", "docker compose"))
+        if not command or shutil.which(command[0]) is None:
+            self.skipTest("Set COMPOSE_CLI to a Compose binary (no Docker daemon needed)")
+        clean = {k: v for k, v in os.environ.items() if not k.isupper() or k in ("PATH", "HOME")}
+        result = subprocess.run([*command, "-f", str(self.root / "compose.yml"), "config", "--format",
+                                 "json"], capture_output=True, text=True, timeout=30, check=True,
+                                env=clean)
+        return json.loads(result.stdout), env
+
+    def test_split_layout_gateway_runs_only_caddy_and_bff(self):
+        config, env = self.render_host(["caddy", "bff"], split=True)
+        self.assertEqual(config["name"], "cellestial")
+        self.assertEqual(set(config["services"]), {"caddy", "bff"})
+        self.assertEqual(set(config["volumes"]), {"caddy_data", "caddy_config"})
+        bff = config["services"]["bff"]
+        self.assertEqual(bff["environment"]["GO_API_URL"], "http://192.168.199.10:8080/api/v1")
+        self.assertNotIn("depends_on", bff)
+        self.assertEqual(bff["environment"]["BFF_KEY"], "s2s-secret")
+        # секреты Go, Postgres, Redis и S3 на публичной машине не лежат
+        for secret in ["pg-secret", "jwt-secret", "csrf-secret", "redis-secret", "s3-secret"]:
+            self.assertNotIn(secret, env)
+        self.assertNotIn("BACKEND_IMAGE_TAG", env)
+
+    def test_split_layout_backend_publishes_the_api_only_on_the_private_address(self):
+        config, env = self.render_host(["api", "postgres", "redis"], split=True)
+        self.assertEqual(config["name"], "cellestial")
+        self.assertEqual(set(config["services"]), {"api", "postgres", "redis"})
+        self.assertEqual(set(config["volumes"]), {"postgres_data", "redis_data"})
+        ports = config["services"]["api"]["ports"]
+        self.assertEqual([(p["host_ip"], p["published"], p["target"]) for p in ports],
+                         [("192.168.199.10", "8080", 8080)])
+        for service in ["postgres", "redis"]:
+            self.assertFalse(config["services"][service].get("ports"))
+        self.assertEqual(config["services"]["api"]["environment"]["BFF_API_KEY"], "s2s-secret")
+        # ключ сессии BFF и образ BFF на VPS2 не нужны
+        self.assertNotIn("session-secret", env)
+        self.assertNotIn("BFF_IMAGE_REF", env)
+
+    def test_services_of_each_host(self):
+        data = yaml.safe_load(self.inventory.read_text())
+        data["all"]["children"]["backend"] = {"hosts": {"test-backend": {
+            "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
+        self.inventory.write_text(yaml.safe_dump(data))
+        playbook = self.root / "services-test.yml"
+        playbook.write_text(yaml.safe_dump([{
+            "name": "Exercise the real service selection", "hosts": "gateway:backend",
+            "gather_facts": False,
+            "vars": {"app_compose_dir": str(self.root / "{{ inventory_hostname }}"),
+                     "app_bff_image": "ghcr.io/cringe-driven-development-team/bff",
+                     "app_deploy_service": "api", "backend_image_tag": "sha-1234567",
+                     "ansible_python_interpreter": sys.executable},
+            "tasks": [
+                {"name": "Choose", "ansible.builtin.import_tasks": str(ANSIBLE / "roles/app/tasks/tags.yml")},
+                {"name": "Show", "ansible.builtin.debug": {
+                    "msg": "SERVICES {{ inventory_hostname }} {{ app_services | join(',') }}"}},
+            ],
+        }]))
+        for host in ["test-vps", "test-backend"]:
+            (self.root / host).mkdir(exist_ok=True)
+            (self.root / host / ".env").write_text(f"BFF_IMAGE_REF={BFF_REF}\nBFF_RELEASE_SHA={BFF_SHA}\n")
+        cases = {
+            False: {"test-vps": "caddy,api,postgres,redis,bff", "test-backend": "caddy,api,postgres,redis,bff"},
+            True: {"test-vps": "caddy,bff", "test-backend": "api,postgres,redis"},
+        }
+        for split, expected in cases.items():
+            with self.subTest(split=split):
+                result = subprocess.run(
+                    [shutil.which("ansible-playbook") or "ansible-playbook", "-i", str(self.inventory),
+                     str(playbook), "-e", json.dumps({"app_backend_split": split})],
+                    cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=60)
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode, 0, output)
+                for host, services in expected.items():
+                    self.assertIn(f"SERVICES {host} {services}", output)
+
+    def test_split_layout_needs_one_backend_host(self):
+        result = self.validate("sha-1234567", extra={"app_backend_split": True})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("one backend VPS", result.stdout + result.stderr)
 
     def test_registry_switch_and_explicit_rollback_image(self):
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
@@ -565,7 +674,8 @@ class DeploymentChecks(unittest.TestCase):
         expected = "ghcr.io/cringe-driven-development-team/backend"
         for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
             with self.subTest(override=override):
-                values = dict(variables, app_bff_ref="")
+                values = dict(variables, app_bff_ref="", app_backend_split=False,
+                              app_backend_address="", app_services=["caddy", "api", "postgres", "redis"])
                 if override is not None:
                     values["app_backend_image"] = override
                 rendered = template.render(values).replace(

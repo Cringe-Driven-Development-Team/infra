@@ -6,6 +6,12 @@ all:
       hosts:
         cellestial:
           ansible_host: cellestial.ru
+    # Приватная VPS2 (infra#59): адрес — pulumi stack output backendPrivateIp, вход через gateway
+    # (group_vars/backend). Добавляется после pulumi up, RUNBOOK.md «Перенос Go и Postgres на VPS2».
+    # backend:
+    #   hosts:
+    #     cellestial-backend:
+    #       ansible_host: 192.168.199.x
     auxiliary:
       hosts:
         cellestial-auxiliary:

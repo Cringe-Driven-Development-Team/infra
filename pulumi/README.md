@@ -81,6 +81,18 @@ pulumi config set infra:notebooksBucket <имя-бакета>
 pulumi config set infra:avatarsBucket <имя-бакета>
 ```
 
+Приватная VPS2 под Go API, Postgres и Redis (infra#59) — без публичного IP, в той же приватной сети;
+security group пускает SSH и 8080 только с приватного адреса gateway:
+
+```bash
+pulumi config set infra:backend true
+pulumi config set infra:backendFlavorName SL1.2-4096
+# pulumi config set infra:backendVolumeSize 40   # по умолчанию 40 ГБ
+```
+
+Выходы `backendPrivateIp` и `gatewayPrivateIp` — для inventory Ansible (`app_gateway_address`, группа
+`backend` в `inventory/ci.yml`).
+
 `pool`, `zone` и `volumeType` — из одного региона VPS (`ru-9` / `ru-9a` / `fast.ru-9a`).
 `s3Pool` задаёт endpoint `https://s3.<pool>.storage.selcloud.ru` и region подписи.
 

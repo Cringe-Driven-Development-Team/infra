@@ -539,3 +539,58 @@ python -m unittest discover -s tests -v
 ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml auxiliary.yml
 ansible-lint auxiliary.yml roles/hooks roles/restic_backup tasks/verify-hooks-snapshot.yml verify.yml
 ```
+
+## Перенос Go и Postgres на VPS2 (infra#59)
+
+Схема после переноса: браузер → Caddy → BFF на gateway (публичный IP) → по приватной сети Go API на
+VPS2 (`http://<backendPrivateIp>:8080`, Bearer и `X-BFF-Key`) → Postgres и Redis там же. У VPS2 нет
+публичного IP; её security group пускает SSH и 8080 только с приватного адреса gateway
+(`gatewayPrivateIp`), ufw на VPS2 — второй слой с тем же источником. На gateway API не публикуется:
+её floating IP — 1:1 DNAT, опубликованный на приватном адресе порт был бы открыт в интернет.
+Ansible ходит на VPS2 через gateway (`ProxyCommand` из `group_vars/backend`); sshd на gateway пускает
+пересылку только на `VPS2:22` (`AllowTcpForwarding local`, `PermitOpen`).
+
+Предусловия: backend#41 (проверка `X-BFF-Key` в Go) выкачен; BFF выкачен (`BFF_IMAGE_REF` в `.env`);
+окно переключения согласовано — Go недоступен от остановки на gateway до проверки на VPS2.
+
+1. **VPS2.** `pulumi preview` показывает только создание: security group `backend` и её правила, порт,
+   диск и сервер `backend`, без замены и удаления существующих ресурсов. `pulumi up` (на мерже в main
+   это делает CI). `pulumi stack output backendPrivateIp gatewayPrivateIp`; `gatewayPrivateIp` совпадает
+   с `app_gateway_address` в `group_vars/all/vars.yml`.
+2. **Inventory.** Раскомментировать группу `backend` в `inventory/ci.yml` с `backendPrivateIp`
+   (dynamic inventory найдёт VPS2 по `metadata.role` сам).
+3. **Jump.** `ansible-playbook site.yml --limit gateway`: sshd на gateway разрешает пересылку на VPS2.
+   Затем host key VPS2 — в `~/.ssh/known_hosts`, сверенный с консолью сервера в панели:
+   `ssh -o ProxyCommand="ssh -W %h:%p deploy@cellestial.ru" root@<backendPrivateIp>` (первое подключение).
+4. **Базовая настройка VPS2.** `ansible-playbook bootstrap.yml --limit backend`, затем
+   `ansible-playbook site.yml --limit backend` (users, hardening, ufw, Docker). Проверка доступа снаружи:
+   с управляющей машины `nc -vz <backendPrivateIp> 22` не проходит (нет маршрута), публичного IP у
+   сервера в панели нет.
+5. **Перенос данных** (окно): `ansible-playbook migrate-backend.yml -e migrate_confirm=yes` с теми же
+   `GHCR_USERNAME`/`GHCR_TOKEN`, что у `deploy-backend.yml` (образ Go частный). Плейбук останавливает Go
+   на gateway, снимает `pg_dump` в `/opt/cellestial/backup/postgres-migrate.dump` на gateway (копия
+   остаётся), восстанавливает его в пустую базу VPS2 до первого запуска Go, сверяет каждую таблицу по
+   числу строк и md5 содержимого (в том числе таблицу миграций) и поднимает на VPS2 Go того же тега.
+   Расхождение — ошибка до переключения: см. «Откат». Redis (refresh-сессии) не переносится:
+   пользователи входят заново.
+6. **Переключение BFF.** `ansible-playbook deploy-bff.yml -e app_backend_split=true
+   -e bff_image_ref=<BFF_IMAGE_REF из .env gateway> -e bff_release_sha=<BFF_RELEASE_SHA>`: на gateway
+   остаются Caddy и BFF с `GO_API_URL` на VPS2, контейнеры api/postgres/redis удаляются (тома
+   `cellestial_postgres_data` и `cellestial_redis_data` на gateway остаются — не удалять до успешной
+   проверки).
+7. **Проверка.** `verify.yml -e app_backend_split=true`: ufw и sshd обеих машин, Redis на VPS2, с gateway
+   Go отвечает с верным `X-BFF-Key` (401 без Bearer) и даёт `403 s2s_forbidden` без ключа и с неверным.
+   Руками — вход, список и изменение блокнота на cellestial.ru.
+8. **Закрепить.** PR: `app_backend_split: true` в `group_vars/all/vars.yml` и группа `backend` в
+   `inventory/ci.yml`. После него `deploy-backend.yml` (CD бэка) выкатывает Go на VPS2; CD бэка
+   передаёт `-e jump_known_hosts=<файл>` и держит в `SSH_KNOWN_HOSTS` ещё и host key VPS2.
+
+Откат:
+
+- **До шага 6** (данные не сошлись, VPS2 не поднялась): `docker compose start api` на gateway — данные
+  там не менялись. VPS2 можно очистить и повторить шаг 5.
+- **После шага 6:** `deploy-bff.yml -e app_backend_split=false …` и `deploy-backend.yml
+  -e app_backend_split=false -e backend_image_tag=<тег>`: на gateway снова Go, Postgres и Redis на
+  прежних томах. Данные, записанные на VPS2 после переключения, сюда не попадают — перенести их тем же
+  `pg_dump`/`pg_restore` в обратную сторону до повторного запуска Go на gateway.
+- Старые тома на gateway удалять только после стабильной работы на VPS2 и свежего бэкапа.

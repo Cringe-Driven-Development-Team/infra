@@ -30,9 +30,39 @@
         {{ app_deployed_text | regex_findall('(?m)^BFF_RELEASE_SHA=([0-9a-f]{40})$')
         | first | default('') }}
 
+# Сервисы этого хоста (infra#59): всё на gateway или gateway — Caddy и BFF, VPS2 — Go, Postgres, Redis.
+# BFF — только после первой выкатки (есть образ).
+- name: Choose the services of this host
+  ansible.builtin.set_fact:
+    app_services: >-
+      {{ (['caddy', 'api', 'postgres', 'redis'] if not app_backend_split
+          else ['caddy'] if inventory_hostname in groups['gateway']
+          else ['api', 'postgres', 'redis'])
+         + (['bff'] if app_bff_ref and (not app_backend_split or inventory_hostname in groups['gateway'])
+            else []) }}
+
 # BFF ждёт healthy Go: без выкаченного бэка Compose его не поднимет
 - name: Require a deployed backend
   ansible.builtin.assert:
     that:
       - app_backend_tag | length > 0
     fail_msg: No backend is deployed on the VPS. Run deploy-backend.yml with backend_image_tag first.
+  when: "'api' in app_services"
+
+# На gateway раздельной раскладки Go — на VPS2: BFF выкатывается, только если Go отвечает оттуда
+- name: Require the Go API on VPS2
+  ansible.builtin.uri:
+    url: "http://{{ app_backend_address }}:8080/health"
+    timeout: 5
+  register: app_backend_health
+  failed_when: false
+  when: app_backend_split and 'api' not in app_services and app_deploy_service == 'bff'
+
+- name: The Go API on VPS2 is healthy
+  ansible.builtin.assert:
+    that:
+      - app_backend_health.status | default(0) == 200
+    fail_msg: >-
+      Go API at http://{{ app_backend_address }}:8080 does not answer from the gateway. Deploy it with
+      deploy-backend.yml (on VPS2) first.
+  when: app_backend_split and 'api' not in app_services and app_deploy_service == 'bff'
