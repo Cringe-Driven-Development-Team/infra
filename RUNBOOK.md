@@ -343,6 +343,28 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
    `PORT=8080`, `WEBHOOK_ALERTS_SEND_ENABLED=false` заданы ролью. Значения env в
    Vault хранить строками; не включать worker до приёмки Task 10. Его дополнительные
    переменные и переключение описаны в [runbook сервиса](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/services/webhook-alerts/README.md).
+
+   Для включённого sender также нужны `TELEGRAM_BOT_TOKEN`,
+   `TELEGRAM_APIDOG_BOT_TOKEN` (отдельный бот Apidog), `TELEGRAM_CHAT_ID`,
+   `TELEGRAM_APIDOG_TOPIC_ID`, `APIDOG_ACCESS_TOKEN` и `APIDOG_TELEGRAM_USER_MAP`.
+   Токен чтения MR и карту хранить только в `vault_hooks_env`. Карта — строка JSON:
+   `{"1066826":{"name":"Имя участника","telegramId":"123"}}` (пример с вымышленным
+   Telegram ID). Ключ — Apidog user ID, `name` — проверенное отображаемое имя,
+   `telegramId` — строка с положительным числовым Telegram ID. Начальные записи:
+   `1066826` — Валентин Кунев (`MrDuckVC`), `1067537` — Александр Батовкин
+   (`blackHATred`); Telegram IDs копировать из проверенной `TELEGRAM_USER_MAP`
+   организации без вывода значений. При добавлении участников обновлять карту;
+   неизвестный ID отображается без пинга, пустая карта `{}` допустима.
+   Не передавать токен в argv, URL, логи или комментарии GitHub.
+
+   Публичные defaults роли: `APIDOG_PROJECT_ID=1382426`,
+   `APIDOG_TARGET_BRANCH_ID=1388508` (main),
+   `APIDOG_PROJECT_NAME=2026_2_Cringe_Driven_Development`,
+   `APIDOG_CONTRACT_URL=https://vb78fyael1.apidog.io/`.
+   Preflight включённого sender проверяет наличие токена/карты, положительные
+   числовые IDs, непустое имя и HTTP/HTTPS URL; сервис проверяет структуру JSON.
+   При недоступном Apidog исходный merge-алерт отправляется с кнопкой контракта;
+   однозначный MR добавляет упоминания и точную кнопку «Открыть MR».
 2. Проверить, что package `webhook-alerts` опубликован как **public**, и
    анонимный pull закреплённого digest с VPS проходит с чистым Docker config.
    Публичность исходного `.github` репозитория сама по себе не делает GHCR package

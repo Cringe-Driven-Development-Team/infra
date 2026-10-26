@@ -97,18 +97,31 @@ class HooksChecks(unittest.TestCase):
             "TELEGRAM_CHAT_ID": "-1001",
             "TELEGRAM_APIDOG_TOPIC_ID": "88",
             "TELEGRAM_APIDOG_BOT_TOKEN": "fake-apidog-bot",
+            "APIDOG_ACCESS_TOKEN": "fake-access-token",
+            "APIDOG_TELEGRAM_USER_MAP": json.dumps({"1066826": {"name": "Test person", "telegramId": "123"}}),
         }
         variables = self.variables | {"vault_hooks_env": env}
         result = self.play(tasks, variables)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        missing_env = env.copy()
-        del missing_env["TELEGRAM_APIDOG_BOT_TOKEN"]
-        missing_token = self.variables | {"vault_hooks_env": missing_env}
-        result = self.play(tasks, missing_token)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("TELEGRAM_APIDOG_BOT_TOKEN", result.stdout + result.stderr)
-        self.assertNotIn("fake-apidog-bot", result.stdout + result.stderr)
+        for key in ["TELEGRAM_APIDOG_BOT_TOKEN", "APIDOG_ACCESS_TOKEN", "APIDOG_TELEGRAM_USER_MAP"]:
+            with self.subTest(missing=key):
+                missing_env = env.copy()
+                del missing_env[key]
+                result = self.play(tasks, self.variables | {"vault_hooks_env": missing_env})
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(key, output)
+                for value in ["fake-apidog-bot", "fake-access-token", "Test person"]:
+                    self.assertNotIn(value, output)
+
+        for key, value in [("APIDOG_PROJECT_ID", "1junk"), ("APIDOG_TARGET_BRANCH_ID", "0"),
+                           ("APIDOG_PROJECT_NAME", " "), ("APIDOG_CONTRACT_URL", "javascript:bad")]:
+            with self.subTest(invalid=key):
+                result = self.play(tasks, self.variables | {"vault_hooks_env": env | {key: value}})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(key, result.stdout + result.stderr)
+                self.assertNotIn("fake-access-token", result.stdout + result.stderr)
 
     def test_proxy_preflight_rejects_missing_and_unsafe_config_without_disclosure(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
