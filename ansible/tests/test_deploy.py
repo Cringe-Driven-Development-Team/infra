@@ -438,6 +438,7 @@ class DeploymentChecks(unittest.TestCase):
                          app_cors_allowed_origins="https://app.example.org")
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
+        templates.filters["bool"] = to_bool
         compose_template = templates.from_string(
             (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text()
         )
@@ -581,6 +582,7 @@ class DeploymentChecks(unittest.TestCase):
             notebooks_s3_access_key="s3-key", notebooks_s3_secret_key="s3-secret")
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
+        templates.filters["bool"] = to_bool
         compose = templates.from_string(
             (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text()).render(variables)
         env = templates.from_string((ANSIBLE / "roles/app/templates/env.j2").read_text()).render(variables)
@@ -673,7 +675,9 @@ class DeploymentChecks(unittest.TestCase):
     def test_registry_switch_and_explicit_rollback_image(self):
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
         variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
-        template = Environment(undefined=StrictUndefined).from_string(
+        environment = Environment(undefined=StrictUndefined)
+        environment.filters["bool"] = to_bool
+        template = environment.from_string(
             (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text())
         expected = "ghcr.io/cringe-driven-development-team/backend"
         for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
