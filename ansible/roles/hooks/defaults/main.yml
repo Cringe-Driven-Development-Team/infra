@@ -11,5 +11,8 @@ hooks_data_path: /data
 # Worker выключен до отдельной приёмки/переключения Task 10. Секреты — только Vault.
 hooks_env: >-
   {{ {'DATABASE_PATH': '/data/queue.sqlite', 'PORT': '8080', 'WEBHOOK_ALERTS_SEND_ENABLED': 'false',
-       'TELEGRAM_PROXY_URL': 'http://telegram-proxy:2080'}
+       'TELEGRAM_PROXY_URL': 'http://telegram-proxy:2080',
+       'APIDOG_PROJECT_ID': '1382426', 'APIDOG_TARGET_BRANCH_ID': '1388508',
+       'APIDOG_PROJECT_NAME': '2026_2_Cringe_Driven_Development',
+       'APIDOG_CONTRACT_URL': 'https://vb78fyael1.apidog.io/'}
      | combine(vault_hooks_env | default({})) }}
