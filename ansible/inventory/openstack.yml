@@ -15,3 +15,5 @@ strict: true
 groups:
   # metadata задаётся в pulumi/index.ts: { role: "gateway", env: "release" }
   gateway: (openstack.metadata | default({})).get('role') == 'gateway'
+  # Вспомогательная VPS для сервиса вебхуков — плейбук auxiliary.yml
+  auxiliary: (openstack.metadata | default({})).get('role') == 'auxiliary'

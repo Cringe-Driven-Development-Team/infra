@@ -3,7 +3,7 @@
 # users — и здесь: ключи команды (files/authorized_keys/*.pub) раскатываются каждым site.yml,
 # bootstrap.yml после ssh_hardening повторно не запустить (root-логин закрыт).
 - name: "Базовая настройка VPS"
-  hosts: all
+  hosts: gateway
   become: true
   roles:
     - users

@@ -68,6 +68,10 @@ const cdnCustomDomainName = cfg.get("cdnDomain");
 const avatarsCustomDomainName = cfg.get("avatarsDomain");
 // Свой домен CDN-ресурса статики (static.cellestial.ru): CNAME в зоне infra:dnsZone, как у infra:cdnDomain.
 const staticCustomDomainName = cfg.get("staticDomain");
+// Вспомогательная VPS (infra#54) — сервис вебхуков; его домен — A-запись в infra:dnsZone.
+const auxiliaryEnabled = cfg.getBoolean("auxiliary") ?? false;
+const hooksDomainName = cfg.get("hooksDomain");
+const auxiliaryBackupPool = cfg.get("auxiliaryBackupPool") ?? s3Pool;
 if (staticCustomDomainName && !staticBucketName) {
   throw new Error("infra:staticDomain задан без infra:staticBucket: домен привязывается к CDN-ресурсу бакета статики");
 }
@@ -494,15 +498,18 @@ const dnsProjectId: pulumi.Input<string> = cfg.get("dnsProjectId") ?? project.id
 // Свой провайдер selectel для DNS: его projectId — проект, где провайдер ищет импортируемые записи и
 // зоны (у провайдера по умолчанию он берётся из INFRA_PROJECT_ID, иначе import падает с
 // «INFRA_PROJECT_ID must be set»). Явный провайдер не читает selectel:* из конфига стека — передаём;
-// логин и пароль он, как и провайдер по умолчанию, берёт из OS_* (selectel.env).
+// Логин и пароль — из OS_* (selectel.env), как у провайдера по умолчанию, но явно: SDK, собранный
+// свежим pulumi install, делает их обязательными. Пароль в стейте — секретом.
 const dnsProvider = new selectel.Provider("dns", {
   projectId: dnsProjectId,
   domainName,
-  authUrl: selectelCfg.get("authUrl"),
-  authRegion: selectelCfg.get("authRegion"),
+  authUrl: selectelCfg.require("authUrl"),
+  authRegion: selectelCfg.require("authRegion"),
+  username: selectelCreds.username,
+  password: pulumi.secret(selectelCreds.password),
 });
 const withDns = { provider: dnsProvider };
-const parentZone = appDomain || cdnCustomDomainName || staticCustomDomainName || docsCustomDomainName || githubPagesChallenge
+const parentZone = appDomain || hooksDomainName || cdnCustomDomainName || staticCustomDomainName || docsCustomDomainName || githubPagesChallenge
   ? selectel.getDomainsZoneV2Output({ name: cfg.require("dnsZone"), projectId: dnsProjectId }, withDns)  // cellestial.ru.
   : undefined;
 
@@ -629,6 +636,164 @@ if (avatarsCustomDomainName) {
   }, { dependsOn: [record, avatarsAccess] });
 }
 
+// ---------------------------------------------------------------------------
+// Вспомогательная VPS для сервиса вебхуков (infra#54). Включается infra:auxiliary.
+// Та же приватная сеть и роутер, что у gateway, но свои порт, диск, floating IP и security group:
+// прод-ресурсы не меняются. Docker публикует порты в обход ufw, поэтому наружу порты закрывает
+// security group на порту VPS — только 22/80/443; порт сервиса снаружи не виден.
+// ---------------------------------------------------------------------------
+let auxiliaryFloatingIp: openstack.networking.FloatingIp | undefined;
+let auxiliaryBackupBucketResource: aws.s3.Bucket | undefined;
+let auxiliaryBackupCredentials: selectel.IamS3CredentialsV1 | undefined;
+if (auxiliaryEnabled) {
+  const secGroup = new openstack.networking.SecGroup("auxiliary", {
+    name: "auxiliary",
+    description: "Auxiliary VPS: only SSH, HTTP, HTTPS and ICMP from outside",
+  }, withOs);
+  const ingress: [string, number | undefined][] = [["tcp", 22], ["tcp", 80], ["tcp", 443], ["icmp", undefined]];
+  for (const [protocol, port] of ingress) {
+    new openstack.networking.SecGroupRule(`auxiliary-${protocol}${port ?? ""}`, {
+      securityGroupId: secGroup.id,
+      direction: "ingress",
+      ethertype: "IPv4",
+      protocol,
+      ...(port ? { portRangeMin: port, portRangeMax: port } : {}),
+      remoteIpPrefix: "0.0.0.0/0",
+    }, withOs);
+  }
+
+  const port = new openstack.networking.Port("auxiliary", {
+    name: "auxiliary-port",
+    networkId: network.id,
+    fixedIps: [{ subnetId: subnet.id }],
+    securityGroupIds: [secGroup.id],
+  }, withOs);
+
+  // 40 ГБ: образы Docker и тома сервиса; enableOnlineResize — увеличение без пересоздания.
+  const volume = new openstack.blockstorage.Volume("auxiliary", {
+    name: "boot-volume-auxiliary",
+    size: cfg.getNumber("auxiliaryVolumeSize") ?? 40,
+    imageId: image.id,
+    volumeType,
+    availabilityZone: zone,
+    enableOnlineResize: true,
+  }, { ...withOs, ignoreChanges: ["imageId"] });
+
+  new openstack.compute.Instance("auxiliary", {
+    name: "pulumi-server-auxiliary",
+    flavorId: flavorId("auxiliary"),
+    keyPair: keypair.name,
+    availabilityZone: zone,
+    networks: [{ port: port.id }],
+    blockDevices: [{
+      sourceType: "volume",
+      destinationType: "volume",
+      uuid: volume.id,
+      bootIndex: 0,
+      deleteOnTermination: false,
+    }],
+    // По metadata.role dynamic inventory Ansible собирает группу auxiliary
+    metadata: { role: "auxiliary", env: "release" },
+    userData,
+    vendorOptions: { ignoreResizeConfirmation: true },
+  }, { ...withOs, deleteBeforeReplace: true, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
+
+  auxiliaryFloatingIp = new openstack.networking.FloatingIp("auxiliary", {
+    pool: externalNetworkName,
+  }, withOs);
+  new openstack.networking.FloatingIpAssociate("auxiliary", {
+    portId: port.id,
+    floatingIp: auxiliaryFloatingIp.address,
+  }, { ...withOs, dependsOn: [routerInterface] });
+
+  // Сервис вебхуков — A-запись в infra:dnsZone; сертификат выпускает Caddy на VPS.
+  if (hooksDomainName) {
+    new selectel.DomainsRrsetV2("hooks", {
+      zoneId: parentZone!.id,
+      projectId: dnsProjectId,
+      name: withDot(hooksDomainName),
+      type: "A",
+      ttl: 300,
+      records: [{ content: auxiliaryFloatingIp.address }],
+    }, { ...withDns, deleteBeforeReplace: true });
+  }
+
+  // Бэкапы restic с VPS: приватный бакет и свой пользователь, как у бакета ноутбуков. Ключ этого
+  // пользователя лежит на VPS — доступ у него только к этому бакету (по политике).
+  const backupUser = new selectel.IamServiceuserV1("auxiliary-backup", {
+    name: cfg.get("auxiliaryBackupUserName") ?? "cellestialAuxiliaryBackupUser",
+    password: new random.RandomPassword("auxiliary-backup-serviceuser", serviceUserPasswordArgs).result,
+    roles: [
+      { roleName: "s3.bucket.user", scope: "project", projectId: project.id },
+    ],
+  });
+  auxiliaryBackupCredentials = new selectel.IamS3CredentialsV1("auxiliary-backup-s3", {
+    name: `${name}-auxiliary-backup`,
+    userId: backupUser.id,
+    projectId: project.id,
+  });
+  // Пул бакета бэкапов — infra:auxiliaryBackupPool (по умолчанию infra:s3Pool): в ru-7 Selectel
+  // временно не создаёт бакеты (AccessDenied «Bucket creation is temporarily denied in this region»).
+  // S3-ключ выдан на проект, а не на пул — провайдер другого пула работает тем же ключом стека.
+  const backupS3 = auxiliaryBackupPool === s3Pool ? s3 : new aws.Provider("selectel-s3-auxiliary-backups", {
+    region: auxiliaryBackupPool,
+    accessKey: pulumi.all([s3AccessKeyReady, project.id]).apply(async ([accessKey, projectId]) => {
+      if (!pulumi.runtime.isDryRun()) {
+        await initProjectS3(curl, { ...selectelCreds, domain: domainName }, projectId, auxiliaryBackupPool);
+      }
+      return accessKey;
+    }),
+    secretKey: s3Credentials.secretKey,
+    endpoints: [{ s3: `https://s3.${auxiliaryBackupPool}.storage.selcloud.ru` }],
+    s3UsePathStyle: true,
+    skipCredentialsValidation: true,
+    skipRegionValidation: true,
+    skipRequestingAccountId: true,
+    skipMetadataApiCheck: true,
+  });
+  // Резервные копии: без forceDestroy и с protect, как данные пользователей.
+  auxiliaryBackupBucketResource = new aws.s3.Bucket("auxiliary-backups", {
+    bucket: cfg.require("auxiliaryBackupBucket"),
+  }, { provider: backupS3, protect: true });
+  new BucketAccess("auxiliary-backups", {
+    projectId: project.id,
+    pool: auxiliaryBackupPool,
+    bucket: auxiliaryBackupBucketResource.bucket,
+    type: "private",
+  }, { dependsOn: [auxiliaryBackupBucketResource] });
+  // Первым правилом s3:* пользователю стека — иначе политика отрежет его самого (см. "notebooks").
+  new aws.s3.BucketPolicy("auxiliary-backups", {
+    bucket: auxiliaryBackupBucketResource.id,
+    policy: pulumi.all([auxiliaryBackupBucketResource.arn, serviceUser.id, backupUser.id])
+      .apply(([arn, stackUserId, backupUserId]) => JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Sid: "StackServiceUserFullAccess",
+            Effect: "Allow",
+            Principal: { AWS: [stackUserId] },
+            Action: "s3:*",
+            Resource: [arn, `${arn}/*`],
+          },
+          {
+            Sid: "ResticObjects",
+            Effect: "Allow",
+            Principal: { AWS: [backupUserId] },
+            Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+            Resource: `${arn}/*`,
+          },
+          {
+            Sid: "ResticList",
+            Effect: "Allow",
+            Principal: { AWS: [backupUserId] },
+            Action: ["s3:ListBucket", "s3:GetBucketLocation"],
+            Resource: arn,
+          },
+        ],
+      })),
+  }, { provider: backupS3 });
+}
+
 export const projectId = project.id;
 export const publicIp = floatingIp.address;
 export const gatewayName = serverGateway.name;
@@ -660,3 +825,10 @@ export const staticPublicDomain = staticAccess?.publicDomain ?? null;
 export const staticCustomDomain = staticCustomDomainName ?? null;
 export const staticCdnResourceId = staticCdn?.id ?? null;
 export const staticCdnDefaultDomain = staticCdn?.cdnDomain ?? null;
+// Вспомогательная VPS (infra:auxiliary): адрес, домен вебхуков, бакет и ключ бэкапов restic
+export const auxiliaryPublicIp = auxiliaryFloatingIp?.address ?? null;
+export const hooksDomain = auxiliaryEnabled ? hooksDomainName ?? null : null;
+export const auxiliaryBackupBucket = auxiliaryBackupBucketResource?.bucket ?? null;
+export const auxiliaryBackupPoolName = auxiliaryEnabled ? auxiliaryBackupPool : null;
+export const auxiliaryBackupAccessKey = auxiliaryBackupCredentials?.accessKey ?? null;
+export const auxiliaryBackupSecretKey = auxiliaryBackupCredentials ? pulumi.secret(auxiliaryBackupCredentials.secretKey) : null;

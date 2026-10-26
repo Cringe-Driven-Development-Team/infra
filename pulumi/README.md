@@ -282,6 +282,22 @@ dig +short CNAME docs.cellestial.ru   # cringe-driven-development-team.github.io
 
 Ключи независимы: без `infra:githubPagesChallenge` создаётся только CNAME.
 
+## Вспомогательная VPS
+
+`infra:auxiliary: "true"` — отдельная VPS под сервис вебхуков (infra#54) в той же приватной сети, что и
+gateway, но со своими портом, диском (`infra:auxiliaryVolumeSize`, 40 ГБ), флейвором
+(`infra:auxiliaryFlavorName`) и floating IP; `metadata.role: auxiliary` — группа `auxiliary` в Ansible.
+
+- Security group `auxiliary` на порту VPS: входящие только 22/80/443 tcp и ICMP. Docker публикует порты
+  мимо ufw — закрывает их именно security group.
+- A-запись `infra:hooksDomain` в `infra:dnsZone`; сертификат выпускает Caddy на VPS.
+- Бакет бэкапов `infra:auxiliaryBackupBucket` в пуле `infra:auxiliaryBackupPool` (`ru-1`: в `ru-7` Selectel
+  временно не создаёт бакеты): приватный, `protect: true`, пользователь
+  `infra:auxiliaryBackupUserName` с ролью `s3.bucket.user` — доступ только к этому бакету по политике.
+
+Выходы: `auxiliaryPublicIp`, `hooksDomain`, `auxiliaryBackupBucket`, `auxiliaryBackupAccessKey`,
+`auxiliaryBackupSecretKey`. Дальше — RUNBOOK, «Вспомогательная VPS».
+
 ## Передача в Ansible
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт

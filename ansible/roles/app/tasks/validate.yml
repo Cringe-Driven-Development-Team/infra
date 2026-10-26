@@ -1,11 +1,18 @@
 ---
-- name: Check the requested backend tag
+# app_deploy_tag — имя переменной тега выкатываемого образа (backend_image_tag или bff_image_tag),
+# задаёт playbook. Тег второго образа необязателен: без него остаётся выкаченный на VPS.
+- name: Check the requested image tags
   ansible.builtin.assert:
     that:
-      - backend_image_tag is defined
-      - backend_image_tag is string
-      - backend_image_tag is match('^sha-[0-9a-f]{7,40}$')
-    fail_msg: An explicit sha-<commit> tag is required, including for rollback.
+      - item.value is string
+      - item.value is match('^sha-[0-9a-f]{7,40}$')
+    fail_msg: "An explicit {{ item.key }}=sha-<commit> is required, including for rollback."
+  loop: >-
+    {{ {'backend_image_tag': backend_image_tag | default(none),
+        'bff_image_tag': bff_image_tag | default(none)} | dict2items }}
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.key == app_deploy_tag or item.value is not none
 
 - name: Check whether controller GHCR credentials are present
   ansible.builtin.set_fact:
@@ -34,6 +41,24 @@
       - jwt_secret.splitlines() | length == 1
       - csrf_secret.splitlines() | length == 1
     fail_msg: Application secrets must be nonempty single-line values.
+  no_log: true
+
+- name: Check the BFF secrets
+  ansible.builtin.assert:
+    that:
+      - session_key is match('^[A-Za-z0-9+/]{43}=$')
+      - bff_api_key is match('^[A-Za-z0-9_-]{32,}$')
+    fail_msg: >-
+      vault_session_key must be base64 of exactly 32 bytes (openssl rand -base64 32);
+      vault_bff_api_key must be 32+ characters of [A-Za-z0-9_-] (openssl rand -hex 32).
+  no_log: true
+
+# Пароль попадает в redis.conf как есть (requirepass) — только безопасные символы
+- name: Check the Redis password
+  ansible.builtin.assert:
+    that:
+      - redis_password is match('^[A-Za-z0-9_-]{16,}$')
+    fail_msg: vault_redis_password must be 16+ characters of [A-Za-z0-9_-] (openssl rand -hex 32).
   no_log: true
 
 - name: Check S3 credentials

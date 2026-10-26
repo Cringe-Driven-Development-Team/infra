@@ -1,0 +1,27 @@
+name: actionlint
+
+# Проверка workflows до мержа: синтаксис, выражения, shellcheck в run-шагах. Без секретов и без
+# preview/apply инфраструктуры — запускается только от изменений самих workflows.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/*.yml
+      - .github/workflows/*.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Образ с зафиксированной версией; в нём же shellcheck для run-шагов
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color

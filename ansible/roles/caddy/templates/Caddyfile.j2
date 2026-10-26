@@ -1,33 +1,45 @@
 # Managed by Ansible. Caddy сам получает и продлевает сертификат Let's Encrypt
 # для домена из первой строки (A-запись должна указывать на этот сервер).
+{# Политика под то, что грузит клиент: чанки JS и CSS — с CDN бакета релизов, картинки и шрифты —
+    со статики, аватарки — со своего бакета, API — свой домен. data: в img-src — иконки: они заданы
+    в CSS как mask-image с SVG в data:. Инлайновых скриптов и style-атрибутов в разметке нет. -#}
+{% set caddy_csp = [
+    "default-src 'none'",
+    "script-src https://" ~ frontend_cdn_domain,
+    "style-src https://" ~ frontend_cdn_domain,
+    "img-src https://" ~ frontend_cdn_domain ~ " https://" ~ frontend_static_domain
+        ~ " https://" ~ avatars_public_domain ~ " data:",
+    "font-src https://" ~ frontend_static_domain,
+    "connect-src 'self'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+] | join('; ') %}
 {{ app_domain }} {
-	# До первой выкатки API отвечает заглушкой, затем работает во внутренней сети Compose.
-	handle /api/v1/* {
-{% if caddy_api_enabled | default(caddy_app_environment.stat.exists) %}
-		reverse_proxy api:8080
-{% else %}
-		respond "API is not deployed" 503
-{% endif %}
+	# Браузер не угадывает тип ответа по содержимому. defer — заголовок ставится при отправке ответа
+	# и заменяет пришедший от API или хранилища, а не дублирует его.
+	header {
+		X-Content-Type-Options nosniff
+		defer
 	}
 
-	# Клиент — SPA: на любом пути отдаётся корневой index.html бакета релизов, маршрут разбирает
-	# роутер в браузере. Чанки браузер берёт с CDN напрямую, через Caddy они не идут.
-	handle {
-		# в бакет уходят только чтения: методы пользователя хранилищу не нужны
-		@not_read not method GET HEAD
-		header @not_read Allow "GET, HEAD"
-		respond @not_read 405
+	# Внутренний /health BFF снаружи не виден. Go (/api/v1) наружу не смотрит: BFF на
+	# неизвестные /api/* отвечает 404 без HTML и в Go их не проксирует.
+	handle /health {
+		respond 404
+	}
 
-		# «?» в конце сбрасывает query string запроса: в бакет идёт ровно /index.html
-		rewrite * /index.html?
-		reverse_proxy https://{{ frontend_s3_domain }} {
-			# публичный домен бакета выбирает бакет по Host
-			header_up Host {upstream_hostport}
-			# cookie сессии и токен пользователя хранилищу не нужны
-			header_up -Cookie
-			header_up -Authorization
-			# index.html — указатель на релиз: браузер сверяет его при каждом заходе
-			header_down Cache-Control no-cache
+	# Всё остальное — BFF: HTML с пользователем, /api/trpc, публичные файлы сборки. Чанки JS и CSS
+	# браузер берёт с CDN каталога своего релиза напрямую. До первой выкатки BFF — заглушка.
+	handle {
+{% if caddy_bff_enabled | default(caddy_bff_deployed) | bool %}
+		reverse_proxy bff:3000 {
+			# ограничивает последствия XSS: страница грузит скрипты, стили, картинки и шрифты только
+			# со своих доменов; у Report-Only нарушения только пишутся в консоль браузера
+			header_down {{ 'Content-Security-Policy-Report-Only' if caddy_csp_report_only | default(true) | bool else 'Content-Security-Policy' }} "{{ caddy_csp }}"
 		}
+{% else %}
+		respond "BFF is not deployed" 503
+{% endif %}
 	}
 }

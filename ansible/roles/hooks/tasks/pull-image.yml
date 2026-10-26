@@ -1,0 +1,17 @@
+---
+- name: Скачать публичный образ hooks без авторизации
+  block:
+    - name: Скачать закреплённый образ hooks
+      community.docker.docker_compose_v2_pull:
+        project_src: "{{ hooks_compose_dir }}"
+        services:
+          - hooks
+        policy: always
+
+  rescue:
+    - name: Объяснить ошибку анонимного pull
+      ansible.builtin.fail:
+        msg: >-
+          Не удалось анонимно скачать публичный образ webhook-alerts.
+          Проверьте публичную visibility package, опубликованный digest и доступность GHCR.
+          До успешного pull запуск нового образа запрещён.

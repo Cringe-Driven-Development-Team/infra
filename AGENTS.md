@@ -1,113 +1,43 @@
-# infra
+# Инструкции для агентов
 
-Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `pulumi/bootstrap/`, стек `main`)
-и Ansible (`ansible/`). Пошагово с нуля — `RUNBOOK.md`.
+Общепроектный контекст, действующая архитектура и планы развития проекта — в
+[Контекст проекта](https://docs.cellestial.ru/project-context).
+Спеки и планы реализации конкретной задачи размещай в репозитории, где выполняется
+работа; общие для нескольких компонентов решения отражай в `docs`.
+Фактическое состояние инфраструктуры проверяй по `pulumi/`, `ansible/` и стенду.
 
-## Что создаёт Pulumi, а что делается руками
+Устройство репозитория и локальные команды — в [README.md](README.md), порядок эксплуатации —
+в [RUNBOOK.md](RUNBOOK.md). Подробности инструментов — в [Pulumi README](pulumi/README.md)
+и [Ansible README](ansible/README.md). Задачи и PR веди по
+[правилам команды](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md).
 
-Границу не размывать: то, что ниже помечено «руками», в код не добавлять — Pulumi с этим конфликтует
-(записи, которые ставит сама панель или Selectel) или API для этого нет.
+## Общепроектная wiki
 
-### Pulumi, bootstrap-стек (`pulumi/bootstrap/`, проект `infra-shared`)
+[OpenWiki в docs](https://github.com/Cringe-Driven-Development-Team/docs/tree/main/openwiki) — производный указатель; начни с [quickstart](https://github.com/Cringe-Driven-Development-Team/docs/blob/main/openwiki/quickstart.md).
+Обращайся к wiki при конкретном общепроектном вопросе или неясности; не загружай её в начале каждой задачи.
+При наличии MCP найди соседний клон `docs` относительно основного checkout (работает и из worktree):
+`git -C "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/../docs" rev-parse --show-toplevel`.
+Проверь, что его `origin` указывает на `Cringe-Driven-Development-Team/docs`; полученный абсолютный путь передавай как `root` в `openwiki_search` / `openwiki_read`, а не корень компонента. Определяй путь заново, не рассчитывай на память между сессиями.
+Без MCP читай `openwiki/quickstart.md` в соседнем `docs` или по ссылке выше. Если соседнего клона нет, используй GitHub Markdown и предложи клонировать `docs` рядом; при исчезнувшем пути ищи в `docs` напрямую.
+Перед использованием проверь актуальность клона и в его корне выполни `bun run wiki:check --against <SHA>`, передав полный актуальный SHA `docs/main`.
+Если wiki устарела, используй её только для поиска путей. Каждое нужное утверждение сверь с каноническим документом на актуальном SHA; исходный SHA wiki не подтверждает текущий код.
+Факты о реализации проверяй по актуальному коду компонента и контракту API; состояние прода — по стенду.
 
-- Проект `infra-shared`, бакет стейта `cdd-infra-state`, пользователь и ключи стейта.
-- Зона DNS `cellestial.ru.` (id проекта — выход `dnsProjectId`, он же `infra:dnsProjectId`).
+## Учебный проект: совместимость и прод
 
-### Pulumi, основной стек (`pulumi/`, проект `pulumi-cellestial`)
+У проекта нет живых пользователей; преподаватели проверяют прод примерно раз в месяц.
+Между проверками допустимы временная недоступность и несовместимость фронта и бэка
+после выкладки одной стороны. Не добавляй по своей инициативе в задачи, планы,
+приёмку или код поддержку старого API/клиента, legacy-режимы, поэтапное
+переключение, безостановочный деплой и требования высокого uptime. Делай это
+только по прямому требованию владельца для конкретной задачи.
 
-- Проект `pulumi-cellestial`, сервисный пользователь, keypair, S3-ключ.
-- Сеть, роутер, floating IP, boot-диск и VPS `pulumi-server-gateway`.
-- A-запись `cellestial.ru.` → `publicIp` в зоне `cellestial.ru.` (проект `infra-shared`).
-- Бакет `infra:s3Bucket`, **публичный** (`infra:s3Public`, по умолчанию `true`): тип бакета ставит
-  dynamic-ресурс `BucketAccess` (`pulumi/selectel-storage.ts`), публичный домен
-  `<uuid>.selstorage.ru` — выход `s3PublicDomain`.
-- Бакет ноутбуков `infra:notebooksBucket`, **приватный** (`BucketAccess` с `type: "private"`, не источник
-  CDN), `protect: true` и без `forceDestroy` — данные пользователей. Сервисный пользователь Go API
-  (`infra:notebooksUserName`, роль `s3.bucket.user`) и его S3-ключ — выходы `notebooksAccessKey`,
-  `notebooksSecretKey`; доступ ему даёт только политика этого бакета (в ней же `s3:*` пользователю стека).
-- Бакет аватарок `infra:avatarsBucket`, **публичный** (`BucketAccess` с `type: "public"`, не источник
-  CDN), `protect: true` и без `forceDestroy`. Пишет тот же пользователь Go API (политика бакета:
-  объекты — ему, `s3:*` — пользователю стека); выходы `avatarsBucket`, `avatarsPublicDomain`.
-  Анонимное чтение по ключу — `https://<avatarsPublicDomain>/<ключ>`, его даёт тип бакета. Правило
-  `PublicRead` в политику не возвращать: политика Selectel действует только на авторизованные
-  запросы, через S3 API анонимный запрос получает `403` при любой политике.
-- Бакет статики `infra:staticBucket` (`cellestial-static-0`), **публичный** (`BucketAccess` с
-  `type: "public"`), `forceDestroy: true`, без политики: пишет пользователь стека (`s3AccessKey`) — им
-  выкладывает CI репозитория `static`. Перед ним второй CDN-ресурс `<infra:name>-static-cdn`
-  (отдельный от CDN релизов, не зависит от `infra:cdn`); выходы `staticBucket`, `staticPublicDomain`,
-  `staticCdnResourceId`, `staticCdnDefaultDomain`.
-- При `infra:cdn: true` — CDN-ресурс `<infra:name>-cdn` с бакетом источником (dynamic-ресурс
-  `CdnResource`); выходы `cdnResourceId`, `cdnDefaultDomain` (`<id>.selcdn.net`).
-- Свои домены и их привязка dynamic-ресурсами (`pulumi/selectel-storage.ts`); сертификатов Pulumi не
-  выпускает:
-  - `infra:cdnDomain` (`cdn.cellestial.ru`) — **CNAME внутри зоны `cellestial.ru.`** на
-    `cdnDefaultDomain`, без зоны-поддомена; `CdnDomain`: домен в `names` CDN-ресурса; выход
-    `cdnCustomDomain`.
-  - `infra:staticDomain` (`static.cellestial.ru`) — так же, **CNAME внутри зоны `cellestial.ru.`** на
-    `staticCdnDefaultDomain`; `CdnDomain`: домен в `names` CDN-ресурса статики; выход
-    `staticCustomDomain`. Сертификат выпущен в панели — домен отвечает по HTTPS.
-  - `infra:avatarsDomain` (`avatars.cellestial.ru`) — **отдельная зона DNS** `avatars.cellestial.ru.` в
-    проекте `infra-shared` (`infra:dnsProjectId`) и в ней ALIAS на публичный
-    домен бакета `<uuid>.selstorage.ru` (`avatarsPublicDomain`); `BucketDomain`: домен бакета аватарок
-    `infra:avatarsBucket`; выход `avatarsCustomDomain`. NS-делегирование из `cellestial.ru.` ставит
-    Selectel.
-  - У бакетов релизов и статики своего домена нет (`s3.cellestial.ru` не делаем) — только
-    `s3PublicDomain` и `staticPublicDomain`; свои домены — у их CDN-ресурсов.
+Если фронт и бэк можно реализовать и проверить локально по согласованному
+целевому контракту, работай над ними независимо. Временная поломка прода
+между выкладками не создаёт связи `Blocked by`; проверь интеграцию после обеих
+задач. К преподавательской проверке прод должен работать.
 
-### Руками в панели Selectel
+## Code Review Rules
 
-- Первый сервисный пользователь аккаунта и его роли (`member`, `iam.admin` на аккаунт).
-- Личный доступ к стейту на человека — `pulumi/bootstrap/README.md`.
-- Сертификаты своих доменов: `cdn.cellestial.ru` и `static.cellestial.ru` — панель → CDN → ресурс →
-  сертификаты (у каждого домена свой CDN-ресурс);
-  `avatars.cellestial.ru` — панель → S3 → SSL-сертификаты. В код не добавлять: заказ через CDN API
-  (`POST /cdn/v3/letsencrypt/<id>`) дважды завершался `failed` без причины. Сами домены привязывает
-  Pulumi — в панели их не трогать.
-- Бэк отдаёт ссылки на аватарки через `avatars.cellestial.ru` (`avatars_public_domain` в Ansible).
-  Без сертификата домен по HTTPS отвечает сертификатом `*.ru-7.storage.selcloud.ru`, а HTTP
-  перенаправляет на HTTPS — после пересоздания стека сначала сертификат в панели, потом выкатка бэка.
-
-### Чего не делать в коде (уже падало)
-
-- NS-делегирование поддомена в `cellestial.ru.`: Selectel ставит его сам при создании зоны-поддомена,
-  своя NS-запись — `this_rrset_is_already_exists`.
-- Зону-поддомен под `cdn.cellestial.ru`: на вершине зоны CNAME невозможен, а ALIAS CDN не принимает.
-  Только CNAME-запись в `cellestial.ru.`.
-- Привязку домена бакета через API при домене-зоне (`avatars.cellestial.ru`): Selectel проверяет CNAME и
-  на ALIAS отвечает `domain_cname_invalid`. `BucketDomain` уже привязанный домен не трогает; если
-  привязка слетела — вернуть её в панели (S3 → бакет → Домены), а не через `up`.
-- `names` в теле создания/изменения `CdnResource`: домен, который ещё не CNAME на CDN, API молча
-  отбрасывает при `accept`. Привязка — отдельный `CdnDomain` после записи, со сверкой через `GET`.
-- Зону-поддомен в проекте стека (`project.id`): Selectel отвечает `root_zone_already_belongs_to_another_user`
-  (корень `cellestial.ru.` в `infra-shared`) — после `destroy` и нового проекта `up` падал на этом.
-- Зоны-поддомены при живой зоне-поддомене не заменять на CNAME в `cellestial.ru.` в одном `up`:
-  пока зона существует, NS Selectel отвечают из неё и не видят CNAME.
-
-## Эксплуатация
-
-- Перед `up`: `cd pulumi && . bootstrap/env.sh && unset OS_PROJECT_NAME`; backend прибит в
-  `pulumi/Pulumi.yaml` (`pulumi whoami -v`).
-- `INFRA_PROJECT_ID` не нужен: DNS-ресурсы в `infra-shared` идут через явный провайдер `dns` с
-  `projectId` из `infra:dnsProjectId` (провайдер берёт из него проект для `import`).
-- Не прерывать `pulumi` (Ctrl+C) во время записи стейта: `prod.json` в бакете остаётся пустым
-  (`failed to load checkpoint: unexpected end of JSON input`). Лечение — до любой следующей записи
-  скопировать `prod/.pulumi/stacks/infra/prod.json.bak` поверх `prod.json`.
-
-## Скиллы
-
-Плагины маркетплейса `cdd` включены в `.claude/settings.json`. До первой команды или правки по теме
-вызови скилл — в нём записано то, на чём здесь уже падали:
-
-- Selectel — API и токены, S3 и политики бакетов, DNS, CDN: `selectel-ops`.
-- Pulumi — программа и dynamic-ресурсы: `pulumi-typescript`; операции со стеком и стейтом: `pulumi-cli`.
-- `ansible/` и vault: `ansible-org`.
-
-Скилл не заменяет проверку: факты про стенд сверяй с кодом и самим стендом. О скиллах напоминают
-два хука в `.claude/hooks/`: `devops-skills-session.sh` — в начале каждой сессии, `devops-skills.sh` —
-по словам запроса (тесты — `bash .claude/hooks/devops-skills-session_test.sh` и
-`bash .claude/hooks/devops-skills_test.sh`).
-
-## Задачи и PR
-
-Задачи и PR ведём по [CONTRIBUTING.md](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md) организации. Завести задачу, разбить её на
-sub-issues, поставить на доску или открыть PR — скилл `cdd-tasks`.
+- Пиши заголовки и пояснения замечаний к PR на русском языке.
+  Имена файлов, идентификаторы, команды и метки приоритета сохраняй без перевода.

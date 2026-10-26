@@ -1,0 +1,13 @@
+---
+- name: Reload caddy
+  ansible.builtin.command: docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+  args:
+    chdir: "{{ hooks_compose_dir }}"
+  changed_when: true
+
+- name: Restart telegram proxy
+  community.docker.docker_compose_v2:
+    project_src: "{{ hooks_compose_dir }}"
+    services:
+      - telegram-proxy
+    state: restarted

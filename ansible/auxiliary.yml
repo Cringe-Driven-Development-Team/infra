@@ -1,0 +1,27 @@
+---
+# Вспомогательная VPS для сервиса вебхуков (infra#54). Первый вход — bootstrap.yml --limit auxiliary.
+# Прод-VPS (gateway) этот плейбук не трогает.
+- name: "Вспомогательная VPS"
+  hosts: auxiliary
+  become: true
+  pre_tasks:
+    # До изменений пользователей, firewall и конфигов: webhook env должны быть готовы.
+    - name: Проверить параметры сервиса до изменений VPS
+      ansible.builtin.import_tasks: roles/hooks/tasks/validate.yml
+
+    # cloud-init не дописал имя хоста в /etc/hosts: sudo на каждом вызове пишет «unable to resolve host»
+    - name: Имя хоста в /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 {{ ansible_facts['hostname'] }}"
+  roles:
+    - users
+    - common
+    - ssh_hardening
+    - firewall
+    - docker
+    - hooks
+    # без бакета бэкапов и ключей в Vault — --skip-tags backup
+    - role: restic_backup
+      tags: backup

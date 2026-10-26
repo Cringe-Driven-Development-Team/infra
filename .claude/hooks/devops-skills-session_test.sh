@@ -37,9 +37,9 @@ test_output_is_hook_json() {
 
 test_points_to_existing_file() {
   local out; out=$(run)
-  grep -q 'AGENTS.md' <<<"$out" || fail "нет ссылки на AGENTS.md: $out"
-  [ -f "$HERE/../../AGENTS.md" ] || fail "AGENTS.md нет в корне репозитория"
-  grep -q '^## Скиллы' "$HERE/../../AGENTS.md" || fail "в AGENTS.md нет раздела «Скиллы»"
+  grep -q 'SUMMARY.md' <<<"$out" || fail "нет ссылки на SUMMARY.md: $out"
+  [ -f "$HERE/../../SUMMARY.md" ] || fail "SUMMARY.md нет в корне репозитория"
+  grep -q '^## Скиллы' "$HERE/../../SUMMARY.md" || fail "в SUMMARY.md нет раздела «Скиллы»"
 }
 
 test_always_exits_zero() {

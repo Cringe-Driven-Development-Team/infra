@@ -1,0 +1,15 @@
+---
+- name: Найти snapshot очереди на VPS
+  ansible.builtin.stat:
+    path: "{{ restic_backup_snapshot_path }}"
+  register: verify_hooks_snapshot
+
+- name: Snapshot очереди существует и не пуст
+  ansible.builtin.assert:
+    that:
+      - verify_hooks_snapshot.stat.exists
+      - verify_hooks_snapshot.stat.isreg | default(false)
+      - verify_hooks_snapshot.stat.size | default(0) | int > 0
+    fail_msg: >-
+      Нет непустого snapshot {{ restic_backup_snapshot_path }}.
+      Выполните systemctl start restic-backup, затем проверьте Restic и изолированное восстановление по RUNBOOK.

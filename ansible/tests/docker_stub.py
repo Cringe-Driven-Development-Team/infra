@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Docker CLI substitute for temporary-registry-auth tests; never contacts Docker."""
+"""Docker CLI substitute for registry pull/auth tests; never contacts Docker."""
 import json
 import os
 from pathlib import Path
@@ -26,7 +26,8 @@ else:
     elif command == "logout":
         config_path.write_text(json.dumps({"auths": {}}))
     elif command == "compose" and "pull" in args:
-        if "ghcr.io" not in json.loads(config_path.read_text())["auths"]:
+        anonymous_pull = os.environ.get("TEST_DOCKER_ANONYMOUS_PULL") == "1"
+        if not anonymous_pull and "ghcr.io" not in json.loads(config_path.read_text())["auths"]:
             print("Error no registry authentication", file=sys.stderr)
             sys.exit(1)
         if os.environ.get("TEST_DOCKER_FAILURE") == "pull":

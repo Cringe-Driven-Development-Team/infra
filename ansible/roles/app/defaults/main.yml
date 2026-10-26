@@ -1,6 +1,16 @@
 ---
-app_backend_image: ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development
+app_backend_image: ghcr.io/cringe-driven-development-team/backend
+# BFF (infra#58): образ публикует CI фронта (frontend#4), тег — bff_image_tag
+app_bff_image: ghcr.io/cringe-driven-development-team/bff
+# Адрес Go для BFF; после переноса Go на VPS2 (infra#59) — её приватный адрес
+app_bff_go_api_url: http://api:8080/api/v1
 app_postgres_image: postgres:18-alpine
+# Redis — refresh-сессии бэка (infra#46): только сеть app, данные в volume redis_data (AOF)
+app_redis_image: redis:8-alpine
+app_redis_maxmemory: 128mb
+# uid/gid пользователя redis в образе: конфиг с паролем читает только он
+app_redis_uid: 999
+app_redis_gid: 1000
 app_postgres_user: postgres
 app_postgres_database: app_db
 app_access_token_ttl: 15m

@@ -1,0 +1,59 @@
+---
+# Проверка BFF снаружи, без аккаунта пользователя: deploy-bff.yml после выкатки и verify.yml.
+# Внутренний /health — healthcheck Compose; здесь — то, что видит браузер.
+- name: Guest HTML comes from the BFF
+  ansible.builtin.uri:
+    url: "https://{{ app_domain }}/notebooks/verify"
+    headers:
+      Accept: text/html
+    return_content: true
+  register: app_probe_html
+  delegate_to: localhost
+  become: false
+  until: app_probe_html is succeeded
+  retries: 6
+  delay: 5
+
+- name: The HTML has one guest bootstrap, its release and no caching
+  ansible.builtin.assert:
+    that:
+      - app_probe_html.content | regex_findall('<script id="bootstrap"') | length == 1
+      - app_probe_html.content is search('<script id="bootstrap" type="application/json">\{"user":null\}</script>')
+      - app_probe_html.content is search('<meta name="release" content="' ~ (bff_probe_tag | default('sha-') | regex_replace('^sha-', '')))
+      - app_probe_html.cache_control | default('') == 'private, no-store'
+      - app_probe_html.x_content_type_options | default('') == 'nosniff'
+      - >-
+        (app_probe_html.content_security_policy_report_only
+        if caddy_csp_report_only | default(true) | bool
+        else app_probe_html.content_security_policy) | default('') is search("default-src 'none'")
+    fail_msg: >-
+      {{ app_domain }} does not serve the guest HTML of the BFF
+      {{ bff_probe_tag | default('') }} with nosniff, CSP and Cache-Control: private, no-store.
+
+- name: A protected RPC without a session is a tRPC UNAUTHORIZED
+  ansible.builtin.uri:
+    url: "https://{{ app_domain }}/api/trpc/users.me"
+    headers:
+      X-CSRF: "1"
+    status_code: 401
+    return_content: true
+  register: app_probe_rpc
+  delegate_to: localhost
+  become: false
+  failed_when: >-
+    app_probe_rpc.status != 401
+    or (app_probe_rpc.json.error.data.code | default('')) != 'UNAUTHORIZED'
+
+- name: Go API, unknown API paths and the internal health are not public
+  ansible.builtin.uri:
+    url: "https://{{ app_domain }}{{ item }}"
+    status_code: 404
+    return_content: true
+  register: app_probe_hidden
+  delegate_to: localhost
+  become: false
+  failed_when: app_probe_hidden.status != 404 or app_probe_hidden.content is search('<html', ignorecase=true)
+  loop:
+    - /api/v1/users/me
+    - /api/unknown
+    - /health

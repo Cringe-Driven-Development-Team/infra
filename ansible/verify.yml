@@ -5,105 +5,53 @@
   vars:
     public_ip: "{{ hostvars[groups['gateway'][0]]['ansible_host'] }}"
   tasks:
-    # Inventory строится из серверов проекта (openstack.yml) — один хост означает,
-    # что второй сервер в проекте не осталось.
-    - name: В проекте ровно одна VPS
+    # Inventory строится из серверов проекта (openstack.yml): прод-VPS (gateway) ровно одна, кроме
+    # неё допускается только вспомогательная VPS (группа auxiliary, auxiliary.yml).
+    - name: В проекте ровно одна прод-VPS
       ansible.builtin.assert:
         that:
           - groups['gateway'] | length == 1
-          - groups['all'] | length == 1
-        fail_msg: "Ожидалась одна VPS, в inventory: {{ groups['all'] }}"
+          - groups['all'] | difference(groups['gateway']) | difference(groups['auxiliary'] | default([])) | length == 0
+        fail_msg: "Ожидалась одна прод-VPS и вспомогательные (auxiliary), в inventory: {{ groups['all'] }}"
 
-    # current.json в бакете релизов пишет CI фронта при выкатке: { "stable": "{sha}", ... }; пока
-    # его нет, клиент не выкатан. Устаревший frontend_s3_domain (стек пересоздан, бакет новый)
-    # здесь не отвечает вовсе — под видом «клиент ещё не выкатан» он проверку не пройдёт.
-    - name: Указатель релиза в бакете релизов
-      ansible.builtin.uri:
-        url: "https://{{ frontend_s3_domain }}/current.json"
-        status_code: [200, 404]
-        return_content: true
-      register: release_pointer
-
-    - name: Релиз клиента, который обязан отдавать домен
-      ansible.builtin.set_fact:
-        client_release: >-
-          {{ (release_pointer.content | from_json).stable if release_pointer.status == 200 else '' }}
-
-    # Caddy отдаёт корневой index.html бакета релизов клиента. 404 от хранилища допустим, только
-    # пока клиент не выкатан.
-    - name: HTTPS на домене отвечает
-      ansible.builtin.uri:
-        url: "https://{{ app_domain }}/"
-        status_code: [200, 404]
-        return_content: true
-      register: https_ok
-      until: https_ok is succeeded
-      retries: 5
-      delay: 5
-
-    - name: Ответ пришёл из бакета релизов и не кэшируется
-      ansible.builtin.assert:
-        that:
-          - https_ok.cache_control | default('') == 'no-cache'
-          - https_ok.status == 404 or https_ok.content is search('<meta name="release"')
-        fail_msg: >-
-          Домен {{ app_domain }} отвечает не index.html клиента:
-          статус {{ https_ok.status }}, Cache-Control {{ https_ok.cache_control | default('нет') }}
-
-    - name: Клиент ещё не выкатан
-      ansible.builtin.debug:
-        msg: "В бакете нет current.json: {{ app_domain }} отвечает {{ https_ok.status }} до первой выкатки клиента"
-      when: client_release == ''
-
-    # Домен бакета кэширует ответы на 60 секунд: сразу после выкатки корень может отставать от
-    # current.json — повторить через минуту.
-    - name: Домен отдаёт релиз stable из current.json
-      ansible.builtin.assert:
-        that:
-          - https_ok.status == 200
-          - https_ok.content is search('<meta name="release" content="' ~ client_release ~ '"')
-        fail_msg: >-
-          В бакете stable = {{ client_release }}, а {{ app_domain }} отвечает другим:
-          статус {{ https_ok.status }}
-      when: client_release != ''
-
-    # Прямой заход на маршрут SPA: тот же index.html, а не 404 от несуществующего ключа
-    - name: Вложенный маршрут отдаёт тот же ответ
-      ansible.builtin.uri:
-        url: "https://{{ app_domain }}/notebooks/verify?from=verify"
-        status_code: [200, 404]
-        return_content: true
-      register: spa_route
-      failed_when: spa_route.status != https_ok.status or spa_route.content != https_ok.content
-
-    # В бакет уходят только GET и HEAD
-    - name: Запись на путь клиента отклоняется
-      ansible.builtin.uri:
-        url: "https://{{ app_domain }}/notebooks/verify"
-        method: POST
-        status_code: 405
-
-    - name: Detect a backend deployment on the VPS
-      ansible.builtin.stat:
-        path: "{{ app_compose_dir }}/.env"
+    # BFF выкачен, если в .env на VPS есть BFF_IMAGE_TAG (роль app); до первой выкатки Caddy отвечает
+    # заглушкой. Тег — для проверки релиза в HTML.
+    - name: Окружение приложения на VPS
+      ansible.builtin.slurp:
+        src: "{{ app_compose_dir }}/.env"
       delegate_to: "{{ groups['gateway'][0] }}"
       become: true
-      register: verify_backend_environment
+      register: verify_app_environment
+      failed_when: false
+      no_log: true
 
-    - name: Check the API route before or after deployment
+    - name: Выкачен ли BFF
+      ansible.builtin.set_fact:
+        verify_bff_tag: >-
+          {{ verify_app_environment.content | default('') | b64decode
+          | regex_findall('(?m)^BFF_IMAGE_TAG=(sha-[0-9a-f]{7,40})$')
+          | first | default('') }}
+
+    - name: До первой выкатки BFF домен отвечает заглушкой
       ansible.builtin.uri:
-        url: "https://{{ app_domain }}/api/v1/users/me"
-        status_code: "{{ 401 if verify_backend_environment.stat.exists else 503 }}"
+        url: "https://{{ app_domain }}/"
+        status_code: 503
         return_content: true
-      register: api_route
+      register: verify_placeholder
+      until: verify_placeholder is succeeded
+      retries: 5
+      delay: 5
+      failed_when: >-
+        verify_placeholder.status != 503
+        or verify_placeholder.content != 'BFF is not deployed'
+        or verify_placeholder.x_content_type_options | default('') != 'nosniff'
+      when: verify_bff_tag == ''
 
-    - name: Confirm the expected API response
-      ansible.builtin.assert:
-        that:
-          - >-
-            (api_route.json is defined) if verify_backend_environment.stat.exists
-            else (api_route.content == 'API is not deployed')
-        fail_msg: The API route must return API JSON after deployment, or the initial placeholder.
+    - name: BFF отвечает снаружи как положено
+      ansible.builtin.import_tasks: roles/app/tasks/probe-bff.yml
+      vars:
+        bff_probe_tag: "{{ verify_bff_tag }}"
+      when: verify_bff_tag != ''
 
     - name: Выдать информацию о сертификате
       ansible.builtin.shell:
@@ -131,7 +79,7 @@
     # Docker API (2375/2376) по умолчанию выключен. Проба с управляющей машины ловит и
     # порты, которые Docker открыл в обход ufw (DNAT раньше INPUT): доходит до хоста,
     # где docker-proxy слушает на 0.0.0.0.
-    - name: "На публичном IP закрыты 5432, 8080, 2375, 2376"
+    - name: "На публичном IP закрыты 5432, 6379, 8080, 2375, 2376"
       ansible.builtin.wait_for:
         host: "{{ public_ip }}"
         port: "{{ item }}"
@@ -139,13 +87,31 @@
         connect_timeout: 3
         timeout: 10
         msg: "На публичном IP {{ public_ip }} принимает соединения {{ item }}/tcp"
-      loop: [5432, 8080, 2375, 2376]
+      loop: [5432, 6379, 8080, 2375, 2376]
 
 - name: "Проверки на VPS"
-  hosts: all
+  hosts: gateway
   gather_facts: false
   become: true
   tasks:
+    # Redis (infra#46) поднимает роль app вместе с бэком (deploy-backend.yml): пока выкатки с Redis
+    # не было, нет и его конфига — проверка пропускается
+    - name: Выкачен ли Redis на VPS
+      ansible.builtin.stat:
+        path: "{{ app_compose_dir }}/redis/redis.conf"
+      register: verify_redis_conf
+
+    # Клиент — одноразовый контейнер сервиса redis в сети app, как Go API. Пароль (REDISCLI_AUTH)
+    # он берёт из .env Compose: через environment Ansible секрет попал бы в verbose-логи (-vvv)
+    - name: Redis отвечает на PING из сети app
+      ansible.builtin.command:
+        cmd: docker compose run --rm --no-deps redis redis-cli -h redis ping
+        chdir: "{{ app_compose_dir }}"
+      register: verify_redis_ping
+      changed_when: false
+      failed_when: verify_redis_ping.rc != 0 or verify_redis_ping.stdout | trim != 'PONG'
+      when: verify_redis_conf.stat.exists
+
     - name: Правила ufw
       ansible.builtin.command: ufw status verbose
       register: ufw_status
@@ -229,3 +195,63 @@
           (host_listen.stdout | from_json)
           | difference(firewall_rules | map(attribute='port') | map('int') | list) | length == 0
         fail_msg: "Слушаются порты {{ host_listen.stdout }} — наружу смотрит лишнее (Docker -p?)"
+
+# Вспомогательная VPS (infra#54, auxiliary.yml): сервис вебхуков отвечает по HTTPS с действительным
+# сертификатом, а его внутренний порт и Docker снаружи закрыты (security group и сеть Compose без ports).
+- name: "Проверки вспомогательной VPS"
+  hosts: localhost
+  gather_facts: false
+  vars:
+    auxiliary_host: "{{ (groups['auxiliary'] | default([]) + [''])[0] }}"
+    auxiliary_hooks_domain: "{{ hostvars[auxiliary_host]['hooks_domain'] | default('') if auxiliary_host else '' }}"
+    auxiliary_hooks_port: "{{ hostvars[auxiliary_host]['hooks_port'] | default(8080) if auxiliary_host else 8080 }}"
+  tasks:
+    - name: Вспомогательной VPS нет в inventory
+      ansible.builtin.meta: end_play
+      when: auxiliary_host == ''
+
+    # uri проверяет цепочку доверия: недействительный сертификат — ошибка, а не статус
+    - name: "HTTPS health отвечает 200 на {{ auxiliary_hooks_domain }}"
+      ansible.builtin.uri:
+        url: "https://{{ auxiliary_hooks_domain }}/health"
+        status_code: 200
+      register: auxiliary_health
+      until: auxiliary_health is succeeded
+      retries: 3
+      delay: 5
+
+    - name: Сертификат домена вебхуков выдан Let's Encrypt на этот домен
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          echo | openssl s_client -connect {{ auxiliary_hooks_domain }}:443 -servername {{ auxiliary_hooks_domain }} 2>/dev/null
+          | grep -E '^(issuer|subject)='
+        executable: /bin/bash
+      register: auxiliary_cert
+      changed_when: false
+      failed_when: >-
+        auxiliary_cert.rc != 0
+        or auxiliary_cert.stdout is not search("Encrypt|ISRG")
+        or auxiliary_cert.stdout is not search(auxiliary_hooks_domain | regex_escape)
+
+    - name: "Снаружи закрыты внутренний порт сервиса и Docker API"
+      ansible.builtin.wait_for:
+        host: "{{ auxiliary_hooks_domain }}"
+        port: "{{ item }}"
+        state: stopped
+        connect_timeout: 3
+        timeout: 10
+        msg: "На {{ auxiliary_hooks_domain }} снаружи открыт {{ item }}/tcp"
+      loop: ["{{ auxiliary_hooks_port | int }}", 2375, 2376]
+
+# На первом развёртывании сначала systemctl start restic-backup (RUNBOOK).
+# HTTPS может работать даже если ни одного snapshot очереди ещё не создано.
+- name: "Проверка snapshot на вспомогательной VPS"
+  hosts: auxiliary
+  gather_facts: false
+  become: true
+  vars_files:
+    - roles/restic_backup/defaults/main.yml
+  tasks:
+    - name: Проверить результат snapshot
+      ansible.builtin.import_tasks: tasks/verify-hooks-snapshot.yml
