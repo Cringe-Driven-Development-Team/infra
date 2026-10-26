@@ -1,6 +1,7 @@
 ---
 app_backend_image: ghcr.io/cringe-driven-development-team/backend
-# BFF (infra#58): образ публикует CI фронта (frontend#4), тег — bff_image_tag
+# BFF (infra#58): публичный образ публикует CI фронта (frontend#4), выкатывается по digest —
+# bff_image_ref (infra#74)
 app_bff_image: ghcr.io/cringe-driven-development-team/bff
 # Адрес Go для BFF; после переноса Go на VPS2 (infra#59) — её приватный адрес
 app_bff_go_api_url: http://api:8080/api/v1

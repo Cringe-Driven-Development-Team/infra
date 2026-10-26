@@ -21,6 +21,9 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1]
 # Секреты BFF в формате, который принимает validate.yml
+# Образ BFF по digest и полный SHA релиза в формате, который принимает deploy-bff.yml (infra#74)
+BFF_REF = "ghcr.io/cringe-driven-development-team/bff@sha256:" + "a" * 64
+BFF_SHA = "b" * 40
 BFF_VAULT = b"vault_session_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nvault_bff_api_key: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\n"
 
 
@@ -119,19 +122,45 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("sha-", result.stdout + result.stderr)
 
-    def test_bff_deploy_requires_its_own_tag(self):
-        result = self.validate("sha-1234567", "deploy-bff.yml", "bff_image_tag")
+    def validate_bff(self, ref=BFF_REF, sha=BFF_SHA, extra=None):
+        values = {key: value for key, value in
+                  {"bff_image_ref": ref, "bff_release_sha": sha}.items() if value is not None}
+        return self.validate(None, "deploy-bff.yml", extra=dict(values, **(extra or {})))
+
+    def test_bff_deploy_requires_a_digest_and_a_full_release_sha(self):
+        result = self.validate_bff()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for tag in [None, "", "latest", "sha-1234567;echo bad"]:
-            with self.subTest(tag=tag):
-                result = self.validate(tag, "deploy-bff.yml", "bff_image_tag")
+        image = "ghcr.io/cringe-driven-development-team/bff"
+        for ref in [None, "", image + ":sha-1234567", image + ":latest", image,
+                    image + "@sha256:" + "a" * 63, image + "@sha256:" + "A" * 64,
+                    "ghcr.io/cringe-driven-development-team/backend@sha256:" + "a" * 64,
+                    "docker.io/library/bff@sha256:" + "a" * 64,
+                    image + "@sha256:" + "a" * 64 + ";echo bad"]:
+            with self.subTest(ref=ref):
+                result = self.validate_bff(ref=ref)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("bff_image_tag=sha-", result.stdout + result.stderr)
+                self.assertIn("bff_image_ref=" + image + "@sha256:", result.stdout + result.stderr)
+        for sha in [None, "", "b" * 7, "sha-" + "b" * 40, "B" * 40, "b" * 41]:
+            with self.subTest(sha=sha):
+                result = self.validate_bff(sha=sha)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("bff_release_sha=<40 hex>", result.stdout + result.stderr)
         # тег бэка необязателен, но если передан — проверяется
-        result = self.validate("sha-1234567", "deploy-bff.yml", "bff_image_tag",
-                               {"backend_image_tag": "main"})
+        result = self.validate_bff(extra={"backend_image_tag": "main"})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("backend_image_tag=sha-", result.stdout + result.stderr)
+
+    def test_bff_deploy_needs_no_registry_credentials(self):
+        for name in ["GHCR_USERNAME", "GHCR_TOKEN"]:
+            self.environment.pop(name)
+        result = self.validate_bff()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_backend_deploy_does_not_change_the_bff(self):
+        result = self.validate("sha-1234567", extra={"bff_image_ref": BFF_REF,
+                                                      "bff_release_sha": BFF_SHA})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("only by deploy-bff.yml", result.stdout + result.stderr)
 
     def test_invalid_bff_secrets_are_rejected_without_leaks(self):
         vault = VaultLib([("default", VaultSecret(b"test-vault-password-only"))])
@@ -143,23 +172,25 @@ class DeploymentChecks(unittest.TestCase):
         ]:
             with self.subTest(secrets=secrets):
                 (self.root / "group_vars/all/vault.yml").write_bytes(vault.encrypt(base + secrets))
-                result = self.validate("sha-1234567", "deploy-bff.yml", "bff_image_tag")
+                result = self.validate_bff()
                 output = result.stdout + result.stderr
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("vault_session_key must be base64", output)
                 self.assertNotIn("short-leaky-key", output)
 
-    def test_deployment_keeps_the_other_deployed_tag(self):
+    def test_deployment_keeps_the_other_deployed_image(self):
         playbook = self.root / "tags-test.yml"
         playbook.write_text(yaml.safe_dump([{
             "name": "Exercise the real tag selection", "hosts": "gateway", "gather_facts": False,
             "vars": {"app_compose_dir": str(self.root),
+                     "app_bff_image": "ghcr.io/cringe-driven-development-team/bff",
                      "ansible_python_interpreter": sys.executable},
             "tasks": [
                 {"name": "Choose tags",
                  "ansible.builtin.import_tasks": str(ANSIBLE / "roles/app/tasks/tags.yml")},
                 {"name": "Show tags", "ansible.builtin.debug": {
-                    "msg": "TAGS {{ app_backend_tag }} {{ app_bff_tag | default('-', true) }}"}},
+                    "msg": "TAGS {{ app_backend_tag }} {{ app_bff_ref | default('-', true) }}"
+                           " {{ app_bff_release | default('-', true) }}"}},
             ],
         }]))
 
@@ -175,13 +206,18 @@ class DeploymentChecks(unittest.TestCase):
             return subprocess.run(command, cwd=ANSIBLE, env=self.environment,
                                   capture_output=True, text=True, timeout=30)
 
-        deployed = "BACKEND_IMAGE_TAG=sha-aaaaaaa\nBFF_IMAGE_TAG=sha-bbbbbbb\nJWT_SECRET=\"leaky\"\n"
+        old_ref = BFF_REF.replace("a" * 64, "c" * 64)
+        old_sha = "d" * 40
+        deployed = (f"BACKEND_IMAGE_TAG=sha-aaaaaaa\nBFF_IMAGE_REF={old_ref}\n"
+                    f"BFF_RELEASE_SHA={old_sha}\nJWT_SECRET=\"leaky\"\n")
         cases = [
-            (deployed, {"bff_image_tag": "sha-ccccccc"}, "TAGS sha-aaaaaaa sha-ccccccc"),
-            (deployed, {"backend_image_tag": "sha-ddddddd"}, "TAGS sha-ddddddd sha-bbbbbbb"),
+            (deployed, {"bff_image_ref": BFF_REF, "bff_release_sha": BFF_SHA},
+             f"TAGS sha-aaaaaaa {BFF_REF} {BFF_SHA}"),
+            (deployed, {"backend_image_tag": "sha-ddddddd"},
+             f"TAGS sha-ddddddd {old_ref} {old_sha}"),
             ("BACKEND_IMAGE_TAG=sha-aaaaaaa\n", {"backend_image_tag": "sha-ddddddd"},
-             "TAGS sha-ddddddd -"),
-            (None, {"backend_image_tag": "sha-ddddddd"}, "TAGS sha-ddddddd -"),
+             "TAGS sha-ddddddd - -"),
+            (None, {"backend_image_tag": "sha-ddddddd"}, "TAGS sha-ddddddd - -"),
         ]
         for env_file, tags, expected in cases:
             with self.subTest(tags=tags, deployed=env_file):
@@ -191,7 +227,7 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertIn(expected, output)
                 self.assertNotIn("leaky", output)
         # BFF без выкаченного бэка не выкатывается
-        result = run(None, bff_image_tag="sha-ccccccc")
+        result = run(None, bff_image_ref=BFF_REF, bff_release_sha=BFF_SHA)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("deploy-backend.yml", result.stdout + result.stderr)
 
@@ -267,7 +303,7 @@ class DeploymentChecks(unittest.TestCase):
         playbook.write_text(yaml.safe_dump([{
             "name": "Exercise the real registry-auth tasks with a Docker CLI substitute",
             "hosts": "gateway", "gather_facts": False,
-            "vars": {"app_compose_dir": str(self.root), "app_deploy_service": "bff",
+            "vars": {"app_compose_dir": str(self.root), "app_deploy_service": "api",
                      "ansible_python_interpreter": sys.executable},
             "tasks": [{"name": "Run the production auth block",
                        "ansible.builtin.import_tasks": str(
@@ -299,6 +335,80 @@ class DeploymentChecks(unittest.TestCase):
                 if failure == "pull":
                     self.assertIn("controlled-pull-failure", output)
 
+    def run_with_docker_stub(self, tasks, variables):
+        binary_directory = self.root / "bin"
+        binary_directory.mkdir(exist_ok=True)
+        docker = binary_directory / "docker"
+        shutil.copyfile(ANSIBLE / "tests/docker_stub.py", docker)
+        docker.chmod(0o700)
+        (self.root / "docker-config.json").write_text(json.dumps({"auths": {}}))
+        playbook = self.root / "stub-test.yml"
+        playbook.write_text(yaml.safe_dump([{
+            "name": "Exercise the real tasks with a Docker CLI substitute",
+            "hosts": "gateway", "gather_facts": False,
+            "vars": dict({"app_compose_dir": str(self.root),
+                          "ansible_python_interpreter": sys.executable}, **variables),
+            "tasks": [{"name": "Run the tasks", "ansible.builtin.import_tasks": str(
+                ANSIBLE / "roles/app/tasks" / tasks)}],
+        }]))
+        self.environment["PATH"] = str(binary_directory) + os.pathsep + self.environment["PATH"]
+        self.environment["TEST_DOCKER_ROOT"] = str(self.root)
+        (self.root / "docker-events.jsonl").unlink(missing_ok=True)
+        result = subprocess.run(
+            [shutil.which("ansible-playbook") or "ansible-playbook", "-i", str(self.inventory),
+             str(playbook)],
+            cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=30)
+        events_path = self.root / "docker-events.jsonl"
+        events = ([json.loads(line) for line in events_path.read_text().splitlines()]
+                  if events_path.exists() else [])
+        return result, events
+
+    def test_bff_image_is_pulled_anonymously_and_checked_before_changes(self):
+        for name in ["GHCR_USERNAME", "GHCR_TOKEN"]:
+            self.environment.pop(name)
+        cases = [("", BFF_SHA, True, None),
+                 ("pull", BFF_SHA, False, "must be public"),
+                 ("", "e" * 40, False, "not bff_release_sha=" + BFF_SHA),
+                 ("", "", False, "not bff_release_sha=" + BFF_SHA)]
+        for failure, revision, succeeds, message in cases:
+            with self.subTest(failure=failure, revision=revision):
+                self.environment["TEST_DOCKER_FAILURE"] = failure
+                self.environment["TEST_DOCKER_REVISION"] = revision
+                result, events = self.run_with_docker_stub(
+                    "pull-bff.yml", {"bff_image_ref": BFF_REF, "bff_release_sha": BFF_SHA})
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode == 0, succeeds, output)
+                commands = [event["command"] for event in events]
+                self.assertNotIn("login", commands)
+                self.assertEqual(commands[0], "pull")
+                pull = events[0]["args"]
+                self.assertEqual(pull[-1], BFF_REF)
+                # временный пустой config удалён после скачивания
+                self.assertFalse(Path(pull[pull.index("--config") + 1]).exists())
+                if message:
+                    self.assertIn(message, output)
+                    self.assertIn("Nothing on the VPS is changed", output)
+
+    def test_running_bff_must_be_the_deployed_image_and_healthy(self):
+        image_id = "sha256:" + "1" * 64
+        self.environment["TEST_DOCKER_IMAGE_ID"] = image_id
+        cases = [("cid", f"{BFF_REF} {image_id} healthy", True),
+                 ("", "", False),
+                 ("cid", f"{BFF_REF} sha256:{'2' * 64} healthy", False),
+                 ("cid", f"{BFF_REF.replace('a' * 64, 'c' * 64)} {image_id} healthy", False),
+                 ("cid", f"{BFF_REF} {image_id} unhealthy", False),
+                 ("cid", f"{BFF_REF} {image_id} none", False)]
+        for container, running, succeeds in cases:
+            with self.subTest(container=container, running=running):
+                self.environment["TEST_DOCKER_CONTAINER"] = container
+                self.environment["TEST_DOCKER_RUNNING"] = running
+                result, _ = self.run_with_docker_stub("check-bff-image.yml",
+                                                      {"bff_check_ref": BFF_REF})
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode == 0, succeeds, output)
+                if not succeeds:
+                    self.assertIn("Expected a healthy BFF from " + BFF_REF, output)
+
     def test_compose_preserves_secrets_and_internal_ports(self):
         compose = shlex.split(os.environ.get("COMPOSE_CLI", "docker compose"))
         if not compose or shutil.which(compose[0]) is None:
@@ -311,7 +421,7 @@ class DeploymentChecks(unittest.TestCase):
         variables.update(
             yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text())
         )
-        variables.update(app_backend_tag="sha-1234567", app_bff_tag="sha-7654321",
+        variables.update(app_backend_tag="sha-1234567", app_bff_ref=BFF_REF, app_bff_release=BFF_SHA,
                          app_domain="app.example.org", s3_region="ru-7",
                          s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
                          avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
@@ -417,9 +527,11 @@ class DeploymentChecks(unittest.TestCase):
                                  "https://avatars.example.org")
                 self.assertEqual(services["api"]["environment"]["CORS_ALLOWED_ORIGINS"],
                                  "https://app.example.org")
-                # BFF: свой тег, ключи из Vault, один S2S-ключ с Go, порт не публикуется
+                # BFF: образ по digest без скачивания Compose, ключи из Vault, один S2S-ключ с Go,
+                # порт не публикуется
                 bff = services["bff"]
-                self.assertEqual(bff["image"], "ghcr.io/cringe-driven-development-team/bff:sha-7654321")
+                self.assertEqual(bff["image"], BFF_REF)
+                self.assertEqual(bff["pull_policy"], "never")
                 for name in ["SESSION_KEY", "BFF_KEY"]:
                     self.assertEqual(bff["environment"][name].replace("$$", "$"), secret)
                 self.assertEqual(services["api"]["environment"]["BFF_API_KEY"].replace("$$", "$"),
@@ -430,14 +542,15 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertEqual(bff["depends_on"]["api"]["condition"], "service_healthy")
                 self.assertFalse(bff.get("ports"))
         # до первой выкатки BFF сервиса нет, Compose поднимает остальное
-        variables.update(app_bff_tag="")
+        self.assertIn(f"BFF_RELEASE_SHA={BFF_SHA}\n", (self.root / ".env").read_text())
+        variables.update(app_bff_ref="", app_bff_release="")
         (self.root / "compose.yml").write_text(compose_template.render(variables))
         (self.root / ".env").write_text(env_template.render(variables))
         result = subprocess.run(
             [*compose, "-f", str(self.root / "compose.yml"), "config", "--format", "json"],
             capture_output=True, text=True, timeout=30, check=True, env=compose_environment)
         self.assertNotIn("bff", json.loads(result.stdout)["services"])
-        self.assertNotIn("BFF_IMAGE_TAG", (self.root / ".env").read_text())
+        self.assertNotIn("BFF_IMAGE_REF", (self.root / ".env").read_text())
 
     def test_registry_switch_and_explicit_rollback_image(self):
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
@@ -447,7 +560,7 @@ class DeploymentChecks(unittest.TestCase):
         expected = "ghcr.io/cringe-driven-development-team/backend"
         for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
             with self.subTest(override=override):
-                values = dict(variables, app_bff_tag="")
+                values = dict(variables, app_bff_ref="")
                 if override is not None:
                     values["app_backend_image"] = override
                 rendered = template.render(values).replace(

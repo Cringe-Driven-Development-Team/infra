@@ -58,11 +58,13 @@ services:
     networks:
       - app
 
-{% if app_bff_tag %}
+{% if app_bff_ref %}
   # BFF (infra#58): HTML и /api/trpc снаружи — через Caddy. PORT не задаётся: в .env он для api (8080),
   # а BFF слушает 3000 по умолчанию.
   bff:
-    image: {{ app_bff_image }}:${BFF_IMAGE_TAG:?bff tag is required}
+    # образ по digest (infra#74): скачан и сверен deploy-bff.yml до записи в .env
+    image: ${BFF_IMAGE_REF:?bff image ref is required}
+    pull_policy: never
     restart: unless-stopped
     environment:
       SESSION_KEY: ${SESSION_KEY:?session key is required}

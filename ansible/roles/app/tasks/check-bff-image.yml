@@ -1,0 +1,42 @@
+---
+# Запущенный контейнер BFF — ровно выкаченный образ (infra#74) и healthy. bff_check_ref — ссылка по
+# digest из .env; задачи выполняются на VPS (deploy-bff.yml, verify.yml).
+- name: Find the running BFF container
+  ansible.builtin.command:
+    argv: [docker, compose, ps, --quiet, bff]
+    chdir: "{{ app_compose_dir }}"
+  register: app_bff_container
+  changed_when: false
+
+- name: Read the image and health of the running BFF
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - >-
+        {{ '{{' }} .Config.Image {{ '}}' }} {{ '{{' }} .Image {{ '}}' }}
+        {{ '{{' }} if .State.Health {{ '}}' }}{{ '{{' }} .State.Health.Status {{ '}}' }}{{ '{{' }} else {{ '}}' }}none{{ '{{' }} end {{ '}}' }}
+      - "{{ app_bff_container.stdout | trim }}"
+  register: app_bff_running
+  changed_when: false
+  when: app_bff_container.stdout | trim | length > 0
+
+- name: Read the ID of the deployed image
+  ansible.builtin.command:
+    argv: [docker, image, inspect, --format, "{{ '{{' }} .Id {{ '}}' }}", "{{ bff_check_ref }}"]
+  register: app_bff_image_id
+  changed_when: false
+  failed_when: false
+
+- name: The running BFF is the deployed image and healthy
+  ansible.builtin.assert:
+    that:
+      - app_bff_container.stdout | trim | length > 0
+      - app_bff_running.stdout.split() | length == 3
+      - app_bff_running.stdout.split()[0] == bff_check_ref
+      - app_bff_running.stdout.split()[1] == app_bff_image_id.stdout | trim
+      - app_bff_running.stdout.split()[2] == 'healthy'
+    fail_msg: >-
+      Expected a healthy BFF from {{ bff_check_ref }} ({{ app_bff_image_id.stdout | default('') | trim }}),
+      running: {{ app_bff_running.stdout | default('no container') | trim }}.

@@ -1,0 +1,55 @@
+---
+# Публичный образ BFF по digest (infra#74): скачивается анонимно — с пустым Docker config, чтобы на VPS
+# не сработали чужие credentials, — и сверяется с релизом до того, как выкатка изменит .env и Compose.
+# Приватный package, запрет анонимного скачивания или недоступный digest останавливают выкатку здесь.
+- name: Empty Docker config for an anonymous pull
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .docker-anonymous
+  register: app_bff_docker_config
+
+- name: Pull the BFF image anonymously
+  block:
+    - name: Pull the BFF image by digest without registry credentials
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --config
+          - "{{ app_bff_docker_config.path }}"
+          - pull
+          - "{{ bff_image_ref }}"
+      register: app_bff_pull
+      changed_when: "'Downloaded newer image' in app_bff_pull.stdout"
+
+  rescue:
+    - name: Stop before changing the server
+      ansible.builtin.fail:
+        msg: >-
+          {{ bff_image_ref }} cannot be pulled anonymously: {{ app_bff_pull.stderr | default('') | trim }}.
+          The GHCR package bff must be public and the digest published. Nothing on the VPS is changed.
+
+  always:
+    - name: Remove the empty Docker config
+      ansible.builtin.file:
+        path: "{{ app_bff_docker_config.path }}"
+        state: absent
+
+- name: Read the release of the pulled image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - --format
+      - '{{ "{{" }} index .Config.Labels "org.opencontainers.image.revision" {{ "}}" }}'
+      - "{{ bff_image_ref }}"
+  register: app_bff_revision
+  changed_when: false
+
+- name: The image belongs to the requested release
+  ansible.builtin.assert:
+    that:
+      - app_bff_revision.stdout | trim == bff_release_sha
+    fail_msg: >-
+      {{ bff_image_ref }} has org.opencontainers.image.revision={{ app_bff_revision.stdout | trim }},
+      not bff_release_sha={{ bff_release_sha }}. Nothing on the VPS is changed.

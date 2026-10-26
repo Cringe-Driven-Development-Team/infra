@@ -270,14 +270,18 @@ healthy у API и Postgres, сохранность данных после от�
 `/health` — `404` от Caddy. Чанки JS и CSS — с CDN каталога своего релиза. До первой выкатки BFF
 домен отвечает `503 BFF is not deployed`. Подробно — [ansible/README.md](ansible/README.md#клиент-и-bff).
 
-1. Go выкачен (`deploy-backend.yml`), в Vault есть `vault_session_key` и `vault_bff_api_key`.
-2. `deploy-bff.yml -e bff_image_tag=sha-<commit>` с GHCR credentials, читающими package `bff`
-   (команда — [ansible/README.md](ansible/README.md#bff-выкатка-проверка-и-откат)). Playbook сам
-   проверяет снаружи гостевой HTML с bootstrap и релизом своего тега, `UNAUTHORIZED` у `users.me`
-   без сессии и `404` на `/api/v1`, `/api/unknown`, `/health`.
+1. Go выкачен (`deploy-backend.yml`), в Vault есть `vault_session_key` и `vault_bff_api_key`,
+   package `bff` в GHCR публичный.
+2. `deploy-bff.yml -e bff_image_ref=ghcr.io/cringe-driven-development-team/bff@sha256:<digest>
+   -e bff_release_sha=<полный SHA>` без GHCR credentials (команда —
+   [ansible/README.md](ansible/README.md#bff-выкатка-проверка-и-откат); в CD её запускает workflow
+   фронта, frontend#4). Playbook до изменений VPS скачивает образ анонимно и сверяет его метку
+   `org.opencontainers.image.revision` с SHA, после запуска — что контейнер работает на этом образе и
+   `healthy`, и снаружи — гостевой HTML `/login` с bootstrap и релизом этого SHA, `UNAUTHORIZED` у
+   `users.me` без сессии и `404` на `/api/v1`, `/api/unknown`, `/health`.
 3. Руками — пользовательский путь: вход, защищённый RPC (список блокнотов), прямое открытие
    `/notebooks/<id>`. Затем `verify.yml`.
-4. Откат — шаг 2 с прежним тегом; после него те же проверки. `SESSION_KEY` не меняется, сессия
+4. Откат — шаг 2 с прежними `bff_image_ref` и `bff_release_sha`; после него те же проверки. `SESSION_KEY` не меняется, сессия
    остаётся. Go и БД откат BFF не трогает.
 5. Недоступность Go: RPC отвечает tRPC `BAD_GATEWAY` (502), HTML — `503` без приложения, а не SPA.
 

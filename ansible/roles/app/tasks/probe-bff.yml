@@ -1,9 +1,10 @@
 ---
 # Проверка BFF снаружи, без аккаунта пользователя: deploy-bff.yml после выкатки и verify.yml.
-# Внутренний /health — healthcheck Compose; здесь — то, что видит браузер.
+# Внутренний /health — healthcheck Compose; здесь — то, что видит браузер. bff_probe_release — полный
+# SHA релиза: он же в <meta name="release"> HTML. Гостю HTML отдаёт /login (защищённые страницы — 302).
 - name: Guest HTML comes from the BFF
   ansible.builtin.uri:
-    url: "https://{{ app_domain }}/notebooks/verify"
+    url: "https://{{ app_domain }}/login"
     headers:
       Accept: text/html
     return_content: true
@@ -19,7 +20,7 @@
     that:
       - app_probe_html.content | regex_findall('<script id="bootstrap"') | length == 1
       - app_probe_html.content is search('<script id="bootstrap" type="application/json">\{"user":null\}</script>')
-      - app_probe_html.content is search('<meta name="release" content="' ~ (bff_probe_tag | default('sha-') | regex_replace('^sha-', '')))
+      - app_probe_html.content is search('<meta name="release" content="' ~ bff_probe_release ~ '"')
       - app_probe_html.cache_control | default('') == 'private, no-store'
       - app_probe_html.x_content_type_options | default('') == 'nosniff'
       - >-
@@ -28,7 +29,7 @@
         else app_probe_html.content_security_policy) | default('') is search("default-src 'none'")
     fail_msg: >-
       {{ app_domain }} does not serve the guest HTML of the BFF
-      {{ bff_probe_tag | default('') }} with nosniff, CSP and Cache-Control: private, no-store.
+      release {{ bff_probe_release }} with nosniff, CSP and Cache-Control: private, no-store.
 
 - name: A protected RPC without a session is a tRPC UNAUTHORIZED
   ansible.builtin.uri:

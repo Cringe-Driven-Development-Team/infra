@@ -55,8 +55,10 @@
         group: root
         mode: "0644"
 
+    # BFF уже скачан анонимно по digest и сверен (pull-bff.yml) до изменения файлов
     - name: Pull the deployed image with temporary registry authentication
       ansible.builtin.import_tasks: pull-image.yml
+      when: app_deploy_service == 'api'
 
     - name: Pull missing public service images after GHCR logout
       community.docker.docker_compose_v2_pull:
@@ -122,7 +124,7 @@
       docker run --rm -v %s:/tmp/Caddyfile:ro {{ caddy_image }}
       caddy validate --config /tmp/Caddyfile --adapter caddyfile
   vars:
-    caddy_bff_enabled: "{{ app_bff_tag | length > 0 }}"
+    caddy_bff_enabled: "{{ app_bff_ref | length > 0 }}"
   notify: Reload caddy
 
 - name: Apply the Caddy route before the public probe

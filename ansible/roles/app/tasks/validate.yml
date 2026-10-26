@@ -1,19 +1,41 @@
 ---
-# app_deploy_tag — имя переменной тега выкатываемого образа (backend_image_tag или bff_image_tag),
-# задаёт playbook. Тег второго образа необязателен: без него остаётся выкаченный на VPS.
-- name: Check the requested image tags
+# app_deploy_service — выкатываемый сервис (api или bff), задаёт playbook. Образ второго сервиса
+# необязателен: без него остаётся выкаченный на VPS.
+- name: Check the requested backend image tag
   ansible.builtin.assert:
     that:
-      - item.value is string
-      - item.value is match('^sha-[0-9a-f]{7,40}$')
-    fail_msg: "An explicit {{ item.key }}=sha-<commit> is required, including for rollback."
-  loop: >-
-    {{ {'backend_image_tag': backend_image_tag | default(none),
-        'bff_image_tag': bff_image_tag | default(none)} | dict2items }}
-  loop_control:
-    label: "{{ item.key }}"
-  when: item.key == app_deploy_tag or item.value is not none
+      - backend_image_tag is defined
+      - backend_image_tag is string
+      - backend_image_tag is match('^sha-[0-9a-f]{7,40}$')
+    fail_msg: "An explicit backend_image_tag=sha-<commit> is required, including for rollback."
+  when: app_deploy_service == 'api' or backend_image_tag is defined
 
+# BFF (infra#74): только неизменяемый образ по digest из своего package и полный SHA релиза —
+# по нему сверяются метка образа и <meta name="release"> в HTML. Тег не принимается.
+- name: Check the requested BFF image and release
+  ansible.builtin.assert:
+    that:
+      - bff_image_ref is defined
+      - bff_image_ref is string
+      - bff_image_ref is match('^' ~ (app_bff_image | regex_escape) ~ '@sha256:[0-9a-f]{64}$')
+      - bff_release_sha is defined
+      - bff_release_sha is string
+      - bff_release_sha is match('^[0-9a-f]{40}$')
+    fail_msg: >-
+      Explicit bff_image_ref={{ app_bff_image }}@sha256:<64 hex> and bff_release_sha=<40 hex> are
+      required, including for rollback.
+  when: app_deploy_service == 'bff'
+
+# Образ BFF меняет только deploy-bff.yml: там он скачивается и сверяется до записи в .env
+- name: Change the BFF only with deploy-bff.yml
+  ansible.builtin.assert:
+    that:
+      - bff_image_ref is not defined
+      - bff_release_sha is not defined
+    fail_msg: bff_image_ref and bff_release_sha are accepted only by deploy-bff.yml.
+  when: app_deploy_service != 'bff'
+
+# GHCR credentials нужны только частному образу Go; публичный BFF скачивается анонимно
 - name: Check whether controller GHCR credentials are present
   ansible.builtin.set_fact:
     app_ghcr_credentials_present:
@@ -30,6 +52,7 @@
   loop:
     - GHCR_USERNAME
     - GHCR_TOKEN
+  when: app_deploy_service == 'api'
 
 - name: Check application secrets
   ansible.builtin.assert:

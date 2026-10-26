@@ -27,7 +27,7 @@
 
 # Каталог caddy/ монтируется в контейнер целиком, а не один файл: template заменяет файл
 # атомарно (новый inode), и bind-mount отдельного файла продолжал бы видеть старую версию.
-# .env пишет роль app при выкатке: есть файл — выкачен бэк, есть BFF_IMAGE_TAG — выкачен BFF
+# .env пишет роль app при выкатке: есть файл — выкачен бэк, есть BFF_IMAGE_REF — выкачен BFF
 - name: Detect an existing application deployment
   ansible.builtin.slurp:
     src: "{{ app_compose_dir }}/.env"
@@ -40,7 +40,7 @@
     caddy_backend_deployed: "{{ caddy_app_environment.content is defined }}"
     caddy_bff_deployed: >-
       {{ caddy_app_environment.content | default('') | b64decode
-      is search('(?m)^BFF_IMAGE_TAG=sha-') }}
+      is search('(?m)^BFF_IMAGE_REF=') }}
 
 - name: Caddyfile
   ansible.builtin.template:

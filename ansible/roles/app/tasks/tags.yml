@@ -1,5 +1,6 @@
 ---
-# Выкатка меняет один образ, второй остаётся тем, что уже выкачен: тег — из .env на VPS.
+# Выкатка меняет один образ, второй остаётся тем, что уже выкачен: тег Go, образ и релиз BFF — из .env
+# на VPS.
 - name: Read the deployed environment
   ansible.builtin.slurp:
     src: "{{ app_compose_dir }}/.env"
@@ -7,20 +8,26 @@
   failed_when: false
   no_log: true
 
-- name: Choose the image tags of this deployment
+- name: Choose the images of this deployment
   ansible.builtin.set_fact:
     app_backend_tag: >-
-      {{ backend_image_tag | default(app_deployed_tags.BACKEND_IMAGE_TAG) }}
-    app_bff_tag: >-
-      {{ bff_image_tag | default(app_deployed_tags.BFF_IMAGE_TAG) }}
+      {{ backend_image_tag | default(app_deployed.BACKEND_IMAGE_TAG) }}
+    app_bff_ref: >-
+      {{ bff_image_ref | default(app_deployed.BFF_IMAGE_REF) }}
+    app_bff_release: >-
+      {{ bff_release_sha | default(app_deployed.BFF_RELEASE_SHA) }}
   vars:
     app_deployed_text: "{{ app_deployed_env.content | default('') | b64decode }}"
-    app_deployed_tags:
+    app_deployed:
       BACKEND_IMAGE_TAG: >-
         {{ app_deployed_text | regex_findall('(?m)^BACKEND_IMAGE_TAG=(sha-[0-9a-f]{7,40})$')
         | first | default('') }}
-      BFF_IMAGE_TAG: >-
-        {{ app_deployed_text | regex_findall('(?m)^BFF_IMAGE_TAG=(sha-[0-9a-f]{7,40})$')
+      BFF_IMAGE_REF: >-
+        {{ app_deployed_text
+        | regex_findall('(?m)^BFF_IMAGE_REF=(' ~ (app_bff_image | regex_escape) ~ '@sha256:[0-9a-f]{64})$')
+        | first | default('') }}
+      BFF_RELEASE_SHA: >-
+        {{ app_deployed_text | regex_findall('(?m)^BFF_RELEASE_SHA=([0-9a-f]{40})$')
         | first | default('') }}
 
 # BFF ждёт healthy Go: без выкаченного бэка Compose его не поднимет
