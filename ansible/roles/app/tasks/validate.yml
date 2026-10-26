@@ -11,19 +11,21 @@
   when: app_deploy_service == 'api' or backend_image_tag is defined
 
 # BFF (infra#74): только неизменяемый образ по digest из своего package и полный SHA релиза —
-# по нему сверяются метка образа и <meta name="release"> в HTML. Тег не принимается.
+# по нему сверяются метка образа и <meta name="release"> в HTML. Тег не принимается. Package зашит
+# здесь, а не берётся из app_bff_image: -e app_bff_image=… не должен разрешать чужой образ.
 - name: Check the requested BFF image and release
   ansible.builtin.assert:
     that:
+      - app_bff_image == 'ghcr.io/cringe-driven-development-team/bff'
       - bff_image_ref is defined
       - bff_image_ref is string
-      - bff_image_ref is match('^' ~ (app_bff_image | regex_escape) ~ '@sha256:[0-9a-f]{64}$')
+      - bff_image_ref is match('^ghcr[.]io/cringe-driven-development-team/bff@sha256:[0-9a-f]{64}$')
       - bff_release_sha is defined
       - bff_release_sha is string
       - bff_release_sha is match('^[0-9a-f]{40}$')
     fail_msg: >-
-      Explicit bff_image_ref={{ app_bff_image }}@sha256:<64 hex> and bff_release_sha=<40 hex> are
-      required, including for rollback.
+      Explicit bff_image_ref=ghcr.io/cringe-driven-development-team/bff@sha256:<64 hex> and
+      bff_release_sha=<40 hex> are required, including for rollback; app_bff_image is not overridable.
   when: app_deploy_service == 'bff'
 
 # Образ BFF меняет только deploy-bff.yml: там он скачивается и сверяется до записи в .env

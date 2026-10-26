@@ -145,6 +145,11 @@ class DeploymentChecks(unittest.TestCase):
                 result = self.validate_bff(sha=sha)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("bff_release_sha=<40 hex>", result.stdout + result.stderr)
+        # package не подменить переопределением app_bff_image
+        alpine = "docker.io/library/alpine"
+        result = self.validate_bff(ref=alpine + "@sha256:" + "a" * 64, extra={"app_bff_image": alpine})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("app_bff_image is not overridable", result.stdout + result.stderr)
         # тег бэка необязателен, но если передан — проверяется
         result = self.validate_bff(extra={"backend_image_tag": "main"})
         self.assertNotEqual(result.returncode, 0)

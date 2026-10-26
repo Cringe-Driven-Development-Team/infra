@@ -358,9 +358,12 @@ Ansible в CI ходит по статическому `inventory/ci.yml` сво
 ```bash
 cd ansible
 export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
+# реальные значения — из записи release-artifacts выпуска (docs/release.md во frontend)
+BFF_IMAGE_REF='ghcr.io/cringe-driven-development-team/bff@sha256:...'   # 64 hex после sha256:
+BFF_RELEASE_SHA='...'                                                    # полный SHA, 40 hex
 ansible-playbook -i inventory/ci.yml deploy-bff.yml \
-  -e bff_image_ref=ghcr.io/cringe-driven-development-team/bff@sha256:<64 hex> \
-  -e bff_release_sha=<40 hex> \
+  -e "bff_image_ref=$BFF_IMAGE_REF" \
+  -e "bff_release_sha=$BFF_RELEASE_SHA" \
   -e deploy_key_path="$HOME/.ssh/selectel_release" \
   --ssh-common-args='-o StrictHostKeyChecking=yes'
 ```

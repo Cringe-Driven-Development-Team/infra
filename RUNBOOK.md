@@ -272,8 +272,8 @@ healthy у API и Postgres, сохранность данных после от�
 
 1. Go выкачен (`deploy-backend.yml`), в Vault есть `vault_session_key` и `vault_bff_api_key`,
    package `bff` в GHCR публичный.
-2. `deploy-bff.yml -e bff_image_ref=ghcr.io/cringe-driven-development-team/bff@sha256:<digest>
-   -e bff_release_sha=<полный SHA>` без GHCR credentials (команда —
+2. `deploy-bff.yml -e "bff_image_ref=$BFF_IMAGE_REF" -e "bff_release_sha=$BFF_RELEASE_SHA"` с реальными
+   ссылкой по digest и полным SHA в этих переменных, без GHCR credentials (команда —
    [ansible/README.md](ansible/README.md#bff-выкатка-проверка-и-откат); в CD её запускает workflow
    фронта, frontend#4). Playbook до изменений VPS скачивает образ анонимно и сверяет его метку
    `org.opencontainers.image.revision` с SHA, после запуска — что контейнер работает на этом образе и
