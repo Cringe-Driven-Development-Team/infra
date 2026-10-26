@@ -12,8 +12,13 @@
       PubkeyAuthentication yes
       MaxAuthTries 4
       X11Forwarding no
-      # Jump-хост больше не нужен: VPS одна, ProxyCommand/ProxyJump удалены из inventory
+      {% if ssh_hardening_jump_targets | length > 0 %}
+      # Gateway — jump-хост для приватной VPS2 (infra#59): пересылка только ssh -W на её SSH
+      AllowTcpForwarding local
+      PermitOpen {{ ssh_hardening_jump_targets | join(' ') }}
+      {% else %}
       AllowTcpForwarding no
+      {% endif %}
   notify: Restart sshd
 
 # Старое имя drop-in (99-) от предыдущих прогонов: sshd берёт первое значение, 00- его перекрывает,

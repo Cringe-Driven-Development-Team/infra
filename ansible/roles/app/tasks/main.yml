@@ -8,13 +8,33 @@
 # Новые .env и compose.yml пишутся до pull и запуска. Упала выкатка — возвращаются прежние: иначе
 # тег неудачной выкатки остался бы в .env, site.yml счёл бы BFF выкаченным, а следующая выкатка
 # унаследовала бы этот тег. Контейнеры при этом не откатываются — нужна выкатка с рабочим тегом.
+# На свежей VPS2 compose.yml ещё нет: Caddy (роль caddy) её не готовит
+- name: Find the deployed Compose project
+  ansible.builtin.stat:
+    path: "{{ app_compose_dir }}/compose.yml"
+  register: app_deployed_compose
+
+- name: Remember which project files exist
+  ansible.builtin.set_fact:
+    app_kept_files: >-
+      {{ (['compose.yml'] if app_deployed_compose.stat.exists else [])
+         + (['.env'] if app_deployed_env.content is defined else []) }}
+
+- name: Project directory
+  ansible.builtin.file:
+    path: "{{ app_compose_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Keep the deployed project files
   ansible.builtin.copy:
     src: "{{ app_compose_dir }}/{{ item }}"
     dest: "{{ app_compose_dir }}/{{ item }}.previous"
     remote_src: true
     mode: preserve
-  loop: "{{ ['compose.yml'] + (['.env'] if app_deployed_env.content is defined else []) }}"
+  loop: "{{ app_kept_files }}"
   no_log: true
 
 - name: Deploy the application
@@ -29,6 +49,7 @@
       no_log: true
 
     - name: Redis configuration directory
+      when: "'redis' in app_services"
       ansible.builtin.file:
         path: "{{ app_compose_dir }}/redis"
         state: directory
@@ -46,6 +67,7 @@
         mode: "0600"
       notify: Recreate Redis with the new configuration
       no_log: true
+      when: "'redis' in app_services"
 
     - name: Write the full application Compose project
       ansible.builtin.template:
@@ -55,16 +77,15 @@
         group: root
         mode: "0644"
 
+    # BFF уже скачан анонимно по digest и сверен (pull-bff.yml) до изменения файлов
     - name: Pull the deployed image with temporary registry authentication
       ansible.builtin.import_tasks: pull-image.yml
+      when: app_deploy_service == 'api'
 
     - name: Pull missing public service images after GHCR logout
       community.docker.docker_compose_v2_pull:
         project_src: "{{ app_compose_dir }}"
-        services:
-          - caddy
-          - postgres
-          - redis
+        services: "{{ ['caddy', 'postgres', 'redis'] | intersect(app_services) }}"
         policy: missing
 
     - name: Start the application and wait for healthchecks
@@ -72,6 +93,8 @@
         project_src: "{{ app_compose_dir }}"
         state: present
         pull: never
+        # переезд Go на VPS2: сервисы, которых больше нет в compose.yml, останавливаются; тома остаются
+        remove_orphans: true
         wait: true
         wait_timeout: "{{ app_wait_timeout }}"
 
@@ -82,8 +105,14 @@
         dest: "{{ app_compose_dir }}/{{ item }}"
         remote_src: true
         mode: preserve
-      loop: "{{ ['compose.yml'] + (['.env'] if app_deployed_env.content is defined else []) }}"
+      loop: "{{ app_kept_files }}"
       no_log: true
+
+    - name: Remove the files of a failed first deployment
+      ansible.builtin.file:
+        path: "{{ app_compose_dir }}/compose.yml"
+        state: absent
+      when: not app_deployed_compose.stat.exists
 
     - name: Remove the environment of a failed first deployment
       ansible.builtin.file:
@@ -112,6 +141,7 @@
 
 # Caddy ведёт на BFF, только когда тот выкачен; до первой выкатки BFF — заглушка 503
 - name: Route Caddy to the BFF
+  when: "'caddy' in app_services"
   ansible.builtin.template:
     src: "{{ role_path }}/../caddy/templates/Caddyfile.j2"
     dest: "{{ app_compose_dir }}/caddy/Caddyfile"
@@ -122,7 +152,7 @@
       docker run --rm -v %s:/tmp/Caddyfile:ro {{ caddy_image }}
       caddy validate --config /tmp/Caddyfile --adapter caddyfile
   vars:
-    caddy_bff_enabled: "{{ app_bff_tag | length > 0 }}"
+    caddy_bff_enabled: "{{ app_bff_ref | length > 0 }}"
   notify: Reload caddy
 
 - name: Apply the Caddy route before the public probe

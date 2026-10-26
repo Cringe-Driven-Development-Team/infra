@@ -6,16 +6,23 @@
     public_ip: "{{ hostvars[groups['gateway'][0]]['ansible_host'] }}"
   tasks:
     # Inventory строится из серверов проекта (openstack.yml): прод-VPS (gateway) ровно одна, кроме
-    # неё допускается только вспомогательная VPS (группа auxiliary, auxiliary.yml).
+    # неё допускаются приватная VPS2 (группа backend, не больше одной, infra#59) и вспомогательная VPS
+    # (группа auxiliary, auxiliary.yml).
     - name: В проекте ровно одна прод-VPS
       ansible.builtin.assert:
         that:
           - groups['gateway'] | length == 1
-          - groups['all'] | difference(groups['gateway']) | difference(groups['auxiliary'] | default([])) | length == 0
-        fail_msg: "Ожидалась одна прод-VPS и вспомогательные (auxiliary), в inventory: {{ groups['all'] }}"
+          - groups['backend'] | default([]) | length <= 1
+          - >-
+            groups['all'] | difference(groups['gateway']) | difference(groups['backend'] | default([]))
+            | difference(groups['auxiliary'] | default([])) | length == 0
+        fail_msg: >-
+          Ожидались одна прод-VPS, не больше одной VPS2 (backend) и вспомогательные (auxiliary),
+          в inventory: {{ groups['all'] }}
+      tags: inventory
 
-    # BFF выкачен, если в .env на VPS есть BFF_IMAGE_TAG (роль app); до первой выкатки Caddy отвечает
-    # заглушкой. Тег — для проверки релиза в HTML.
+    # BFF выкачен, если в .env на VPS есть BFF_IMAGE_REF (роль app); до первой выкатки Caddy отвечает
+    # заглушкой. BFF_RELEASE_SHA — для проверки релиза в HTML.
     - name: Окружение приложения на VPS
       ansible.builtin.slurp:
         src: "{{ app_compose_dir }}/.env"
@@ -27,9 +34,9 @@
 
     - name: Выкачен ли BFF
       ansible.builtin.set_fact:
-        verify_bff_tag: >-
+        verify_bff_release: >-
           {{ verify_app_environment.content | default('') | b64decode
-          | regex_findall('(?m)^BFF_IMAGE_TAG=(sha-[0-9a-f]{7,40})$')
+          | regex_findall('(?m)^BFF_RELEASE_SHA=([0-9a-f]{40})$')
           | first | default('') }}
 
     - name: До первой выкатки BFF домен отвечает заглушкой
@@ -45,13 +52,13 @@
         verify_placeholder.status != 503
         or verify_placeholder.content != 'BFF is not deployed'
         or verify_placeholder.x_content_type_options | default('') != 'nosniff'
-      when: verify_bff_tag == ''
+      when: verify_bff_release == ''
 
     - name: BFF отвечает снаружи как положено
       ansible.builtin.import_tasks: roles/app/tasks/probe-bff.yml
       vars:
-        bff_probe_tag: "{{ verify_bff_tag }}"
-      when: verify_bff_tag != ''
+        bff_probe_release: "{{ verify_bff_release }}"
+      when: verify_bff_release != ''
 
     - name: Выдать информацию о сертификате
       ansible.builtin.shell:
@@ -90,10 +97,25 @@
       loop: [5432, 6379, 8080, 2375, 2376]
 
 - name: "Проверки на VPS"
-  hosts: gateway
+  hosts: gateway:backend
   gather_facts: false
   become: true
   tasks:
+    - name: Образ выкаченного BFF
+      ansible.builtin.slurp:
+        src: "{{ app_compose_dir }}/.env"
+      register: verify_vps_environment
+      failed_when: false
+      no_log: true
+
+    - name: Запущенный BFF — выкаченный образ по digest и healthy
+      ansible.builtin.include_tasks: roles/app/tasks/check-bff-image.yml
+      vars:
+        bff_check_ref: >-
+          {{ verify_vps_environment.content | default('') | b64decode
+          | regex_findall('(?m)^BFF_IMAGE_REF=(\S+)$') | first | default('') }}
+      when: verify_vps_environment.content | default('') | b64decode is search('(?m)^BFF_IMAGE_REF=')
+
     # Redis (infra#46) поднимает роль app вместе с бэком (deploy-backend.yml): пока выкатки с Redis
     # не было, нет и его конфига — проверка пропускается
     - name: Выкачен ли Redis на VPS
@@ -110,7 +132,10 @@
       register: verify_redis_ping
       changed_when: false
       failed_when: verify_redis_ping.rc != 0 or verify_redis_ping.stdout | trim != 'PONG'
-      when: verify_redis_conf.stat.exists
+      # Redis — там же, где Go: на gateway или, после переноса (infra#59), на VPS2
+      when: >-
+        verify_redis_conf.stat.exists
+        and (inventory_hostname in groups.get('backend', [])) == (app_backend_split | bool)
 
     - name: Правила ufw
       ansible.builtin.command: ufw status verbose
@@ -150,23 +175,43 @@
       loop_control:
         label: "{{ item.name }}"
 
+    # Правила с источником (VPS2: SSH и Go API только с gateway) не должны быть открыты всем
+    - name: "UFW: правило с источником открыто только ему — {{ item.name }}"
+      ansible.builtin.assert:
+        that: >-
+          ufw_allow_rules
+          | select('search', '^' ~ item.port ~ '/' ~ item.proto ~ '[ ]+ALLOW IN[ ]+' ~ (item.src | regex_escape) ~ '([ ]|$)')
+          | list | length > 0
+          and ufw_allow_rules
+          | select('search', '^' ~ item.port ~ '/' ~ item.proto ~ '[ ]+ALLOW IN[ ]+Anywhere')
+          | list | length == 0
+        fail_msg: "{{ ufw_status.stdout }}"
+      loop: "{{ firewall_rules | selectattr('src', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
     - name: Эффективный конфиг sshd (sshd -T)
       ansible.builtin.shell:
         cmd: >-
           set -o pipefail;
           sshd -T | grep -E
-          '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication|allowtcpforwarding) '
+          '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication|allowtcpforwarding|permitopen) '
         executable: /bin/bash
       register: sshd_effective
       changed_when: false
 
-    - name: "Hardening активен: root/пароли выключены, форвардинг запрещён (jump-хост не нужен)"
+    # Пересылка запрещена, кроме gateway при VPS2: только ssh -W на её SSH (infra#59)
+    - name: "Hardening активен: root/пароли выключены, форвардинг — только jump на VPS2"
       ansible.builtin.assert:
         that:
           - sshd_effective.stdout is search('(?m)^permitrootlogin no$')
           - sshd_effective.stdout is search('(?m)^passwordauthentication no$')
           - sshd_effective.stdout is search('(?m)^kbdinteractiveauthentication no$')
-          - sshd_effective.stdout is search('(?m)^allowtcpforwarding no$')
+          - >-
+            sshd_effective.stdout is search('(?m)^allowtcpforwarding no$')
+            if (ssh_hardening_jump_targets | default([])) | length == 0
+            else (sshd_effective.stdout is search('(?m)^allowtcpforwarding local$')
+                  and sshd_effective.stdout is search('(?m)^permitopen ' ~ (ssh_hardening_jump_targets | join(' ') | regex_escape) ~ '$'))
         fail_msg: "sshd -T: {{ sshd_effective.stdout }}"
 
     # Какие TCP-порты слушает не на loopback: publishing-порты Docker смотрят прямо наружу
@@ -255,3 +300,41 @@
   tasks:
     - name: Проверить результат snapshot
       ansible.builtin.import_tasks: tasks/verify-hooks-snapshot.yml
+
+# Go на приватной VPS2 (infra#59): с gateway он отвечает только с верным S2S-ключом (backend#41).
+# Проверка — после переноса (app_backend_split), в Go к тому моменту выкачен backend#41.
+- name: "Go на VPS2 и S2S-ключ"
+  hosts: gateway
+  gather_facts: false
+  tasks:
+    - name: VPS2 — приватный адрес, без публичного IP
+      ansible.builtin.assert:
+        that:
+          - app_backend_address is match('^192[.]168[.]199[.][0-9]+$')
+        fail_msg: "Адрес VPS2 {{ app_backend_address }} не из приватной подсети 192.168.199.0/24"
+      when: app_backend_split | bool
+
+    - name: Неверный и отсутствующий S2S-ключ — 403 s2s_forbidden
+      ansible.builtin.uri:
+        url: "http://{{ app_backend_address }}:8080/api/v1/users/me"
+        headers: "{{ {'X-BFF-Key': item} if item else {} }}"
+        status_code: 403
+        return_content: true
+      register: verify_s2s_denied
+      failed_when: >-
+        verify_s2s_denied.status != 403
+        or (verify_s2s_denied.json.code | default('')) != 's2s_forbidden'
+      loop: ["wrong-s2s-key-from-verify", ""]
+      loop_control:
+        label: "{{ 'неверный' if item else 'без ключа' }}"
+      when: app_backend_split | bool
+
+    # с верным ключом S2S-проверка пройдена, дальше Go требует Bearer: 401, а не 403
+    - name: Верный S2S-ключ пропускает к Go
+      ansible.builtin.uri:
+        url: "http://{{ app_backend_address }}:8080/api/v1/users/me"
+        headers:
+          X-BFF-Key: "{{ bff_api_key }}"
+        status_code: 401
+      no_log: true
+      when: app_backend_split | bool

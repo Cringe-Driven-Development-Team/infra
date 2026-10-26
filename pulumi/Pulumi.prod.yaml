@@ -23,6 +23,8 @@ config:
   infra:avatarsDomain: avatars.cellestial.ru
   infra:staticDomain: static.cellestial.ru
   infra:docsDomain: docs.cellestial.ru
+  infra:backend: "true"
+  infra:backendFlavorName: SL1.2-4096
   infra:auxiliary: "true"
   infra:auxiliaryFlavorName: SL1.2-4096
   infra:hooksDomain: hooks.cellestial.ru

@@ -1,21 +1,31 @@
 ---
 # Go API снаружи не публикуется (infra#58): готовность — healthcheck Compose, пользовательский путь
-# проверяет deploy-bff.yml. BFF, если выкачен, остаётся на своём теге.
-- name: Deploy backend to the single VPS
-  hosts: gateway
+# проверяет deploy-bff.yml. BFF, если выкачен, остаётся на своём образе.
+# Go — на gateway (app_backend_split: false) или на приватной VPS2 (true, infra#59): плей идёт по обеим
+# группам и сразу завершается на хосте, где Go не живёт.
+- name: Deploy backend
+  hosts: gateway:backend
   become: true
   gather_facts: false
   vars:
     app_deploy_service: api
-    app_deploy_tag: backend_image_tag
   pre_tasks:
-    - name: Require exactly one deployment host
+    - name: Require exactly one gateway and at most one VPS2
       ansible.builtin.assert:
         that:
           - groups['gateway'] | length == 1
-          - ansible_play_hosts_all | length == 1
-        fail_msg: Supply backend_image_tag=sha-<commit> and an inventory with one gateway.
+          - groups.get('backend', []) | length <= 1
+          - not (app_backend_split | bool) or groups.get('backend', []) | length == 1
+        fail_msg: >-
+          Supply backend_image_tag=sha-<commit> and an inventory with one gateway (and one backend VPS
+          when app_backend_split is true).
       tags: validation
+
+    - name: Go runs on another host
+      ansible.builtin.meta: end_host
+      when: >-
+        ((app_backend_split | bool) and inventory_hostname not in groups.get('backend', []))
+        or (not (app_backend_split | bool) and inventory_hostname not in groups['gateway'])
 
     - name: Validate before changing the server
       ansible.builtin.import_tasks: roles/app/tasks/validate.yml
@@ -24,5 +34,6 @@
     - name: Gather server facts
       ansible.builtin.setup:
   roles:
-    - caddy
+    - role: caddy
+      when: inventory_hostname in groups['gateway']
     - app

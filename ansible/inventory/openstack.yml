@@ -2,7 +2,7 @@
 # Dynamic inventory: единственная VPS проекта, созданного Pulumi.
 # Учётные данные — облако selectel: из OS_* (. ./env.sh) или из ansible/clouds.yaml
 # (см. clouds.yaml.example, файл в .gitignore). Запускать из каталога ansible/: путь clouds.yaml относительный.
-# ansible_host: floating IP сервера (публичный адрес).
+# ansible_host: floating IP сервера (публичный адрес), у VPS2 без него — приватный адрес.
 plugin: openstack.cloud.openstack
 clouds_yaml_path:
   - clouds.yaml
@@ -15,5 +15,7 @@ strict: true
 groups:
   # metadata задаётся в pulumi/index.ts: { role: "gateway", env: "release" }
   gateway: (openstack.metadata | default({})).get('role') == 'gateway'
+  # Приватная VPS2 (infra#59): Go API, Postgres, Redis; ansible_host — приватный адрес, вход через gateway
+  backend: (openstack.metadata | default({})).get('role') == 'backend'
   # Вспомогательная VPS для сервиса вебхуков — плейбук auxiliary.yml
   auxiliary: (openstack.metadata | default({})).get('role') == 'auxiliary'

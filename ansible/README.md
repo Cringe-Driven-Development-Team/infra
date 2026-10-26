@@ -247,7 +247,7 @@ BFF сам разбирает остальное: `/api/trpc` и `/api/trpc/*` �
 - HTML берётся из образа BFF своего коммита, не из бакета: S3-указатель `current.json` и копия
   корневого `index.html` версию на проде больше не меняют. Чанки JS и CSS браузер грузит с CDN
   каталога своего релиза `releases/{sha}/` (`frontend_cdn_domain`), через Caddy они не идут.
-- До первой выкатки BFF (в `.env` на VPS нет `BFF_IMAGE_TAG`) Caddy на всех путях, кроме `/health`,
+- До первой выкатки BFF (в `.env` на VPS нет `BFF_IMAGE_REF`) Caddy на всех путях, кроме `/health`,
   отвечает `503` с телом `BFF is not deployed`.
 - Все ответы Caddy несут `X-Content-Type-Options: nosniff`, ответы BFF — ещё и
   `Content-Security-Policy`: скрипты и стили — только с `frontend_cdn_domain`, картинки — с него,
@@ -269,9 +269,11 @@ BFF сам разбирает остальное: `/api/trpc` и `/api/trpc/*` �
 
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
 - до первой выкатки BFF `https://<app_domain>/` отвечает `503 BFF is not deployed` с `nosniff`;
-- после неё (в `.env` на VPS есть `BFF_IMAGE_TAG`) — те же проверки, что в конце `deploy-bff.yml`
-  (`roles/app/tasks/probe-bff.yml`): гостевой HTML с ровно одним `<script id="bootstrap">` и
-  `{"user":null}`, `<meta name="release">` выкаченного тега, `Cache-Control: private, no-store`,
+- после неё (в `.env` на VPS есть `BFF_IMAGE_REF`) — те же проверки, что в конце `deploy-bff.yml`:
+  запущенный контейнер `bff` — образ `BFF_IMAGE_REF` из `.env` (тот же digest и image ID) и
+  `healthy` (`roles/app/tasks/check-bff-image.yml`); снаружи (`roles/app/tasks/probe-bff.yml`) —
+  гостевой HTML `/login` с ровно одним `<script id="bootstrap">` и `{"user":null}`,
+  `<meta name="release">` с полным `BFF_RELEASE_SHA`, `Cache-Control: private, no-store`,
   `nosniff` и CSP; `users.me` без сессии — tRPC `UNAUTHORIZED` (401); `/api/v1/users/me`,
   `/api/unknown` и `/health` — `404` и не HTML;
 - сертификат от Let's Encrypt;
@@ -347,40 +349,74 @@ Ansible в CI ходит по статическому `inventory/ci.yml` сво
 
 ## BFF: выкатка, проверка и откат
 
-Образ `ghcr.io/cringe-driven-development-team/bff:sha-<commit>` публикует CI фронта
-([frontend#4](https://github.com/Cringe-Driven-Development-Team/frontend/issues/4)); в нём `bff.js` и
-`index.html` клиента того же коммита. Выкатка и откат — один entrypoint `deploy-bff.yml` с явным
-тегом уже опубликованного образа, без пересборки и без `latest`:
+Публичный образ `ghcr.io/cringe-driven-development-team/bff` публикует CI фронта
+([frontend#4](https://github.com/Cringe-Driven-Development-Team/frontend/issues/4)): в нём `bff.js` и
+`index.html` клиента одного коммита, а метка `org.opencontainers.image.revision` — полный SHA этого
+коммита. Выкатка и откат — один entrypoint `deploy-bff.yml` с неизменяемым образом по digest
+(infra#74), без пересборки, без тегов и без GHCR credentials:
 
 ```bash
 cd ansible
 export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
-# аккаунт с доступом на чтение package bff (CI фронта — его GITHUB_TOKEN)
-export GHCR_USERNAME="$(gh api user --jq .login)"
-export GHCR_TOKEN="$(gh auth token)"
+# реальные значения — из записи release-artifacts выпуска (docs/release.md во frontend)
+BFF_IMAGE_REF='ghcr.io/cringe-driven-development-team/bff@sha256:...'   # 64 hex после sha256:
+BFF_RELEASE_SHA='...'                                                    # полный SHA, 40 hex
 ansible-playbook -i inventory/ci.yml deploy-bff.yml \
-  -e bff_image_tag=sha-1234567 \
+  -e "bff_image_ref=$BFF_IMAGE_REF" \
+  -e "bff_release_sha=$BFF_RELEASE_SHA" \
   -e deploy_key_path="$HOME/.ssh/selectel_release" \
   --ssh-common-args='-o StrictHostKeyChecking=yes'
-unset GHCR_TOKEN GHCR_USERNAME
 ```
 
-- До изменений VPS проверяются тег (`^sha-[0-9a-f]{7,40}$`), GHCR credentials в окружении и секреты
-  BFF (`session_key`, `bff_api_key`); ошибка останавливает выкатку.
-- Тег Go берётся из `.env` на VPS: выкатка BFF не трогает API, выкатка Go (`deploy-backend.yml`) —
-  BFF. Без выкаченного Go BFF не выкатывается (он ждёт `api` в состоянии healthy). Передать оба
-  тега можно и сразу: `-e backend_image_tag=… -e bff_image_tag=…` проверяются оба, скачивается тот
-  образ, который выкатывает playbook.
-- Скачивается только образ BFF (вход в GHCR — на время pull, logout всегда), Compose поднимается с
-  `--pull never --wait`: сервис должен стать healthy (`wget /health` внутри контейнера). Затем Caddy
-  переключается на BFF и выполняются проверки снаружи (`roles/app/tasks/probe-bff.yml`, раздел
-  «Проверки verify.yml»). Провал любой проверки — ошибка playbook, а не успех.
+- До изменений VPS проверяются входы: `bff_image_ref` — только
+  `ghcr.io/cringe-driven-development-team/bff@sha256:<64 hex>` (тег, другой package или registry
+  отклоняются), `bff_release_sha` — полный SHA из 40 hex; и секреты BFF (`session_key`, `bff_api_key`).
+- Затем образ скачивается на VPS **анонимно**: `docker --config <пустой временный каталог> pull` —
+  без `docker login` и без credentials, даже если они есть на VPS. Метка
+  `org.opencontainers.image.revision` скачанного образа должна совпасть с `bff_release_sha`.
+  Приватный package, запрет анонимного скачивания, неизвестный digest или чужой релиз останавливают
+  выкатку здесь: `.env`, `compose.yml`, Caddy и контейнеры остаются прежними. Package `bff` в GHCR
+  должен быть публичным (GitHub → Packages → bff → Package settings → Change visibility → Public).
+- В `.env` пишутся `BFF_IMAGE_REF` (ссылка по digest) и `BFF_RELEASE_SHA`; Compose запускает
+  `image: ${BFF_IMAGE_REF}` с `pull_policy: never` и `--wait`. Тег Go берётся из `.env` на VPS:
+  выкатка BFF не трогает API, а `deploy-backend.yml` не меняет BFF (`bff_image_ref` он не принимает).
+  Без выкаченного Go BFF не выкатывается (он ждёт `api` в состоянии healthy).
+- После запуска проверяется фактически запущенный контейнер: его образ — тот же `BFF_IMAGE_REF` и
+  image ID, состояние `healthy` (`roles/app/tasks/check-bff-image.yml`). Затем Caddy переключается на
+  BFF и выполняются проверки снаружи (`roles/app/tasks/probe-bff.yml`, раздел «Проверки verify.yml»),
+  `<meta name="release">` сверяется с `bff_release_sha`. Провал любой проверки — ошибка playbook, а
+  не успех. Что остаётся на VPS, зависит от места сбоя:
+  - до запуска (скачивание образа, сверка метки) — ничего не менялось;
+  - при записи файлов или запуске Compose (роль `app`) — `.env` и `compose.yml` прежней выкатки
+    восстанавливаются, контейнер — нет;
+  - в проверках после запуска (запущенный образ, healthy, проба снаружи) — новая выкатка уже записана
+    и запущена: `.env` и `compose.yml` — нового релиза.
+
+  В двух последних случаях нужна выкатка рабочего digest (откат — той же командой).
+- Повторная выкатка ранее опубликованного digest (в том числе откат) — та же команда с его
+  `bff_image_ref` и `bff_release_sha`: возвращаются его HTML и ссылки на ассеты его SHA (их хранит
+  retention фронта). Откат BFF не откатывает Go и БД.
 - `SESSION_KEY` — из Vault и одинаков у выпуска и отката: действительные cookie сессии остаются
   читаемыми. `GO_API_URL` — `app_bff_go_api_url` (`roles/app/defaults/main.yml`,
   `http://api:8080/api/v1`); при переносе Go на VPS2 (infra#59) — её приватный адрес.
-- Откат — та же команда с прежним `bff_image_tag`: возвращаются его HTML и ссылки на ассеты его SHA
-  (их хранит retention фронта). Откат BFF не откатывает Go и БД.
-- `site.yml` тег BFF не меняет: `compose.yml` и `.env` после первой выкатки ведёт только роль `app`.
+- `site.yml` образ BFF не меняет: `compose.yml` и `.env` после первой выкатки ведёт только роль `app`.
+
+## Приватная VPS2: Go API, Postgres, Redis (infra#59)
+
+Группа `backend` — сервер Pulumi с `metadata.role: backend`, без публичного IP; `ansible_host` — его
+приватный адрес. Ansible ходит на неё через gateway: `ansible_ssh_extra_args` в `group_vars/backend`
+задаёт `ProxyCommand` с ключом `deploy_key_path` (known_hosts gateway — `jump_known_hosts`), а sshd на
+gateway пускает пересылку только на `VPS2:22` (`ssh_hardening_jump_targets`). `site.yml` настраивает VPS2 так же,
+как gateway, без Caddy; ufw на ней пускает 22 и 8080 только с `app_gateway_address`.
+
+Раскладка приложения — `app_backend_split` (`group_vars/all/vars.yml`): `false` — всё на gateway,
+`true` — на gateway Caddy и BFF (`GO_API_URL` — приватный адрес VPS2), на VPS2 Go, Postgres и Redis,
+порт API опубликован только на приватном адресе VPS2. В `.env` каждой машины — только секреты её
+сервисов; `BFF_API_KEY` — на обеих. `deploy-backend.yml` идёт по `gateway:backend` и выкатывает Go туда,
+где он живёт в текущей раскладке; `deploy-bff.yml` на раздельной раскладке требует, чтобы Go на VPS2
+отвечал с gateway. Данные Postgres с gateway не переносятся: на VPS2 новые пустые тома, схему создают
+миграции Go при старте; тома на gateway остаются для отката. Порядок переключения и отката —
+[RUNBOOK.md, «Go и Postgres на VPS2»](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
 
 ## Go API: первая выкатка и откат
 
