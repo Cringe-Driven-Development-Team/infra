@@ -18,3 +18,6 @@
 `ci-infra.pub` — ключ CI самой инфраструктуры (`.github/workflows/infra.yml`): приватная часть —
 только в секрете `INFRA_DEPLOY_SSH_KEY` environments `production` и `infra-preview` этого
 репозитория (`ansible/README.md`, «CI/CD инфраструктуры»).
+
+`ci-team-frontend.pub` — ключ CD фронта (`deploy-bff.yml`): приватная часть — только в секрете
+`DEPLOY_SSH_KEY` environment `production` репозитория frontend.
