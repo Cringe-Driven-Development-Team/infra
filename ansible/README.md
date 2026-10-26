@@ -442,7 +442,7 @@ production secret `DEPLOY_SSH_KEY`. После ревью PR с public key оп�
 из аутентифицированной консоли провайдера; личный ключ оператора в CI не передаётся.
 
 Для `team/frontend` (CD и Rollback BFF, `deploy-bff.yml`) — своя пара CI: public key —
-`files/authorized_keys/ci-team-frontend.pub`, private key — только в secret `DEPLOY_SSH_KEY`
+`files/authorized_keys/gateway/ci-team-frontend.pub` (только на gateway), private key — только в secret `DEPLOY_SSH_KEY`
 environment `production` фронта, там же `SSH_KNOWN_HOSTS` gateway и `ANSIBLE_VAULT_PASSWORD`.
 На gateway ключ попадает через `site.yml` при мерже PR с ним.
 
