@@ -1,7 +1,9 @@
 # Managed by Ansible (role app). Preserve the existing cellestial Caddy volumes.
 name: cellestial
 
+# Сервисы этого хоста — app_services (tags.yml): всё на gateway или раздельно с VPS2 (infra#59)
 services:
+{% if 'caddy' in app_services %}
   caddy:
     image: {{ caddy_image }}
     restart: unless-stopped
@@ -15,6 +17,8 @@ services:
     networks:
       - app
 
+{% endif %}
+{% if 'api' in app_services %}
   api:
     image: {{ app_backend_image }}:${BACKEND_IMAGE_TAG:?backend tag is required}
     restart: unless-stopped
@@ -55,10 +59,17 @@ services:
       timeout: 3s
       start_period: 30s
       retries: 20
+{% if app_backend_split | bool %}
+    # BFF на gateway ходит сюда по приватной сети: порт — только на приватном адресе VPS2, снаружи его
+    # закрывают security group (только с gateway) и отсутствие публичного IP
+    ports:
+      - "{{ app_backend_address }}:8080:8080"
+{% endif %}
     networks:
       - app
 
-{% if app_bff_ref %}
+{% endif %}
+{% if 'bff' in app_services %}
   # BFF (infra#58): HTML и /api/trpc снаружи — через Caddy. PORT не задаётся: в .env он для api (8080),
   # а BFF слушает 3000 по умолчанию.
   bff:
@@ -73,9 +84,11 @@ services:
       BFF_KEY: ${BFF_API_KEY:?bff api key is required}
     # BFF дожидается текущих запросов до 10 с (frontend#2)
     stop_grace_period: 15s
+{% if 'api' in app_services %}
     depends_on:
       api:
         condition: service_healthy
+{% endif %}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/health"]
       interval: 5s
@@ -86,6 +99,7 @@ services:
       - app
 
 {% endif %}
+{% if 'postgres' in app_services %}
   postgres:
     image: {{ app_postgres_image }}
     restart: unless-stopped
@@ -104,6 +118,8 @@ services:
     networks:
       - app
 
+{% endif %}
+{% if 'redis' in app_services %}
   # Пароль — в redis.conf (0600, читает только redis), а не в --requirepass: аргументы видны в ps
   redis:
     image: {{ app_redis_image }}
@@ -124,11 +140,18 @@ services:
     networks:
       - app
 
+{% endif %}
 networks:
   app: {}
 
 volumes:
+{% if 'caddy' in app_services %}
   caddy_data: {}
   caddy_config: {}
+{% endif %}
+{% if 'postgres' in app_services %}
   postgres_data: {}
+{% endif %}
+{% if 'redis' in app_services %}
   redis_data: {}
+{% endif %}

@@ -1,0 +1,14 @@
+# Приватная VPS2 (infra#59): Go API, Postgres и Redis. Публичного IP нет: снаружи закрывает security
+# group Selectel (pulumi/index.ts, «backend») — SSH и 8080 только с gateway. ufw — второй слой: Docker
+# публикует порты мимо него.
+firewall_rules:
+  - { name: SSH from gateway, port: "22", proto: tcp, src: "{{ app_gateway_address }}" }
+  - { name: Go API from gateway, port: "8080", proto: tcp, src: "{{ app_gateway_address }}" }
+
+# Вход через gateway: ProxyCommand с тем же ключом deploy. extra_args, а не common_args: CI передаёт
+# свой --ssh-common-args (known_hosts), он не должен затирать прокси. jump_known_hosts — known_hosts для
+# gateway (CI: -e jump_known_hosts=<файл>); для VPS2 — обычный UserKnownHostsFile/~/.ssh/known_hosts.
+jump_known_hosts: "~/.ssh/known_hosts"
+ansible_ssh_extra_args: >-
+  -o ProxyCommand="ssh -W %h:%p -q -i {{ deploy_key_path }} -o IdentitiesOnly=yes
+  -o StrictHostKeyChecking=yes -o UserKnownHostsFile={{ jump_known_hosts }} {{ deploy_user }}@{{ app_domain }}"

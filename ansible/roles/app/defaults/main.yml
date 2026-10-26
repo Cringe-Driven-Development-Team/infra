@@ -3,8 +3,10 @@ app_backend_image: ghcr.io/cringe-driven-development-team/backend
 # BFF (infra#58): публичный образ публикует CI фронта (frontend#4), выкатывается по digest —
 # bff_image_ref (infra#74)
 app_bff_image: ghcr.io/cringe-driven-development-team/bff
-# Адрес Go для BFF; после переноса Go на VPS2 (infra#59) — её приватный адрес
-app_bff_go_api_url: http://api:8080/api/v1
+# Адрес Go для BFF: в одном проекте — сервис api, после переноса Go на VPS2 (infra#59) — её приватный
+# адрес
+app_bff_go_api_url: >-
+  {{ 'http://' ~ app_backend_address ~ ':8080/api/v1' if app_backend_split | bool else 'http://api:8080/api/v1' }}
 app_postgres_image: postgres:18-alpine
 # Redis — refresh-сессии бэка (infra#46): только сеть app, данные в volume redis_data (AOF)
 app_redis_image: redis:8-alpine

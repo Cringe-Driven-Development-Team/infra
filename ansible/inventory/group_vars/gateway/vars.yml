@@ -3,3 +3,6 @@ firewall_rules:
   - { name: SSH, port: "22", proto: tcp }
   - { name: HTTP, port: "80", proto: tcp }
   - { name: HTTPS, port: "443", proto: tcp }
+
+# Gateway — jump-хост Ansible к приватной VPS2 (infra#59), когда она есть в inventory
+ssh_hardening_jump_targets: "{{ [app_backend_address ~ ':22'] if app_backend_address else [] }}"

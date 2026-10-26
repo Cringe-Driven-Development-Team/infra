@@ -401,6 +401,23 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
   `http://api:8080/api/v1`); при переносе Go на VPS2 (infra#59) — её приватный адрес.
 - `site.yml` образ BFF не меняет: `compose.yml` и `.env` после первой выкатки ведёт только роль `app`.
 
+## Приватная VPS2: Go API, Postgres, Redis (infra#59)
+
+Группа `backend` — сервер Pulumi с `metadata.role: backend`, без публичного IP; `ansible_host` — его
+приватный адрес. Ansible ходит на неё через gateway: `ansible_ssh_extra_args` в `group_vars/backend`
+задаёт `ProxyCommand` с ключом `deploy_key_path` (known_hosts gateway — `jump_known_hosts`), а sshd на
+gateway пускает пересылку только на `VPS2:22` (`ssh_hardening_jump_targets`). `site.yml` настраивает VPS2 так же,
+как gateway, без Caddy; ufw на ней пускает 22 и 8080 только с `app_gateway_address`.
+
+Раскладка приложения — `app_backend_split` (`group_vars/all/vars.yml`): `false` — всё на gateway,
+`true` — на gateway Caddy и BFF (`GO_API_URL` — приватный адрес VPS2), на VPS2 Go, Postgres и Redis,
+порт API опубликован только на приватном адресе VPS2. В `.env` каждой машины — только секреты её
+сервисов; `BFF_API_KEY` — на обеих. `deploy-backend.yml` идёт по `gateway:backend` и выкатывает Go туда,
+где он живёт в текущей раскладке; `deploy-bff.yml` на раздельной раскладке требует, чтобы Go на VPS2
+отвечал с gateway. Данные Postgres с gateway не переносятся: на VPS2 новые пустые тома, схему создают
+миграции Go при старте; тома на gateway остаются для отката. Порядок переключения и отката —
+[RUNBOOK.md, «Go и Postgres на VPS2»](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
+
 ## Go API: первая выкатка и откат
 
 В одном проекте `/opt/cellestial` роль `app` управляет API, PostgreSQL 18 и Redis 8, роль

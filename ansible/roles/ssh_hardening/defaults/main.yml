@@ -1,0 +1,3 @@
+---
+# Адреса host:port, на которые sshd пересылает ssh -W (jump-хост). Пусто — пересылка запрещена.
+ssh_hardening_jump_targets: []

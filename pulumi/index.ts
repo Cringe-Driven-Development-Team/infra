@@ -68,6 +68,8 @@ const cdnCustomDomainName = cfg.get("cdnDomain");
 const avatarsCustomDomainName = cfg.get("avatarsDomain");
 // Свой домен CDN-ресурса статики (static.cellestial.ru): CNAME в зоне infra:dnsZone, как у infra:cdnDomain.
 const staticCustomDomainName = cfg.get("staticDomain");
+// Приватная VPS2 (infra#59) — Go API, Postgres и Redis без публичного IP; доступ только с gateway.
+const backendEnabled = cfg.getBoolean("backend") ?? false;
 // Вспомогательная VPS (infra#54) — сервис вебхуков; его домен — A-запись в infra:dnsZone.
 const auxiliaryEnabled = cfg.getBoolean("auxiliary") ?? false;
 const hooksDomainName = cfg.get("hooksDomain");
@@ -288,6 +290,72 @@ new openstack.networking.FloatingIpAssociate("gateway", {
   portId: gatewayPort.id,
   floatingIp: floatingIp.address,
 }, { ...withOs, dependsOn: [routerInterface] });
+
+// ---------------------------------------------------------------------------
+// Приватная VPS2 (infra#59): Go API, Postgres и Redis. Включается infra:backend. Та же приватная сеть
+// и роутер (исходящий доступ — SNAT роутера), но без floating IP: из интернета её не видно. Security
+// group пускает SSH и API (8080) только с приватного адреса gateway, ICMP — из подсети. На gateway
+// ничего не меняется: её floating IP — 1:1 DNAT, поэтому API на ней не публикуется.
+// ---------------------------------------------------------------------------
+let backendPort: openstack.networking.Port | undefined;
+if (backendEnabled) {
+  const gatewayAddress = gatewayPort.allFixedIps.apply((ips) => `${ips[0]}/32`);
+  const secGroup = new openstack.networking.SecGroup("backend", {
+    name: "backend",
+    description: "Private backend VPS: SSH and Go API only from the gateway VPS",
+  }, withOs);
+  const ingress: [string, string, number | undefined, pulumi.Input<string>][] = [
+    ["ssh", "tcp", 22, gatewayAddress],
+    ["api", "tcp", 8080, gatewayAddress],
+    ["icmp", "icmp", undefined, subnet.cidr],
+  ];
+  for (const [ruleName, protocol, port, remoteIpPrefix] of ingress) {
+    new openstack.networking.SecGroupRule(`backend-${ruleName}`, {
+      securityGroupId: secGroup.id,
+      direction: "ingress",
+      ethertype: "IPv4",
+      protocol,
+      ...(port ? { portRangeMin: port, portRangeMax: port } : {}),
+      remoteIpPrefix,
+    }, withOs);
+  }
+
+  backendPort = new openstack.networking.Port("backend", {
+    name: "backend-port",
+    networkId: network.id,
+    fixedIps: [{ subnetId: subnet.id }],
+    securityGroupIds: [secGroup.id],
+  }, withOs);
+
+  // Postgres и Redis — в Docker volume на boot-диске; enableOnlineResize — увеличение без пересоздания.
+  const volume = new openstack.blockstorage.Volume("backend", {
+    name: "boot-volume-backend",
+    size: cfg.getNumber("backendVolumeSize") ?? 40,
+    imageId: image.id,
+    volumeType,
+    availabilityZone: zone,
+    enableOnlineResize: true,
+  }, { ...withOs, ignoreChanges: ["imageId"] });
+
+  new openstack.compute.Instance("backend", {
+    name: "pulumi-server-backend",
+    flavorId: flavorId("backend"),
+    keyPair: keypair.name,
+    availabilityZone: zone,
+    networks: [{ port: backendPort.id }],
+    blockDevices: [{
+      sourceType: "volume",
+      destinationType: "volume",
+      uuid: volume.id,
+      bootIndex: 0,
+      deleteOnTermination: false,
+    }],
+    // По metadata.role dynamic inventory Ansible собирает группу backend
+    metadata: { role: "backend", env: "release" },
+    userData,
+    vendorOptions: { ignoreResizeConfirmation: true },
+  }, { ...withOs, deleteBeforeReplace: true, ignoreChanges: ["imageId"], dependsOn: [routerInterface] });
+}
 
 // ---------------------------------------------------------------------------
 // S3 в проекте продукта. Отдельного ресурса «включить S3 в проекте» нет:
@@ -796,6 +864,10 @@ if (auxiliaryEnabled) {
 
 export const projectId = project.id;
 export const publicIp = floatingIp.address;
+// Приватные адреса: gateway — источник правил security group VPS2, backend — адрес Go API для BFF
+// (app_backend_address в inventory) и цель ProxyCommand Ansible
+export const gatewayPrivateIp = gatewayPort.allFixedIps.apply((ips) => ips[0]);
+export const backendPrivateIp = backendPort?.allFixedIps.apply((ips) => ips[0]) ?? null;
 export const gatewayName = serverGateway.name;
 export const sshUser = cfg.get("sshUser") ?? "deploy";
 export const domain = appDomain ?? null;
