@@ -654,3 +654,13 @@ TLS/Reality handshake — сверку SNI, public key, short ID, flow и finger
 без отключения проверки сертификата. Отказ другого домена ожидаем.
 Не включать sender до отдельной проверки `getMe`, тестового сообщения и очереди.
 Откат — по [RUNBOOK](../RUNBOOK.md#telegram-proxy-на-auxiliary).
+
+## Плейбук runtime-VPS (infra#89)
+
+`runtime/` — отдельный проект Ansible (свой `ansible.cfg`, роли `runtime_host` и `runtime_agent`):
+настройка VPS пользовательской сессии. Запускает его Go API на VPS2 (backend#57) с `inventory.json` и
+`vars.json` операции; роль `app` копирует каталог на VPS2 и монтирует в контейнер API в
+`/app/deploy/runtime` (при `runtime_enabled`). Сеть kernel — по контракту backend
+`docs/runtime-agent-network.md`: таблица nftables `inet cellestial` в unit `cellestial-firewall.service`.
+CI проверяет `ansible-lint runtime` и `--syntax-check` с заглушкой `tests/runtime/vars.json`. Включение,
+секреты и ротация — RUNBOOK, «Runtime-VPS сессий».

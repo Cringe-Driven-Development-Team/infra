@@ -310,6 +310,56 @@ gateway, но со своими портом, диском (`infra:auxiliaryVolu
 Выходы: `auxiliaryPublicIp`, `hooksDomain`, `auxiliaryBackupBucket`, `auxiliaryBackupAccessKey`,
 `auxiliaryBackupSecretKey`. Дальше — RUNBOOK, «Вспомогательная VPS».
 
+## Runtime-VPS сессий
+
+`infra:runtime: "true"` (infra#89, нужен `infra:backend`) — то, что Go API на VPS2 сам себе не создаст,
+чтобы создавать, настраивать и удалять VPS на пользовательскую сессию (backend#57). Сами runtime-VPS
+стек не создаёт: их порты, диски и серверы — в проекте стека, в подсети `192.168.199.0/24` без floating
+IP, наружу через SNAT роутера.
+
+| Ресурс | Что это |
+|---|---|
+| сервисный пользователь `infra:runtimeUserName` (`cellestialRuntimeProvisioner`) | роль `member` на проект; от него Go API ходит в Nova/Cinder/Neutron. Отдельно от пользователя стека: отзыв одного не ломает другое |
+| security group `runtime` | ingress только с `backendPrivateIp/32`: TCP 22 (Ansible) и 8443 (TLS-прокси агента); ICMP из подсети. Egress — по умолчанию Neutron: трафик kernel фильтрует nftables на VPS (`ansible/runtime`) |
+| `tls.PrivateKey` ed25519 + keypair `runtime-provisioner` | SSH-ключ provisioner; keypair принадлежит пользователю runtime — Nova видит его только этим пользователем |
+| `tls` CA (ECDSA P-256, 10 лет) + клиентский сертификат `cellestial-backend` (`client_auth`, 2 года) | mTLS backend ↔ агент. Серверные сертификаты VPS выпускает backend этим CA, поэтому ключ CA тоже уходит в backend |
+| `random.RandomBytes` 32 байта | `RUNTIME_SECRETS_KEY`: шифрует токены агентов в БД |
+
+Конфиг:
+
+```bash
+pulumi config set infra:runtime true
+# 1 vCPU / 2 GiB. Поиск по vcpus/ram (infra:runtimeVcpus/infra:runtimeRam) в ru-9 неоднозначен —
+# SL1.1-2048 и m1.small, поэтому имя; список — ./scripts/list-flavors.sh
+pulumi config set infra:runtimeFlavorName SL1.1-2048
+pulumi config set infra:runtimeVolumeType fast.ru-9a           # по умолчанию infra:volumeType
+# pulumi config set infra:runtimeImageName "Debian 13 (Trixie) 64-bit"   # по умолчанию: Python 3.13 для агента
+# pulumi config set infra:runtimeUserName cellestialRuntimeProvisioner    # по умолчанию; уникально в аккаунте
+```
+
+Выходы (секретные — только `pulumi stack output <имя> --show-secrets`) → Ansible
+(`group_vars/all/vars.yml` / `vault.yml`) → env Go API:
+
+| Выход | Секрет | Ansible | Go API |
+|---|---|---|---|
+| `runtimeOsUsername` | | `runtime_os_username` | `RUNTIME_OS_USERNAME` |
+| `runtimeOsPassword` | да | `vault_runtime_os_password` | `RUNTIME_OS_PASSWORD` |
+| `runtimeAccountId` | | `runtime_os_user_domain_name` | `RUNTIME_OS_USER_DOMAIN_NAME` |
+| `runtimeProjectId` | | `runtime_os_project_id` | `RUNTIME_OS_PROJECT_ID` |
+| `runtimeRegion`, `runtimeAvailabilityZone` | | `runtime_os_region`, `runtime_availability_zone` | `RUNTIME_OS_REGION`, `RUNTIME_AVAILABILITY_ZONE` |
+| `runtimeNetworkId`, `runtimeSubnetId`, `runtimeSecurityGroupId` | | `runtime_network_id`, `runtime_subnet_id`, `runtime_security_group_id` | `RUNTIME_NETWORK_ID`, `RUNTIME_SUBNET_ID`, `RUNTIME_SECURITY_GROUP_ID` |
+| `runtimeImageId`, `runtimeFlavorId`, `runtimeVolumeType` | | `runtime_image_id`, `runtime_flavor_id`, `runtime_volume_type` | `RUNTIME_IMAGE_ID`, `RUNTIME_FLAVOR_ID`, `RUNTIME_VOLUME_TYPE` |
+| `runtimeKeypairName` | | `runtime_ssh_key_name` | `RUNTIME_SSH_KEY_NAME` |
+| `runtimeBlockedPublicIps` | | `runtime_blocked_public_ips` | `RUNTIME_BLOCKED_PUBLIC_IPS` (floating IP gateway и auxiliary) |
+| `runtimeSecretsKey` | да | `vault_runtime_secrets_key` | `RUNTIME_SECRETS_KEY` |
+| `runtimeSshPrivateKey` | да | `vault_runtime_ssh_private_key` | файл `/run/secrets/runtime/ssh_key` |
+| `runtimeCaCert`, `runtimeCaKey` | ключ | `vault_runtime_ca_cert`, `vault_runtime_ca_key` | `/run/secrets/runtime/ca.crt`, `ca.key` |
+| `runtimeClientCert`, `runtimeClientKey` | ключ | `vault_runtime_client_cert`, `vault_runtime_client_key` | `/run/secrets/runtime/client.crt`, `client.key` |
+
+`RUNTIME_OS_AUTH_URL` — константа `https://cloud.api.selcloud.ru/identity/v3`. Образ берётся
+`mostRecent`: Selectel обновляет Debian 13, и `runtimeImageId` меняется на следующем `up` — сверять с
+`runtime_image_id`. Перенос в vault, проверка доступа и ротация — RUNBOOK, «Runtime-VPS сессий».
+
 ## Передача в Ansible
 
 - `projectId` — dynamic inventory ищет серверы в этом проекте по `metadata.role`: `ansible/env.sh` берёт

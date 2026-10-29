@@ -626,3 +626,112 @@ gateway). Между шагами 5 и 6 сайт работает со стар
   **Записи, созданные на VPS2 после переключения, в старую базу gateway автоматически не попадают**: на
   gateway снова данные на момент шага 6.
 - Старые тома на gateway удалять только отдельным решением после стабильной работы на VPS2.
+
+## Runtime-VPS сессий (infra#89)
+
+Go API на VPS2 сам создаёт VPS на пользовательскую сессию (backend#57): порт в подсети
+`192.168.199.0/24` с security group `runtime`, диск Debian 13, сервер с keypair `runtime-provisioner`, без
+floating IP (наружу — SNAT роутера). Настраивает её плейбуком `ansible/runtime` по SSH на приватный адрес
+и ходит к агенту по mTLS на `:8443`. Инфраструктура для этого — раздел «Runtime-VPS сессий» в
+`pulumi/README.md`; выключатель — `runtime_enabled` в `group_vars/all/vars.yml` (по умолчанию `false`:
+Go API получает только `RUNTIME_ENABLED=false`, ключей runtime на VPS2 нет).
+
+**Квоты** проекта `pulumi-cellestial`, ru-9a (quota-manager API, 2026-10-29): `compute_cores` 600, занято 6;
+`compute_ram` 5 000 GiB, занято 16 GiB; `volume_gigabytes_fast` 5 000 GB, занято 100; портов Neutron квота не
+ограничивает. Три одновременные runtime-VPS (3 vCPU, 6 GiB, 3 × 20 GiB, 3 порта) проходят без изменений в
+панели. Проверка заново — project-токен, `GET https://ru-9.cloud.api.selcloud.ru/quota-manager/v1/projects/<projectId>/quotas`.
+
+### Включение
+
+Предусловие: Go на VPS2 (`app_backend_split: true`, «Go и Postgres на VPS2») — security group `runtime`
+пускает SSH и 8443 только с `backendPrivateIp`; при `runtime_enabled: true` без раскладки `validate.yml`
+падает.
+
+1. **Pulumi.** `pulumi preview` по `prod`: только создание — пользователь `runtime` и его пароль, security
+   group `runtime` и три правила, ключи `runtime-ssh`/`runtime-ca`/`runtime-client`, сертификаты, keypair
+   `runtime`, `runtime-secrets-key`; gateway, VPS2, сети и бакеты без изменений. `pulumi up` делает CI на
+   мерже в main.
+2. **Открытые значения** — `group_vars/all/vars.yml`, блок `runtime_*`: вписать
+   `pulumi stack output runtimeSecurityGroupId`, сверить остальные с `pulumi stack output` (выход у каждой
+   строки в комментарии; `runtimeImageId` меняется при обновлении образа Selectel).
+3. **Секреты** — в `vault.yml` из выходов, не печатая их в терминал (повторный запуск заменяет прежние
+   `vault_runtime_*`):
+
+   ```bash
+   cd ansible
+   VAULT=inventory/group_vars/all/vault.yml
+   { ansible-vault view "$VAULT" | grep -v '^vault_runtime_'
+     (cd ../pulumi && pulumi stack output --json --show-secrets) | python3 -c '
+   import json, sys
+   o = json.load(sys.stdin)
+   for name, out in [("os_password", "runtimeOsPassword"), ("secrets_key", "runtimeSecretsKey"),
+                     ("ssh_private_key", "runtimeSshPrivateKey"), ("ca_cert", "runtimeCaCert"),
+                     ("ca_key", "runtimeCaKey"), ("client_cert", "runtimeClientCert"),
+                     ("client_key", "runtimeClientKey")]:
+       print(f"vault_runtime_{name}: {json.dumps(o[out])}")'
+   } | ansible-vault encrypt --output "$VAULT.new"
+   ansible-vault view "$VAULT.new" | sed -E 's/:.*//'   # имена: прежние + 7 vault_runtime_*
+   mv "$VAULT.new" "$VAULT"
+   ```
+
+   Значения в старом `vault.yml` однострочные (пароли и ключи), иначе `grep -v` оставил бы хвосты —
+   тогда править `ansible-vault edit`.
+4. **Включить** после мержа backend#57: `runtime_enabled: true` в `vars.yml` (PR вместе с `vault.yml`),
+   затем выкатка Go (`deploy-backend.yml`, CD бэка). Роль `app` пишет на VPS2 `/opt/cellestial/runtime-secrets`
+   (каталог `0500`, файлы `0400`, владелец uid 10001 — пользователь `app` образа), каталог заданий
+   `/var/lib/cellestial/runtime` (`0700`, uid 10001) и плейбук `/opt/cellestial/runtime-playbook`; Compose
+   монтирует их в контейнер Go API: `/run/secrets/runtime` и `/app/deploy/runtime` — read-only.
+   Прочие `RUNTIME_*` backend (`RUNTIME_PYTHON_IMAGE`, `RUNTIME_MAX_ACTIVE`, таймауты) — `runtime_extra_env`.
+
+### Проверка
+
+```bash
+# Локально: клиентский сертификат подписан runtime CA
+cd pulumi
+openssl verify -CAfile <(pulumi stack output runtimeCaCert) <(pulumi stack output runtimeClientCert)  # OK
+
+# На VPS2 (cd /opt/cellestial): имена переменных — без значений; файлы только на чтение
+docker compose exec api sh -c 'env | grep ^RUNTIME_ | cut -d= -f1 | sort'
+docker compose exec api ls -l /run/secrets/runtime         # -r-------- app app
+docker compose exec api sh -c 'touch /run/secrets/runtime/x'   # Read-only file system
+```
+
+Облако — учётными данными `runtime-provisioner` с VPS2 (`openstack` CLI в venv или контейнере; `OS_AUTH_URL`,
+`OS_USERNAME`, `OS_PASSWORD`, `OS_USER_DOMAIN_NAME`/`OS_PROJECT_DOMAIN_NAME` = номер аккаунта,
+`OS_PROJECT_ID`, `OS_REGION_NAME=ru-9` — из выходов `runtime*`):
+
+```bash
+openstack port create --network <runtimeNetworkId> --fixed-ip subnet=<runtimeSubnetId> \
+  --security-group <runtimeSecurityGroupId> runtime-check
+openstack volume create --size 20 --type fast.ru-9a --image <runtimeImageId> \
+  --availability-zone ru-9a runtime-check
+openstack server create --flavor <runtimeFlavorId> --key-name runtime-provisioner \
+  --port runtime-check --volume runtime-check --availability-zone ru-9a --wait runtime-check
+# с VPS2 — входит ключом provisioner; с gateway — таймаут (security group)
+docker compose exec api ssh -i /run/secrets/runtime/ssh_key -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile=/dev/null root@<приватный IP> true
+openstack server delete --wait runtime-check && openstack volume delete runtime-check \
+  && openstack port delete runtime-check
+```
+
+Плейбук `ansible/runtime` руками не запускается: его вызывает Go API с `inventory.json`/`vars.json`
+операции. Задачи с токеном, ключами и сертификатами в нём и в роли `app` — `no_log`.
+
+### Ротация
+
+Каждая ротация: `pulumi up --replace '<URN>'` (URN — `pulumi stack --show-urns`), затем шаг 3
+«Включение» (новые значения в vault) и выкатка Go — хендлер роли `app` пересоздаёт контейнер API, чтобы
+он перечитал файлы.
+
+- **SSH-ключ provisioner** — `--replace` у `tls:index/privateKey:PrivateKey::runtime-ssh`: keypair
+  `runtime-provisioner` пересоздаётся. Уже созданные runtime-VPS хранят старый публичный ключ — их
+  повторная настройка не пройдёт; они живут одну сессию, удалить через backend.
+- **CA** — `--replace` у `runtime-ca` (ключ): новый CA и клиентский сертификат. Агенты работающих
+  VPS доверяют старому CA — делать без активных сессий (или удалить их VPS).
+- **Клиентский сертификат** (2 года) — `--replace` у `runtime-client`; CA прежний, работающие VPS его
+  принимают. Истёкший сертификат провайдер `tls` пересоздаёт на ближайшем `up` сам — после такого `up`
+  тоже шаг 3.
+- **Пароль пользователя** — `--replace` у `random:index/randomPassword:RandomPassword::runtime-serviceuser`.
+- **`RUNTIME_SECRETS_KEY`** — `--replace` у `runtime-secrets-key`: токены агентов в БД, зашифрованные
+  старым ключом, перестают читаться — только без активных окружений.
+- **Утечка vault** — все пять пунктов выше.
