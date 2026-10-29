@@ -66,6 +66,13 @@ jobs:
         run: |
           ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-bff.yml auxiliary.yml
           COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
+      # Плейбук runtime-VPS (infra#89) запускает Go API на VPS2; vars — заглушка формата backend
+      - name: Ansible — плейбук runtime-VPS
+        working-directory: ansible
+        run: |
+          python -m pip install ansible-lint==26.10.1
+          ansible-lint runtime
+          ansible-playbook -i localhost, --syntax-check runtime/site.yml -e @tests/runtime/vars.json
 
   # Предпросмотр по проду: в PR видно, что изменит мерж. На проде ничего не меняется.
   preview:
