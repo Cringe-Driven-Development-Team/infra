@@ -803,6 +803,7 @@ class DeploymentChecks(unittest.TestCase):
             "RUNTIME_WORK_DIR": "/var/lib/cellestial/runtime",
             "RUNTIME_BLOCKED_PUBLIC_IPS": "203.0.113.1,203.0.113.2",
             "RUNTIME_SECRETS_KEY": RUNTIME_SECRETS["runtime_secrets_key"],
+            "RUNTIME_ENV_NAME": "production",
             "RUNTIME_MAX_ACTIVE": "3",
         }
         self.assertEqual({k: v.replace("$$", "$") for k, v in api.items() if k.startswith("RUNTIME_")},
@@ -868,6 +869,7 @@ RUNTIME_OPEN = {
     "runtime_network_id": UUID, "runtime_subnet_id": UUID, "runtime_security_group_id": UUID,
     "runtime_image_id": UUID, "runtime_flavor_id": "1012", "runtime_volume_type": "fast.ru-9a",
     "runtime_ssh_key_name": "runtime-provisioner", "runtime_ssh_user": "root",
+    "runtime_env_name": "production",
     "runtime_blocked_public_ips": "203.0.113.1,203.0.113.2", "runtime_extra_env": {},
 }
 # Секреты runtime (vault.yml) — заглушки нужного формата

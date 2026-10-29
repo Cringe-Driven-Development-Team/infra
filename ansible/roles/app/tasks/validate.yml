@@ -140,6 +140,7 @@
       - runtime_volume_type is match('^[A-Za-z0-9._-]+$')
       - runtime_ssh_key_name is match('^[A-Za-z0-9._-]+$')
       - runtime_ssh_user is match('^[a-z_][a-z0-9_-]*$')
+      - runtime_env_name is match('^[A-Za-z0-9._-]+$')
       - runtime_blocked_public_ips is match('^[0-9]{1,3}([.][0-9]{1,3}){3}(,[0-9]{1,3}([.][0-9]{1,3}){3})*$')
       - runtime_extra_env is mapping
       - runtime_extra_env.keys() | select('match', '^RUNTIME_[A-Z0-9_]+$') | list | length == runtime_extra_env | length

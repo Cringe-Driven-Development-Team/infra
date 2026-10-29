@@ -356,7 +356,8 @@ pulumi config set infra:runtimeVolumeType fast.ru-9a           # по умолч
 | `runtimeCaCert`, `runtimeCaKey` | ключ | `vault_runtime_ca_cert`, `vault_runtime_ca_key` | `/run/secrets/runtime/ca.crt`, `ca.key` |
 | `runtimeClientCert`, `runtimeClientKey` | ключ | `vault_runtime_client_cert`, `vault_runtime_client_key` | `/run/secrets/runtime/client.crt`, `client.key` |
 
-`RUNTIME_OS_AUTH_URL` — константа `https://cloud.api.selcloud.ru/identity/v3`. Образ берётся
+`RUNTIME_OS_AUTH_URL` — константа `https://cloud.api.selcloud.ru/identity/v3`, `RUNTIME_ENV_NAME` —
+`runtime_env_name: production` в `vars.yml`. Образ берётся
 `mostRecent`: Selectel обновляет Debian 13, и `runtimeImageId` меняется на следующем `up` — сверять с
 `runtime_image_id`. Перенос в vault, проверка доступа и ротация — RUNBOOK, «Runtime-VPS сессий».
 

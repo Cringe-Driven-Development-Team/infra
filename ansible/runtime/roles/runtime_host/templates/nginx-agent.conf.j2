@@ -16,6 +16,11 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_tickets off;
 
+    # Тот же CA выпускает и серверные сертификаты VPS: клиентом принимается только CN backend
+    if ($ssl_client_s_dn !~ "(^|,)CN=cellestial-backend(,|$)") {
+        return 403;
+    }
+
     client_max_body_size 16m;
 
     location / {

@@ -90,6 +90,8 @@ runtime_flavor_id: "1012"                                        # выход ru
 runtime_volume_type: fast.ru-9a                                  # выход runtimeVolumeType
 runtime_ssh_key_name: runtime-provisioner                        # выход runtimeKeypairName
 runtime_ssh_user: root
+# Окружение в metadata VPS и логах backend (RUNTIME_ENV_NAME, обязателен для openstack)
+runtime_env_name: production
 # Публичные адреса gateway и auxiliary VPS через запятую: kernel до них не достучится
 runtime_blocked_public_ips: 87.228.26.154,87.228.26.22           # выход runtimeBlockedPublicIps
 # Прочие RUNTIME_* (RUNTIME_ROOT_DISK_GIB, RUNTIME_PYTHON_IMAGE, RUNTIME_R_IMAGE, RUNTIME_KERNEL_DNS,

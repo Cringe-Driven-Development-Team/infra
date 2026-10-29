@@ -681,7 +681,8 @@ Go API получает только `RUNTIME_ENABLED=false`, ключей runti
    (каталог `0500`, файлы `0400`, владелец uid 10001 — пользователь `app` образа), каталог заданий
    `/var/lib/cellestial/runtime` (`0700`, uid 10001) и плейбук `/opt/cellestial/runtime-playbook`; Compose
    монтирует их в контейнер Go API: `/run/secrets/runtime` и `/app/deploy/runtime` — read-only.
-   Прочие `RUNTIME_*` backend (`RUNTIME_PYTHON_IMAGE`, `RUNTIME_MAX_ACTIVE`, таймауты) — `runtime_extra_env`.
+   `RUNTIME_ENV_NAME` — `runtime_env_name` (`production`), обязателен для openstack. Прочие `RUNTIME_*`
+   backend (`RUNTIME_PYTHON_IMAGE`, `RUNTIME_MAX_ACTIVE`, таймауты) — `runtime_extra_env`.
 
 ### Проверка
 
