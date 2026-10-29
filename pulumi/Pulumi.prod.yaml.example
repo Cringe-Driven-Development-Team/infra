@@ -58,6 +58,14 @@ config:
   # infra:hooksDomain: hooks.cellestial.ru
   # infra:auxiliaryBackupBucket: "<глобально-уникальное-имя-бакета>"
   # infra:auxiliaryBackupPool: ru-1   # пул бакета бэкапов, по умолчанию infra:s3Pool
+  # Runtime-VPS пользовательских сессий (infra#89): их создаёт Go API на VPS2 (нужен infra:backend).
+  # Стек создаёт сервисного пользователя, security group runtime, keypair runtime-provisioner, CA mTLS.
+  # infra:runtime: "true"
+  # infra:runtimeUserName: cellestialRuntimeProvisioner   # уникально в аккаунте
+  # 1 vCPU / 2 GiB: по vcpus/ram в ru-9 находятся два флейвора (SL1.1-2048 и m1.small) — задать имя
+  # infra:runtimeFlavorName: SL1.1-2048
+  # infra:runtimeImageName: "Debian 13 (Trixie) 64-bit"   # по умолчанию; Python 3.13 для агента
+  # infra:runtimeVolumeType: fast.ru-9a                   # по умолчанию infra:volumeType
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1
   infra:s3Bucket: "<глобально-уникальное-имя-бакета>"

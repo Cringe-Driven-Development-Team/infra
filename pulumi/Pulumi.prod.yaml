@@ -27,6 +27,9 @@ config:
   infra:backendFlavorName: SL1.2-4096
   infra:auxiliary: "true"
   infra:auxiliaryFlavorName: SL1.2-4096
+  infra:runtime: "true"
+  infra:runtimeFlavorName: SL1.1-2048
+  infra:runtimeVolumeType: fast.ru-9a
   infra:hooksDomain: hooks.cellestial.ru
   infra:auxiliaryBackupBucket: cellestial-auxiliary-backups-0
   infra:auxiliaryBackupPool: ru-1

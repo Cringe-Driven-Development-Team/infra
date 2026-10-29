@@ -3,6 +3,7 @@ import * as random from "@pulumi/random";
 import * as openstack from "@pulumi/openstack";
 import * as selectel from "@pulumi/selectel";
 import * as aws from "@pulumi/aws";
+import * as tls from "@pulumi/tls";
 import { credentialsFromEnv, curl, initProjectS3, waitForS3Key } from "./bootstrap/selectel-s3";
 import { BucketAccess, BucketDomain, CdnDomain, CdnResource, checkCdnName } from "./selectel-storage";
 
@@ -862,6 +863,125 @@ if (auxiliaryEnabled) {
   }, { provider: backupS3 });
 }
 
+// ---------------------------------------------------------------------------
+// Runtime-VPS пользовательских сессий (infra#89, backend#57). Включается infra:runtime (нужен
+// infra:backend). Сами VPS создаёт и удаляет Go API на VPS2 — здесь только то, что backend сам не
+// создаст: свой сервисный пользователь (ключи release не трогаем: отзыв одних не ломает другое),
+// security group, SSH-ключ provisioner и keypair, CA для mTLS backend ↔ агент, ключ шифрования
+// токенов агентов. VPS — в той же приватной подсети без floating IP, наружу через SNAT роутера.
+// ---------------------------------------------------------------------------
+const runtimeEnabled = cfg.getBoolean("runtime") ?? false;
+if (runtimeEnabled && !backendPort) {
+  throw new Error("infra:runtime задан без infra:backend: runtime-VPS пускают SSH и TLS только с VPS2");
+}
+let runtime: Record<string, pulumi.Input<string>> | undefined;
+if (runtimeEnabled && backendPort) {
+  // member на проект: Nova, Cinder, Neutron (порты, диски, серверы) — и ничего на уровне аккаунта
+  const runtimePassword = new random.RandomPassword("runtime-serviceuser", serviceUserPasswordArgs);
+  const runtimeUser = new selectel.IamServiceuserV1("runtime", {
+    name: cfg.get("runtimeUserName") ?? "cellestialRuntimeProvisioner",
+    password: runtimePassword.result,
+    roles: [
+      { roleName: "member", scope: "project", projectId: project.id },
+    ],
+  });
+
+  // Ingress — только с VPS2: SSH (Ansible из Go API) и 8443 (TLS-прокси API агента); ICMP — из подсети.
+  // Egress — правила Neutron по умолчанию: трафик kernel фильтрует nftables на самой VPS
+  // (ansible/runtime, контракт docs/runtime-agent-network.md в backend).
+  const backendAddress = backendPort.allFixedIps.apply((ips) => `${ips[0]}/32`);
+  const secGroup = new openstack.networking.SecGroup("runtime", {
+    name: "runtime",
+    description: "Runtime VPS of user sessions: SSH and agent TLS only from the backend VPS",
+  }, withOs);
+  const ingress: [string, string, number | undefined, pulumi.Input<string>][] = [
+    ["ssh", "tcp", 22, backendAddress],
+    ["agent-tls", "tcp", 8443, backendAddress],
+    ["icmp", "icmp", undefined, subnet.cidr],
+  ];
+  for (const [ruleName, protocol, port, remoteIpPrefix] of ingress) {
+    new openstack.networking.SecGroupRule(`runtime-${ruleName}`, {
+      securityGroupId: secGroup.id,
+      direction: "ingress",
+      ethertype: "IPv4",
+      protocol,
+      ...(port ? { portRangeMin: port, portRangeMax: port } : {}),
+      remoteIpPrefix,
+    }, withOs);
+  }
+
+  // SSH-ключ provisioner: приватная часть — в Go API (vault), публичная — keypair пользователя
+  // runtime. Keypair принадлежит пользователю: backend создаёт VPS от его имени и видит только его.
+  const sshKey = new tls.PrivateKey("runtime-ssh", { algorithm: "ED25519" });
+  const runtimeKeypair = new selectel.VpcKeypairV2("runtime", {
+    name: "runtime-provisioner",
+    publicKey: sshKey.publicKeyOpenssh.apply((k) => k.trim()),
+    userId: runtimeUser.id,
+  // Ротация ключа — замена keypair с тем же name: create-before-delete упёрся бы в 409
+  }, { deleteBeforeReplace: true });
+
+  // CA для mTLS: backend предъявляет агенту клиентский сертификат и сам выпускает серверный сертификат
+  // каждой VPS этим CA при provisioning, поэтому ключ CA тоже уходит в backend.
+  const caKey = new tls.PrivateKey("runtime-ca", { algorithm: "ECDSA", ecdsaCurve: "P256" });
+  const caCert = new tls.SelfSignedCert("runtime-ca", {
+    privateKeyPem: caKey.privateKeyPem,
+    subject: { commonName: "cellestial-runtime-ca", organization: "Cellestial" },
+    isCaCertificate: true,
+    validityPeriodHours: 10 * 365 * 24,
+    allowedUses: ["cert_signing", "crl_signing", "digital_signature"],
+  });
+  const clientKey = new tls.PrivateKey("runtime-client", { algorithm: "ECDSA", ecdsaCurve: "P256" });
+  const clientCsr = new tls.CertRequest("runtime-client", {
+    privateKeyPem: clientKey.privateKeyPem,
+    subject: { commonName: "cellestial-backend", organization: "Cellestial" },
+  });
+  const clientCert = new tls.LocallySignedCert("runtime-client", {
+    certRequestPem: clientCsr.certRequestPem,
+    caPrivateKeyPem: caKey.privateKeyPem,
+    caCertPem: caCert.certPem,
+    validityPeriodHours: 2 * 365 * 24,
+    allowedUses: ["client_auth", "digital_signature"],
+  });
+
+  // Ключ шифрования токенов агентов в БД (AES-256-GCM): base64 ровно 32 байт
+  const secretsKey = new random.RandomBytes("runtime-secrets-key", { length: 32 });
+
+  // Debian 13: штатный Python 3.13 нужен агенту. mostRecent — Selectel обновляет образ, id меняется:
+  // новый id доходит до backend через vault (RUNBOOK.md, «Runtime-VPS»).
+  const runtimeImage = openstack.images.getImageOutput({
+    name: cfg.get("runtimeImageName") ?? "Debian 13 (Trixie) 64-bit",
+    mostRecent: true,
+    visibility: "public",
+  }, withOs);
+
+  runtime = {
+    runtimeOsUsername: runtimeUser.name,
+    runtimeOsPassword: pulumi.secret(runtimePassword.result),
+    runtimeProjectId: project.id,
+    runtimeAccountId: domainName,
+    runtimeRegion: pool,
+    runtimeAvailabilityZone: zone,
+    runtimeNetworkId: network.id,
+    runtimeSubnetId: subnet.id,
+    runtimeSecurityGroupId: secGroup.id,
+    runtimeKeypairName: runtimeKeypair.name,
+    runtimeSshPrivateKey: pulumi.secret(sshKey.privateKeyOpenssh),
+    runtimeCaCert: caCert.certPem,
+    runtimeCaKey: pulumi.secret(caKey.privateKeyPemPkcs8),
+    runtimeClientCert: clientCert.certPem,
+    runtimeClientKey: pulumi.secret(clientKey.privateKeyPemPkcs8),
+    runtimeImageId: runtimeImage.id,
+    runtimeFlavorId: flavorId("runtime"),
+    runtimeVolumeType: cfg.get("runtimeVolumeType") ?? volumeType,
+    // Публичные адреса своей инфраструктуры: kernel на runtime-VPS до них не достучится
+    // (RUNTIME_BLOCKED_PUBLIC_IPS → nftables). Floating IP gateway и auxiliary VPS.
+    runtimeBlockedPublicIps: pulumi
+      .all([floatingIp.address, auxiliaryFloatingIp?.address ?? ""])
+      .apply((ips) => ips.filter((ip) => ip).join(",")),
+    runtimeSecretsKey: pulumi.secret(secretsKey.base64),
+  };
+}
+
 export const projectId = project.id;
 export const publicIp = floatingIp.address;
 // Приватные адреса: gateway — источник правил security group VPS2, backend — адрес Go API для BFF
@@ -904,3 +1024,26 @@ export const auxiliaryBackupBucket = auxiliaryBackupBucketResource?.bucket ?? nu
 export const auxiliaryBackupPoolName = auxiliaryEnabled ? auxiliaryBackupPool : null;
 export const auxiliaryBackupAccessKey = auxiliaryBackupCredentials?.accessKey ?? null;
 export const auxiliaryBackupSecretKey = auxiliaryBackupCredentials ? pulumi.secret(auxiliaryBackupCredentials.secretKey) : null;
+// Runtime-VPS (infra:runtime): вход Go API в проект и материалы mTLS/SSH; в vault и vars.yml —
+// RUNBOOK.md, «Runtime-VPS». Секретные — только с --show-secrets.
+const runtimeOutput = (key: string) => (runtime ? pulumi.output(runtime[key]) : null);
+export const runtimeOsUsername = runtimeOutput("runtimeOsUsername");
+export const runtimeOsPassword = runtimeOutput("runtimeOsPassword");
+export const runtimeProjectId = runtimeOutput("runtimeProjectId");
+export const runtimeAccountId = runtimeOutput("runtimeAccountId");
+export const runtimeRegion = runtimeOutput("runtimeRegion");
+export const runtimeAvailabilityZone = runtimeOutput("runtimeAvailabilityZone");
+export const runtimeNetworkId = runtimeOutput("runtimeNetworkId");
+export const runtimeSubnetId = runtimeOutput("runtimeSubnetId");
+export const runtimeSecurityGroupId = runtimeOutput("runtimeSecurityGroupId");
+export const runtimeKeypairName = runtimeOutput("runtimeKeypairName");
+export const runtimeSshPrivateKey = runtimeOutput("runtimeSshPrivateKey");
+export const runtimeCaCert = runtimeOutput("runtimeCaCert");
+export const runtimeCaKey = runtimeOutput("runtimeCaKey");
+export const runtimeClientCert = runtimeOutput("runtimeClientCert");
+export const runtimeClientKey = runtimeOutput("runtimeClientKey");
+export const runtimeImageId = runtimeOutput("runtimeImageId");
+export const runtimeFlavorId = runtimeOutput("runtimeFlavorId");
+export const runtimeVolumeType = runtimeOutput("runtimeVolumeType");
+export const runtimeBlockedPublicIps = runtimeOutput("runtimeBlockedPublicIps");
+export const runtimeSecretsKey = runtimeOutput("runtimeSecretsKey");
