@@ -74,6 +74,7 @@ class DeploymentChecks(unittest.TestCase):
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
             'app_backend_split: false\napp_backend_address: ""\n'
+            'runtime_enabled: false\n'
         )
         password = b"test-vault-password-only"
         vault = VaultLib([("default", VaultSecret(password))])
@@ -428,7 +429,7 @@ class DeploymentChecks(unittest.TestCase):
         variables.update(
             yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text())
         )
-        variables.update(app_backend_split=False, app_backend_address="",
+        variables.update(app_backend_split=False, app_backend_address="", runtime_enabled=False,
                          app_bff_go_api_url="http://api:8080/api/v1",
                          app_services=["caddy", "api", "postgres", "redis", "bff"])
         variables.update(app_backend_tag="sha-1234567", app_bff_ref=BFF_REF, app_bff_release=BFF_SHA,
@@ -564,9 +565,14 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotIn("bff", json.loads(result.stdout)["services"])
         self.assertNotIn("BFF_IMAGE_REF", (self.root / ".env").read_text())
 
-    def render_host(self, services, split):
+    def render_host(self, services, split, runtime=None):
         """compose.yml и .env одного хоста по реальным шаблонам роли app; Compose проверяет результат."""
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
+        variables.update(app_compose_dir="/opt/cellestial",
+                         app_runtime_secrets_dir="/opt/cellestial/runtime-secrets",
+                         app_runtime_playbook_dir="/opt/cellestial/runtime-playbook")
+        variables.update(runtime_enabled=False)
+        variables.update(runtime or {})
         variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
         address = "192.168.199.10"
         variables.update(
@@ -704,7 +710,7 @@ class DeploymentChecks(unittest.TestCase):
         for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
             with self.subTest(override=override):
                 values = dict(variables, app_bff_ref="", app_backend_split=False,
-                              app_backend_address="", app_services=["caddy", "api", "postgres", "redis"])
+                              app_backend_address="", runtime_enabled=False, app_services=["caddy", "api", "postgres", "redis"])
                 if override is not None:
                     values["app_backend_image"] = override
                 rendered = template.render(values).replace(
@@ -761,6 +767,120 @@ class DeploymentChecks(unittest.TestCase):
                                          caddy_bff_deployed=True)
             self.assertIn('header_down Content-Security-Policy "default-src ', rendered)
             self.assertNotIn("Content-Security-Policy-Report-Only", rendered)
+
+    def runtime_values(self):
+        """Значения runtime_* в формате выходов Pulumi; секреты — заглушки, не настоящие ключи."""
+        return dict(RUNTIME_OPEN, **RUNTIME_SECRETS)
+
+    def test_runtime_disabled_passes_only_the_flag(self):
+        config, env = self.render_host(["api", "postgres", "redis"], split=True)
+        api = config["services"]["api"]
+        self.assertEqual(api["environment"]["RUNTIME_ENABLED"], "false")
+        self.assertEqual([k for k in api["environment"] if k.startswith("RUNTIME_")], ["RUNTIME_ENABLED"])
+        self.assertFalse(api.get("volumes"))
+        self.assertIn("RUNTIME_ENABLED=false\n", env)
+
+    def test_runtime_enabled_passes_env_and_mounts_secrets_read_only(self):
+        values = dict(self.runtime_values(), runtime_enabled=True,
+                      runtime_extra_env={"RUNTIME_MAX_ACTIVE": 3})
+        config, env = self.render_host(["api", "postgres", "redis"], split=True, runtime=values)
+        api = config["services"]["api"]["environment"]
+        expected = {
+            "RUNTIME_ENABLED": "true", "RUNTIME_PROVIDER": "openstack",
+            "RUNTIME_OS_AUTH_URL": "https://cloud.api.selcloud.ru/identity/v3",
+            "RUNTIME_OS_USERNAME": "cellestialRuntimeProvisioner",
+            "RUNTIME_OS_PASSWORD": RUNTIME_SECRETS["runtime_os_password"],
+            "RUNTIME_OS_USER_DOMAIN_NAME": "123456", "RUNTIME_OS_PROJECT_ID": "a" * 32,
+            "RUNTIME_OS_REGION": "ru-9", "RUNTIME_AVAILABILITY_ZONE": "ru-9a",
+            "RUNTIME_NETWORK_ID": UUID, "RUNTIME_SUBNET_ID": UUID, "RUNTIME_SECURITY_GROUP_ID": UUID,
+            "RUNTIME_IMAGE_ID": UUID, "RUNTIME_FLAVOR_ID": "1012", "RUNTIME_VOLUME_TYPE": "fast.ru-9a",
+            "RUNTIME_SSH_KEY_NAME": "runtime-provisioner", "RUNTIME_SSH_USER": "root",
+            "RUNTIME_SSH_PRIVATE_KEY_FILE": "/run/secrets/runtime/ssh_key",
+            "RUNTIME_TLS_CA_CERT_FILE": "/run/secrets/runtime/ca.crt",
+            "RUNTIME_TLS_CA_KEY_FILE": "/run/secrets/runtime/ca.key",
+            "RUNTIME_TLS_CLIENT_CERT_FILE": "/run/secrets/runtime/client.crt",
+            "RUNTIME_TLS_CLIENT_KEY_FILE": "/run/secrets/runtime/client.key",
+            "RUNTIME_WORK_DIR": "/var/lib/cellestial/runtime",
+            "RUNTIME_BLOCKED_PUBLIC_IPS": "203.0.113.1,203.0.113.2",
+            "RUNTIME_SECRETS_KEY": RUNTIME_SECRETS["runtime_secrets_key"],
+            "RUNTIME_MAX_ACTIVE": "3",
+        }
+        self.assertEqual({k: v.replace("$$", "$") for k, v in api.items() if k.startswith("RUNTIME_")},
+                         expected)
+        mounts = {(v["source"], v["target"], v.get("read_only", False))
+                  for v in config["services"]["api"]["volumes"]}
+        self.assertEqual(mounts, {
+            ("/opt/cellestial/runtime-secrets", "/run/secrets/runtime", True),
+            ("/opt/cellestial/runtime-playbook", "/app/deploy/runtime", True),
+            ("/var/lib/cellestial/runtime", "/var/lib/cellestial/runtime", False),
+        })
+        # PEM-ключи — только файлами, не в .env
+        for secret in ["ssh-key-body", "ca-key-body", "client-key-body"]:
+            self.assertNotIn(secret, env)
+
+    def test_runtime_validation(self):
+        open_values = dict(RUNTIME_OPEN, runtime_enabled=True, app_backend_split=True,
+                           app_backend_address="192.168.199.10")
+        vault = "".join(f"vault_{k}: {json.dumps(v)}\n"
+                        for k, v in RUNTIME_SECRETS.items())
+        self.write_runtime_vault(vault)
+        data = yaml.safe_load(self.inventory.read_text())
+        data["all"]["children"]["backend"] = {"hosts": {"test-backend": {
+            "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
+        self.inventory.write_text(yaml.safe_dump(data))
+        result = self.validate("sha-1234567", extra=open_values)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # Go на gateway: runtime-VPS его не пустят
+        result = self.validate("sha-1234567", extra=dict(open_values, app_backend_split=False))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("app_backend_split", result.stdout + result.stderr)
+        # id security group ещё не заполнен после pulumi up
+        result = self.validate("sha-1234567", extra=dict(open_values, runtime_security_group_id=""))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runtime_*", result.stdout + result.stderr)
+        # битый ключ шифрования не попадает в вывод
+        broken = vault.replace(RUNTIME_SECRETS["runtime_secrets_key"], "short-leaked-key")
+        self.write_runtime_vault(broken)
+        result = self.validate("sha-1234567", extra=open_values)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("short-leaked-key", result.stdout + result.stderr)
+        self.assertIn("vault_runtime_", result.stdout + result.stderr)
+
+    def write_runtime_vault(self, runtime_vault):
+        password = b"test-vault-password-only"
+        vault = VaultLib([("default", VaultSecret(password))])
+        (self.root / "group_vars/all/vault.yml").write_bytes(vault.encrypt(
+            b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
+            b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n"
+            + BFF_VAULT + runtime_vault.encode()))
+        variables = self.root / "group_vars/all/vars.yml"
+        if "runtime_os_password:" not in variables.read_text():
+            variables.write_text(variables.read_text() + "".join(
+                f'{k}: "{{{{ vault_{k} }}}}"\n' for k in RUNTIME_SECRETS))
+
+
+UUID = "01234567-89ab-cdef-0123-456789abcdef"
+# Открытые runtime_* (vars.yml) в формате выходов Pulumi
+RUNTIME_OPEN = {
+    "runtime_provider": "openstack", "runtime_os_auth_url": "https://cloud.api.selcloud.ru/identity/v3",
+    "runtime_os_username": "cellestialRuntimeProvisioner", "runtime_os_user_domain_name": "123456",
+    "runtime_os_project_id": "a" * 32, "runtime_os_region": "ru-9", "runtime_availability_zone": "ru-9a",
+    "runtime_network_id": UUID, "runtime_subnet_id": UUID, "runtime_security_group_id": UUID,
+    "runtime_image_id": UUID, "runtime_flavor_id": "1012", "runtime_volume_type": "fast.ru-9a",
+    "runtime_ssh_key_name": "runtime-provisioner", "runtime_ssh_user": "root",
+    "runtime_blocked_public_ips": "203.0.113.1,203.0.113.2", "runtime_extra_env": {},
+}
+# Секреты runtime (vault.yml) — заглушки нужного формата
+RUNTIME_SECRETS = {
+    "runtime_os_password": "pass$word#with'quote",
+    "runtime_secrets_key": "B" * 43 + "=",
+    "runtime_ssh_private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nssh-key-body\n-----END OPENSSH PRIVATE KEY-----\n",
+    "runtime_ca_cert": "-----BEGIN CERTIFICATE-----\nca-cert-body\n-----END CERTIFICATE-----\n",
+    "runtime_ca_key": "-----BEGIN PRIVATE KEY-----\nca-key-body\n-----END PRIVATE KEY-----\n",
+    "runtime_client_cert": "-----BEGIN CERTIFICATE-----\nclient-cert-body\n-----END CERTIFICATE-----\n",
+    "runtime_client_key": "-----BEGIN PRIVATE KEY-----\nclient-key-body\n-----END PRIVATE KEY-----\n",
+}
+
 
 if __name__ == "__main__":
     unittest.main()

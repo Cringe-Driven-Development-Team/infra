@@ -48,6 +48,13 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
       # S2S-ключ запросов BFF (X-BFF-Key, backend#41)
       BFF_API_KEY: ${BFF_API_KEY:?bff api key is required}
+      # Runtime-VPS сессий (infra#89): выключено — только RUNTIME_ENABLED=false
+      RUNTIME_ENABLED: ${RUNTIME_ENABLED:-false}
+{% if runtime_enabled | bool %}
+{% for name in app_runtime_env_names + (runtime_extra_env | list) %}
+      {{ name }}: ${{ '{' ~ name }}:?runtime configuration is required{{ '}' }}
+{% endfor %}
+{% endif %}
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +66,13 @@ services:
       timeout: 3s
       start_period: 30s
       retries: 20
+{% if runtime_enabled | bool %}
+    volumes:
+      # ключи и сертификаты (0400, владелец — uid app контейнера) и плейбук runtime-VPS — каталогами
+      - {{ app_runtime_secrets_dir }}:/run/secrets/runtime:ro
+      - {{ app_runtime_playbook_dir }}:/app/deploy/runtime:ro
+      - {{ app_runtime_work_dir }}:{{ app_runtime_work_dir }}
+{% endif %}
 {% if app_backend_split | bool %}
     # BFF на gateway ходит сюда по приватной сети: порт — только на приватном адресе VPS2, снаружи его
     # закрывают security group (только с gateway) и отсутствие публичного IP

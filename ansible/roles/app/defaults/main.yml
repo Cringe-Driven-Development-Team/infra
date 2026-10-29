@@ -19,3 +19,39 @@ app_postgres_database: app_db
 app_access_token_ttl: 15m
 app_refresh_token_ttl: 720h
 app_wait_timeout: 180
+# Runtime-VPS (infra#89): uid пользователя app в образе Go API (build/main.Dockerfile backend) — он
+# читает ключи (0400) и пишет каталог заданий Ansible
+app_backend_uid: 10001
+# Ключи и сертификаты runtime на VPS2 → /run/secrets/runtime в контейнере Go API (каталогом, read-only)
+app_runtime_secrets_dir: "{{ app_compose_dir }}/runtime-secrets"
+# Плейбук настройки runtime-VPS (ansible/runtime) на VPS2 → /app/deploy/runtime (read-only)
+app_runtime_playbook_dir: "{{ app_compose_dir }}/runtime-playbook"
+# Каталог заданий Ansible Go API (RUNTIME_WORK_DIR): тот же путь на VPS2 и в контейнере
+app_runtime_work_dir: /var/lib/cellestial/runtime
+# RUNTIME_* из .env, которые Compose передаёт Go API при runtime_enabled (имена — internal/config/runtime.go
+# backend); RUNTIME_ENABLED передаётся всегда, runtime_extra_env — дополнительно
+app_runtime_env_names:
+  - RUNTIME_PROVIDER
+  - RUNTIME_OS_AUTH_URL
+  - RUNTIME_OS_USERNAME
+  - RUNTIME_OS_PASSWORD
+  - RUNTIME_OS_USER_DOMAIN_NAME
+  - RUNTIME_OS_PROJECT_ID
+  - RUNTIME_OS_REGION
+  - RUNTIME_AVAILABILITY_ZONE
+  - RUNTIME_NETWORK_ID
+  - RUNTIME_SUBNET_ID
+  - RUNTIME_SECURITY_GROUP_ID
+  - RUNTIME_IMAGE_ID
+  - RUNTIME_FLAVOR_ID
+  - RUNTIME_VOLUME_TYPE
+  - RUNTIME_SSH_KEY_NAME
+  - RUNTIME_SSH_USER
+  - RUNTIME_SSH_PRIVATE_KEY_FILE
+  - RUNTIME_TLS_CA_CERT_FILE
+  - RUNTIME_TLS_CA_KEY_FILE
+  - RUNTIME_TLS_CLIENT_CERT_FILE
+  - RUNTIME_TLS_CLIENT_KEY_FILE
+  - RUNTIME_WORK_DIR
+  - RUNTIME_BLOCKED_PUBLIC_IPS
+  - RUNTIME_SECRETS_KEY

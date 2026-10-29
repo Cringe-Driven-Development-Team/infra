@@ -69,6 +69,63 @@
       no_log: true
       when: "'redis' in app_services"
 
+    # Runtime-VPS (infra#89): ключи и сертификаты — файлами 0400 пользователя контейнера Go API,
+    # каталогом (замена файла шаблоном видна в контейнере); каталог заданий Ansible — writable
+    - name: Runtime files on VPS2
+      when: "'api' in app_services and runtime_enabled | bool"
+      block:
+        - name: Runtime secrets directory
+          ansible.builtin.file:
+            path: "{{ app_runtime_secrets_dir }}"
+            state: directory
+            owner: "{{ app_backend_uid }}"
+            group: "{{ app_backend_uid }}"
+            mode: "0500"
+
+        - name: Write the runtime keys and certificates from Vault
+          ansible.builtin.copy:
+            content: "{{ item.content | trim }}\n"
+            dest: "{{ app_runtime_secrets_dir }}/{{ item.name }}"
+            owner: "{{ app_backend_uid }}"
+            group: "{{ app_backend_uid }}"
+            mode: "0400"
+          loop:
+            - { name: ssh_key, content: "{{ runtime_ssh_private_key }}" }
+            - { name: ca.crt, content: "{{ runtime_ca_cert }}" }
+            - { name: ca.key, content: "{{ runtime_ca_key }}" }
+            - { name: client.crt, content: "{{ runtime_client_cert }}" }
+            - { name: client.key, content: "{{ runtime_client_key }}" }
+          loop_control:
+            label: "{{ item.name }}"
+          notify: Recreate the API with the new runtime files
+          no_log: true
+
+        - name: Runtime work directory of the Go API
+          ansible.builtin.file:
+            path: "{{ app_runtime_work_dir }}"
+            state: directory
+            owner: "{{ app_backend_uid }}"
+            group: "{{ app_backend_uid }}"
+            mode: "0700"
+
+        - name: Runtime playbook directory
+          ansible.builtin.file:
+            path: "{{ app_runtime_playbook_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        # Плейбук runtime-VPS (ansible/runtime) запускает Go API: Compose монтирует каталог read-only
+        - name: Copy the runtime VPS playbook
+          ansible.builtin.copy:
+            src: "{{ playbook_dir }}/runtime/"
+            dest: "{{ app_runtime_playbook_dir }}/"
+            owner: root
+            group: root
+            mode: u=rwX,go=rX
+            directory_mode: "0755"
+
     - name: Write the full application Compose project
       ansible.builtin.template:
         src: compose.yml.j2
@@ -157,3 +214,14 @@
 
 - name: Apply the Caddy route before the public probe
   ansible.builtin.meta: flush_handlers
+
+# Runtime выключен: ключей runtime и плейбука на VPS2 нет (каталог заданий остаётся — в нём только
+# временные каталоги операций, Go API удаляет их сам)
+- name: Remove the runtime files when runtime VPS are disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ app_runtime_secrets_dir }}"
+    - "{{ app_runtime_playbook_dir }}"
+  when: "'api' in app_services and not (runtime_enabled | bool)"
