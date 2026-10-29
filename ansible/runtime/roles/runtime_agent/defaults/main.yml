@@ -1,0 +1,13 @@
+---
+runtime_agent_user: cellestial-agent
+runtime_agent_home: /opt/cellestial-agent
+runtime_agent_config_dir: /etc/cellestial-agent
+runtime_agent_env_file: /etc/cellestial-agent/agent.env
+# STATE_DIR из unit агента (StateDirectory=cellestial-agent): SQLite и lock назначенной сессии
+runtime_agent_state_dir: /var/lib/cellestial-agent
+runtime_agent_service: cellestial-agent
+runtime_agent_idle_timeout_seconds: 900
+runtime_agent_max_output_bytes: 10485760
+# Те же значения, что runtime_host_agent_port и runtime_host_network: роль host слушает/фильтрует их
+runtime_agent_port: 8000
+runtime_agent_network: cellestial-kernel

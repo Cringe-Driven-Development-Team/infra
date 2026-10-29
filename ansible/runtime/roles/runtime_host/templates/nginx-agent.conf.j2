@@ -1,0 +1,31 @@
+# Managed by Ansible (runtime_host). TLS-прокси API агента: только приватный адрес, только клиент
+# с сертификатом runtime CA (backend). Агент — 127.0.0.1:{{ runtime_host_agent_port }}.
+map $http_upgrade $cellestial_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen {{ private_ip }}:{{ runtime_host_proxy_port }} ssl;
+
+    ssl_certificate /etc/nginx/cellestial/server.crt;
+    ssl_certificate_key /etc/nginx/cellestial/server.key;
+    ssl_client_certificate /etc/nginx/cellestial/ca.crt;
+    ssl_verify_client on;
+    ssl_verify_depth 1;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+
+    client_max_body_size 16m;
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ runtime_host_agent_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $cellestial_connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+    }
+}

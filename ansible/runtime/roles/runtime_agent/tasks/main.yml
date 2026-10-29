@@ -1,0 +1,110 @@
+---
+# Агент сессии: wheel из образа Go API (версия и sha256 — от backend), venv, agent.env, unit проекта.
+- name: Agent account
+  ansible.builtin.user:
+    name: "{{ runtime_agent_user }}"
+    system: true
+    create_home: false
+    home: /nonexistent
+    groups: docker
+    append: true
+    shell: /usr/sbin/nologin
+
+- name: Agent installation and configuration directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ runtime_agent_home }}"
+    - "{{ runtime_agent_config_dir }}"
+
+- name: Copy the agent wheel
+  ansible.builtin.copy:
+    src: "{{ agent_wheel }}"
+    dest: "{{ runtime_agent_home }}/{{ agent_wheel | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Read the checksum of the copied wheel
+  ansible.builtin.stat:
+    path: "{{ runtime_agent_home }}/{{ agent_wheel | basename }}"
+    checksum_algorithm: sha256
+  register: runtime_agent_wheel
+
+- name: The wheel matches the checksum from the backend
+  ansible.builtin.assert:
+    that:
+      - runtime_agent_wheel.stat.checksum == agent_wheel_sha256
+    fail_msg: "{{ agent_wheel | basename }} does not match agent_wheel_sha256; refusing to install it."
+
+- name: Copy the pinned agent requirements
+  ansible.builtin.copy:
+    src: "{{ agent_requirements }}"
+    dest: "{{ runtime_agent_home }}/requirements.txt"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the agent requirements into the virtualenv
+  ansible.builtin.pip:
+    requirements: "{{ runtime_agent_home }}/requirements.txt"
+    virtualenv: "{{ runtime_agent_home }}/venv"
+    virtualenv_command: /usr/bin/python3 -m venv
+
+# Зависимости — только закреплённые в requirements.txt
+- name: Install the agent wheel
+  ansible.builtin.pip:
+    name: "{{ runtime_agent_home }}/{{ agent_wheel | basename }}"
+    virtualenv: "{{ runtime_agent_home }}/venv"
+    extra_args: --no-deps
+
+- name: Write the assignment and the token
+  ansible.builtin.template:
+    src: agent.env.j2
+    dest: "{{ runtime_agent_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install the agent service unit of the project
+  ansible.builtin.copy:
+    src: "{{ agent_service }}"
+    dest: /etc/systemd/system/{{ runtime_agent_service }}.service
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Agent unit drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/{{ runtime_agent_service }}.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: The agent starts only with the kernel network firewall
+  ansible.builtin.template:
+    src: firewall-dropin.conf.j2
+    dest: /etc/systemd/system/{{ runtime_agent_service }}.service.d/10-cellestial-firewall.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+# started, не restarted: работающий агент сюда не доходит (assignment.yml), рестарт сессии нет
+- name: Start the agent
+  ansible.builtin.systemd_service:
+    name: "{{ runtime_agent_service }}"
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: The agent listens on loopback
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ runtime_agent_port }}"
+    timeout: 60

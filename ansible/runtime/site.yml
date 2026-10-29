@@ -1,0 +1,63 @@
+---
+# Настройка runtime-VPS одной сессии (backend#57). Запускает Go API на VPS2:
+#   ansible-playbook site.yml -i <операция>/inventory.json -e @<операция>/vars.json
+# inventory — группа runtime, root по приватному IP ключом provisioner; vars — session_id, language
+# (python|r), private_ip, token, server_cert_pem, server_key_pem, ca_cert_pem, python_image, r_image,
+# kernel_dns, blocked_public_ips, agent_wheel, agent_wheel_sha256, agent_requirements, agent_service.
+# Сеть kernel — по контракту backend docs/runtime-agent-network.md (роль runtime_host).
+- name: Prepare the runtime VPS of a session
+  hosts: runtime
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Check the assignment
+      ansible.builtin.assert:
+        that:
+          - session_id is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+          - language in ['python', 'r']
+          - private_ip is match('^[0-9]{1,3}([.][0-9]{1,3}){3}$')
+          - kernel_dns is match('^[0-9]{1,3}([.][0-9]{1,3}){3}$')
+          - blocked_public_ips is sequence and blocked_public_ips is not string
+          - blocked_public_ips | reject('match', '^[0-9]{1,3}([.][0-9]{1,3}){3}$') | list | length == 0
+          - python_image is match('^[^ ]+$')
+          - r_image is match('^[^ ]+$')
+          - agent_wheel is match('^/.+[.]whl$')
+          - agent_wheel_sha256 is match('^[0-9a-f]{64}$')
+          - agent_requirements is match('^/')
+          - agent_service is match('^/')
+        fail_msg: The runtime assignment from the backend is incomplete or malformed.
+
+    - name: Check the assignment secrets
+      ansible.builtin.assert:
+        that:
+          - token is match('^[!-~]{32,}$')
+          - "'-----BEGIN CERTIFICATE-----' in server_cert_pem"
+          - "'PRIVATE KEY-----' in server_key_pem"
+          - "'-----BEGIN CERTIFICATE-----' in ca_cert_pem"
+        fail_msg: The runtime token or TLS material from the backend is malformed.
+      no_log: true
+
+    - name: Wait for SSH and the target Python
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+
+    # 0 — готово, 2 — завершено с исправимыми ошибками (cloud-init 23.4+): VPS пригодна
+    - name: Wait for cloud-init
+      ansible.builtin.command: cloud-init status --wait
+      register: runtime_cloud_init
+      changed_when: false
+      failed_when: runtime_cloud_init.rc not in [0, 2]
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    # Повтор: работающий агент той же сессии не трогается, чужое назначение — ошибка
+    - name: Check an earlier assignment of this VPS
+      ansible.builtin.include_role:
+        name: runtime_agent
+        tasks_from: assignment.yml
+
+  roles:
+    - runtime_host
+    - runtime_agent

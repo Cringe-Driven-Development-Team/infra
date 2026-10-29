@@ -1,0 +1,50 @@
+---
+# Повтор настройки той же VPS (backend повторяет операцию после сбоя). Рестарт агента восстанавливает
+# прежнюю сессию как STOPPED, поэтому агент не перезапускается никогда:
+# - работает с тем же agent.env — VPS готова, плей для хоста завершается;
+# - agent.env другой — VPS уже отдана другой сессии (или токену), ошибка;
+# - тот же agent.env, агент не работает, но уже писал состояние — сессия остановлена, нужна новая VPS.
+- name: Read the existing assignment
+  ansible.builtin.stat:
+    path: "{{ runtime_agent_env_file }}"
+    checksum_algorithm: sha256
+  register: runtime_agent_env_stat
+
+- name: Read the agent service state
+  ansible.builtin.systemd_service:
+    name: "{{ runtime_agent_service }}"
+  register: runtime_agent_status
+
+- name: Find the state of an earlier run
+  ansible.builtin.find:
+    paths: "{{ runtime_agent_state_dir }}"
+    hidden: true
+    file_type: any
+  register: runtime_agent_state_files
+
+- name: Compare the assignments
+  ansible.builtin.set_fact:
+    runtime_agent_assigned: "{{ runtime_agent_env_stat.stat.exists }}"
+    runtime_agent_same: >-
+      {{ runtime_agent_env_stat.stat.exists
+         and runtime_agent_env_stat.stat.checksum == (lookup('ansible.builtin.template', 'agent.env.j2') | hash('sha256')) }}
+    runtime_agent_active: "{{ runtime_agent_status.status.ActiveState | default('') == 'active' }}"
+  no_log: true
+
+- name: The VPS is not assigned to another session
+  ansible.builtin.assert:
+    that:
+      - not (runtime_agent_assigned | bool) or (runtime_agent_same | bool)
+    fail_msg: runtime already assigned to another session or token; create a new VPS.
+
+- name: A stopped session is not restarted
+  ansible.builtin.assert:
+    that:
+      - runtime_agent_active | bool or runtime_agent_state_files.matched == 0
+    fail_msg: >-
+      The agent of this session ran before and is stopped; a restart would restore the session as
+      STOPPED. Delete this VPS and create a new one.
+
+- name: The agent of this session is already running
+  ansible.builtin.meta: end_host
+  when: runtime_agent_active | bool

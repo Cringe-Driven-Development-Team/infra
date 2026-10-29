@@ -1,0 +1,5 @@
+# Managed by Ansible (runtime_agent). Агент — только после правил сети kernel: без них не стартует,
+# с ними перезапускается.
+[Unit]
+Requires=cellestial-firewall.service
+After=cellestial-firewall.service
