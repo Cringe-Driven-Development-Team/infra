@@ -11,8 +11,10 @@
   register: runtime_agent_env_stat
 
 - name: Read the agent service state
-  ansible.builtin.systemd_service:
-    name: "{{ runtime_agent_service }}"
+  # systemd_service без state/enabled не запускается; для ещё не установленного unit команда вернёт inactive
+  ansible.builtin.command:
+    argv: [systemctl, show, --property=ActiveState, --value, "{{ runtime_agent_service }}"]
+  changed_when: false
   register: runtime_agent_status
 
 - name: Find the state of an earlier run
@@ -28,7 +30,7 @@
     runtime_agent_same: >-
       {{ runtime_agent_env_stat.stat.exists
          and runtime_agent_env_stat.stat.checksum == (lookup('ansible.builtin.template', 'agent.env.j2') | hash('sha256')) }}
-    runtime_agent_active: "{{ runtime_agent_status.status.ActiveState | default('') == 'active' }}"
+    runtime_agent_active: "{{ runtime_agent_status.stdout == 'active' }}"
   no_log: true
 
 - name: The VPS is not assigned to another session
