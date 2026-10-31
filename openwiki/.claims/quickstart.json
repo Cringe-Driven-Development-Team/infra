@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:73c85130be6b7c782995b30b7ce7ff50f211f527b8a9dc26809ea451459f370d",
+  "claims": [
+    {
+      "id": "claim_44d188c3be3a49debfbd780c78f5d48a",
+      "statement": "Wiki infra описывает декларативный код на SHA, не доказывает состояние Selectel; корпус исключает реальные env, inventory, ключи, state и конфиги стеков.",
+      "evidence": [
+        {
+          "resource": "repo://.openwikiignore#L18-L59",
+          "version": "repo-lines-v1:sha256:df6af1515723453ace15d8e9b03a06ffed676bf92dff55951cdd69359079aaa4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmZDFhMDg0NjNiNDA2NDFmY2YzYWM4NmI2YTk0MTEwZDllMjY0NDZjNGE0MjM5ZWUxMGIzYzdkMDE3ZGM0MGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZTdlNWMwYTQyYWM0MTZiZDBlNjEzNDIyNjJjYTllMTc2NDM2YmVhNmUzMjg4Njg3MDg3MGNlMmZlN2I4YzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxZGRlOTAwYjNhOTcwZTA2ZDQ0NTU2ZDQ3Njg3MmYzODcwZjJkMmE4YzFlNDk1Y2UxNGI1ZWM5MWRlMjI0YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhMzNkMGM4ZjAyNmRmMGRhODFlODA0YWIyYTQ2Mzg2ODkyNTE2YWU1MzQ1MmI5ZGM1ZTEyMGMzMzg5ZWYwZGUifQ"
+        },
+        {
+          "resource": "repo://AGENTS.md#L16-L21",
+          "version": "repo-lines-v1:sha256:0943d1c8344130e966a35d80f0395035833baff9690898ee7775a1082625e4f4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM2YzEwNjQ4MGFmNGZmZDY1NTdlNGZkOWMzNmYzZmIxNDBlNDRkYjJjMWY3YWRjZTVlOTc5NDhhMWUxNTk4OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2FiNGY1NjJiNDE2YmIzZTNjMWI3YThiMzIxOTZkNjc2NThlNmNlYjc2M2Q4ZjE4MWI4ZDFiZDI3YmM4NTFkYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjA2OWJjNjAwYmFlZDU3M2Q1NmJmM2I3ZTY2YzQwYjE3NTNiZTJiYTg0OTQ2NDc2NGY0ZWJmMDhkYzY4NzUwOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDQ1MGJjYzZjZjYzYmVhMDM4ODk3YjkxYzQ1NTIzOGViYjE1M2UzMDkxZmU4MDUwZmYwMjkxYjc5NDYxZjcwNiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_909c624f61884fb887b17f622a961c39",
+      "statement": "AGENTS направляет общую архитектуру в docs, требует wiki ID для workspace read и допускает Markdown и исходники при отсутствии wiki/MCP.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L16-L27",
+          "version": "repo-lines-v1:sha256:f4011592b7aded68495f3a3e558e391a0175fe9cb94b9256d39919abe41470ca:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzNmMxMDY0ODBhZjRmZmQ2NTU3ZTRmZDljMzZmM2ZiMTQwZTQ0ZGIyYzFmN2FkY2U1ZTk3OTQ4YTFlMTU5ODkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwNjM5MWIxMDNiYzZiMmU5MzVjZTk0MDU5OTk1NTM1MDU0NzQ0YTA5YTdiMjY2ODRkNmUzNjNmNGU3Yjc0MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwNjliYzYwMGJhZWQ1NzNkNTZiZjNiN2U2NmM0MGIxNzUzYmUyYmE4NDk0NjQ3NjRmNGViZjA4ZGM2ODc1MDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5ZDE5NDQ5YmQzZjA0ODNjZDY4MTFlN2Y2OWMxMmFjMDdlZjE2ZDE1ZTRlZjlhMGE4MGNmODE3N2Q5YWVlMmEifQ"
+        },
+        {
+          "resource": "repo://AGENTS.md#L37-L43",
+          "version": "repo-lines-v1:sha256:2ee2725b8b5c4213e05231fbe23545321b2c76b05f7dc7153441e2bf9573c492:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWUzZDYzODRhODgyZDBkYzcwNzhjYTY5YTFkODQzODYzMjk3YzE1MGIwMDI3OGFlZDA5Mzc3OWZlYmQzYjQxZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWRjNjQzZmY2NjkzOGNlYzdiNDgwZDMzYzMxZTE0YzQ2NGNiYzAwYzlkZTcyM2U3N2NlNzVlYWNiNzZjMDlhMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmY4MjY0ZGJjNGIzYjU2ZDA4MDJiN2UwM2U2NjczNWEyNGRhYTE5NmM1M2NlNWUzYTUwYmQ4MjZiYjM3NWVjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzg2NzQ0ZDdmODQzMTlmNDAwYzY4YTQ3ZTJmYjljYzIwNjdjM2IzMjRhMGE1M2JjZDNhYjg5ZmMwMmUxYTUzYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_8cb617477fe74037a78838aeef93bfae",
+      "statement": "AGENTS требует проверку wiki относительно актуального SHA infra/main, использование stale wiki как указателя и отдельную проверку облака на стенде.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L37-L43",
+          "version": "repo-lines-v1:sha256:2ee2725b8b5c4213e05231fbe23545321b2c76b05f7dc7153441e2bf9573c492:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWUzZDYzODRhODgyZDBkYzcwNzhjYTY5YTFkODQzODYzMjk3YzE1MGIwMDI3OGFlZDA5Mzc3OWZlYmQzYjQxZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWRjNjQzZmY2NjkzOGNlYzdiNDgwZDMzYzMxZTE0YzQ2NGNiYzAwYzlkZTcyM2U3N2NlNzVlYWNiNzZjMDlhMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmY4MjY0ZGJjNGIzYjU2ZDA4MDJiN2UwM2U2NjczNWEyNGRhYTE5NmM1M2NlNWUzYTUwYmQ4MjZiYjM3NWVjNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzg2NzQ0ZDdmODQzMTlmNDAwYzY4YTQ3ZTJmYjljYzIwNjdjM2IzMjRhMGE1M2JjZDNhYjg5ZmMwMmUxYTUzYSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_c9bfb5c1abe7420cafa1a16719106475",
+      "statement": "Ручной updater infra запускается из соседнего docs; генерация локальная и CI проверяет отдельный wiki-only PR без модели и production environment.",
+      "evidence": [
+        {
+          "resource": "repo://SUMMARY.md#L136-L138",
+          "version": "repo-lines-v1:sha256:41f6485f38d3cc205ca188901c75b2db722a01735a17ee02a1c425ca098a3d2e:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWE5MWU3Njc3ZGY4ZGI2MDhhYzhmZTgyNDZmOTNlNmIyY2I2NTAwYzZiNTM4ZTU3OTNiMTBhYmMwNDU0ODk2ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWI0ZDUxN2Q0ODZmZWY1NDk1YjIzOTQ5MWMyYTYwMzRlNjMyNGRkYTNiN2RjM2RmMDNhMWY3MzQ2NGY3MjJjMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGRlMjM3NDhlM2ZiMzZmZDlmNTg1NTkwNmEzN2FmODVjMjJlMWZkODhlMTA4YmU1MzI2ODRhMTQzNDA4NTZiYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-31T14:36:53.458Z"
+  }
+}

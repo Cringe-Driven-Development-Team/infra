@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:05fe1b9da7f579c3e265a13db157cf2439fac7711ccc295ff82f73fa0063b626",
+  "claims": [
+    {
+      "id": "claim_e9145a0f71ca4d728630f5afff010730",
+      "statement": "Инициализация S3 и ожидание ключа выполняются в основном стеке вне dry run перед использованием ключа S3 provider.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/index.ts#L371-L405",
+          "version": "repo-lines-v1:sha256:6689593867ba9d157ad4cedd03e69ea90bea898bff0243e9bed896a43b53f07c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3ZTNjMWZlOGM0MzQxNjAyYmE4NTcyOWQ0MTU1NThjMDYwMGUzMzU0N2QyMGNkNmYwNTJmYTIwOTM1ODhhMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2N2FmYjU3ZDM4YmQwOWI5ZDlmNjBjYTY5YTA5MWI5MmFhYTRhOGJkMmM5YTM2MDhiZTRjY2QzNWI0MzhiMzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3ODA1N2ZhZDdlYzEzMjI1MDU5MmJlYzJkMjA0NTA5MTNjZTJkYTU2OWM3MTcxNDU4ZmE5NDFlYTQ0NDRlMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4MTg4YjY1M2FjYThkYTRlY2NlOGYzMDBkMmUyZDcwZjFmMjgyN2FmZmRmZWUyMTNmYWZkOTdjMWI2Y2NkZTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9435495c6ccb46c0821fbf28a5cc1cd5",
+      "statement": "Бакеты ноутбуков и аватарок защищены и не используют forceDestroy, а релизы и опциональная статика используют forceDestroy; доступ ноутбуков private, аватарок public.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/index.ts#L408-L421",
+          "version": "repo-lines-v1:sha256:ab182b481b08576fc43d7d92391907397159d6e9b0fac81c3afbc8aba7fa7a73:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5MzlhMjY2YWM2OWRkN2I2YTQwNTNlNTlkNzczNTEyNWE0ODkwZGJjNDNjYzU3NGZmMWVhY2E4ZGIyMzdmNmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMmU1MWQ1MmFiMDNjYTZhMjBlNGI5NTI0ZDIxMjU3NmJlMzU2MTEwN2YzZjAzYmFjZDZjZjBhMWQyZTM4OTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJiNTU2OTRlYjExMmVlNzM3Yjc4MmQ3NmVkZjRiNTA1MzY2ZDBhMGJmMTI4NTQ0YjE1ZGYxY2VjODQzZjlkMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5NzVlODVlMGY5NmEyZmFjZDc5Zjk3YjdkNGRlOTE4ZjkxZjMxYmIxZWQzZmI5YTAyZmNkMjAyNzBkNTE2OWEifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L454-L467",
+          "version": "repo-lines-v1:sha256:72706b1ae6735b925d9319c9e41f44a904e58f95c255a2ad03efb7f7f7a37e54:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliYWIxZWJlNTYzZGI1MmJhN2EyNjQxNTY2MDBiYzkwZjNkMzA0YjI4MmMxZGExYzJmZDE3OTAyZTU1NGJkMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2Y2VjZDI4MGMwOTBlOGEzNDQ5NjFmNDRkODA4OTljYzhiZjgzZGYyMzUzNjUzZDdmYzBkNDcwMDk2NGE5NWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0MjQ0N2QzZThjZjMyMDBlNTU3OWE2MWUzZjdiODRlMGMwMjY1MzFlMjJlYmRhZWU5NmI0ZTY5ZThiMmY0MDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3MzdiOGFlMjE4ODc1OTQxYTgwMDQ4OGM2ODZlNThjYjNlMjllMTFlNzE0NjIwMjFlN2NiODQzM2JiNGM3OTEifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L504-L516",
+          "version": "repo-lines-v1:sha256:bc61710d614bc8e129afce5a5c25f8ee27278c5213fecac999d24e51e5bcd8b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxZGNmY2QxZWM3OTk5OTg1ZDI4MDYyMjk3MmI3OWVkZTc4N2EwYTU2YjJiNDcxMmU3ZGEwYWU4ZDg2YzM0NzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0Y2Q2M2MxM2Q5MzBjYzk1ZGI2YmUyNmJhODgyMDUxNzJiMmMxMTVkNmU5YzZmOGE3ZDRkZjE0OTdlNzdmNDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmZTlhZTU2MjdlNjZiNTE4YjAzNjhlZmNjMmMzN2M3Yjc4ZjBmN2M1YTA0ODIyNDNlN2ZjYTlkODU1ODA0NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzZjRlMjZkZGEyNzBhNjc0YmRiM2E3NTA0ZjcwMmI0ZTc2NTczNTQ5Y2Y2ZmFhMjc1MTQ2OGViZjllODgxYzgifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L548-L561",
+          "version": "repo-lines-v1:sha256:34f4ba1b8217feb8e20a7b1211e60bc1158a64227efde4c19075238f8d18dfa6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmNTU1NGYyYzEyMjI1MTdhZWRkZTQzOGIwNmU0ODMwNmI0NmQwN2IyODdmMGRlNzcxYjQ0M2ZiMmQwMDFkYmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyYzU0ZmE2MDE4OWViOTdmYzJkNjBlZjU0NzAwZDk4MmE3YmJiZjU5YzA4MzcwNjU1MGYwNzZhMGFiNjhlMWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmZTlhZTU2MjdlNjZiNTE4YjAzNjhlZmNjMmMzN2M3Yjc4ZjBmN2M1YTA0ODIyNDNlN2ZjYTlkODU1ODA0NzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2MTY3MWM4MWNiMzQ0MDllMDllMWMyNmI5ZTZiYThlZTQxZjhmMzViZjRhMjkyMDUxZTdiMWVhYzM4NTRlMmIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_9e49d76d59284c23836b6becd74946d8",
+      "statement": "Политики данных дают пользователю стека полный доступ, backend — операции над объектами ноутбуков и аватарок, а ListBucket только для ноутбуков; политика аватарок не содержит PublicRead.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/index.ts#L473-L502",
+          "version": "repo-lines-v1:sha256:f45253b5ca49f6ad1a31551f89429400b074f0a32d10d0e352833d9c7e24609f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhNjAzMjNhM2U2Zjg1YmJlMTBkN2YyODU3ZDdiZGUxODViNWJkMDBiNTA1OWNmYjQyZjYwZmE2ZmU4NGVkZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MzU3YjUxYmExY2NkZDc3NTNjMTFlMDdkNzgwOGM4ZDM5MDc5NjI1ODI1NDFkZDYwYTYwYjJiYzQyMmE0MmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxYTQ1YTYzZGNlNTY3Yzk2ZWFkMTU5OTMyY2I1ZWQwNGUzYzM5MjEwNTg2ZTAzNzE1NWZmYTM2ODYyMWVmNWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ2YzcyMTFkMWRkNmFlNzMwMmRhNDk5MTNkZjdiNDg0ZjA3MGU0MThkNGVmZGRmOTEwOGQ3N2U3ZGU4ZTU5YzAifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L524-L546",
+          "version": "repo-lines-v1:sha256:e7e700f788ea5c10638c1cbbff67c671d126321da5a625c21976a65ac1f69d43:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMjhhZjUyNmNjMDNkM2E4MmRhYWEzNTE2OTRhMTlmZDZhMWU0OThiNmRlYmQ5MjA1NWQ3Y2MxOTAwYzZmNGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1MzU3YjUxYmExY2NkZDc3NTNjMTFlMDdkNzgwOGM4ZDM5MDc5NjI1ODI1NDFkZDYwYTYwYjJiYzQyMmE0MmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjNjZlMjM5MTNlZTVjYTQ3ZWQ3MzY2MjQ3MTk0ZjFhNmExNjhiMGE2YzU2OGE4YjFjZWRmZThiNDY0ZWIyZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwMDYxMGJlM2E3ZGRjYmQwZWYwNWEyMzk3ODMzYjIxZDA4MDhjYjI1NTY3ZWMzZTRhNDFhODk0NDQ3YmFhOTcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dab162596dff42818e970baabeee0cea",
+      "statement": "BucketAccess управляет типом доступа через API хранилища, делает существующий бакет приватным при удалении и учитывает изменение кода provider в diff.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/selectel-storage.ts#L252-L284",
+          "version": "repo-lines-v1:sha256:5b93b4d530089414c2ed53131708597dc47316a28a6ecc840d58cb8e10ff45a9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiZDg5ZGIwODYwNWU3ZDIzZTY4YmY0ZjZiZDI3M2M5YTJmMzMxNzZlNWM2YjM0M2VkNDc3ZWVlOTZjMDRlOWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4ZjAwNjA5YzBlMTQ1YzQ4ZjcxYmZjZjNjOTdkZWU2Y2Y3ZDhiNmMxOTI5ZGNjN2FmNjE1ODU3MjMxMjY5NjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhMzhlZTljYzczYzlmMWYyYzhmOGM1NmQwMGJkMDBkZTViMDczNjlmMTJlMDgwYWJiZDc5YzhjNDM3NTZjMTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_320330bd301a47b3a397105a0e024fbd",
+      "statement": "CDN-домен статики зависит от CNAME; bindCdnDomain проверяет результат через GET и ограничивает повторы, а выпуск сертификатов пользовательских доменов обозначен в программе как ручной.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/index.ts#L626-L649",
+          "version": "repo-lines-v1:sha256:f408eeeb807fc040866f8b016f564074782d14ef28993a955098d401c03f75a0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyZjNjNDM4MWZiMjhjOGY3ODRjNjM0MDdiOTdhOTkwYzc1MzVjNTQ1NzQ1NWNhNTMwNTdmZmY4MDBjMjRjZTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZiNTgwZTk2NGY4M2E0NzNmNDNkNDQzODQ2Mjk0OWQ2OGI1NjAwZmRhNzg3ZjE2Mzc0NWQwMGRlODljYmYzNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE3MjkwYjU1NzljNDM0OTM2NmUwZmE4YTRkNTRjMzZkNTQ5MDI1ZjhhMzlkMTBmMzFlMDgwZGI4N2MyMGRiYjMifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L65-L67",
+          "version": "repo-lines-v1:sha256:e32aa0497921f40f54427107be79277434fd8ea31ed4ad2f94277493a42964ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTYxZjYyYjE0NTFjNGE0MmU0MzRkMmIyN2U4YzFiZWVkNDE4MGEyMmFhMmVlMmQ5ZGFiYzdkMjAyZWM0NWFhYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjZhOTJkOTFhODBhYjljZDhhMDhmYmQyMmUxMjRjNjU2YzFlNWJkZTAzMGEzZjQxYWJlNzZmMjM0MDEwOTNiNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmVhZjNiNDEzYTI1NWEwNjkxOWE3ODU3MjljZmQ3OThiMmQwNmViY2Y1MTA3Njg1YjVjMDVkOWI1YTIxOGRiYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjJiMWRmOTI3NzcxZWNiYzIyYjA2OTdiZTBiY2E3OTE2NjM1OTkxMzBiNmFiYTIyYWQ4Nzk1NGU5MTBjNDQ3ZSJ9"
+        },
+        {
+          "resource": "repo://pulumi/selectel-storage.ts#L170-L185",
+          "version": "repo-lines-v1:sha256:d1759f29f860acbef206e5ac173f67577956521edd4d14b28692fa382a01093b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3ZDVhZjU2ZTI5YThiZDI5ZGE2N2I3NjhmYzRhNWY5Mzk3ODdkYWNlMThkYWFkNDBjNDE0OTExOTdlNTM2MGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiZjMxYzllMWE5ZWQ1M2Q5MjJlMjViNDc2YTc2MzVhYmY1YmFkMGY3Y2QwMjVkMDBkZGI2YjhiNTJlZWEzY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlNTI0N2ExODI0MWY4NGNjM2EwZjM3ODM2YWFhMmQ0NTYyMzhiMGE3MTBkNTVhNTMwMGFlMGE0MjAxYzQwNGUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0e31bed6928340098ab7b24f6cb672f5",
+      "statement": "Тесты dynamic-ресурсов проверяют повторную привязку, непринятый CDN-домен и ошибки привязки домена бакета.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/selectel-storage.test.ts#L24-L55",
+          "version": "repo-lines-v1:sha256:34df6783c70cee4921a84ce4667df4c9e81e0e04e1f88d9215b3c4513e26aee2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3N2UwNzAxOTZlNGJiNzdmNTk1YjhmYTcyZTkwNjdkN2FjZDUwY2I0YjQzMmU2NmZhOThmMDU1ODk2YzNkZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZjViNDBiMTU4NDU3ZDE3ODY0ZjIxNzkwNzg2ZGQ1YTJlY2RiNjRiNjZhNjUxZjc4OGQ0ZTI1Y2QzMzAzZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhNGU3MzlmNTllMTg5NWQ2MTcxNzM4MWQ4YjhlNjJlOTNiNGZjMWFmYWFiYThkY2E0ODE2MjZiMTFmMjI5MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhMTNkMjNlZmJiYWUwOTljMWFiZWQzNWExOTVlYzQwMjhkMGRhMzNhMTZmNzNlYjY4OGE0MzFiYjlhYWE1YTUifQ"
+        },
+        {
+          "resource": "repo://pulumi/selectel-storage.test.ts#L75-L111",
+          "version": "repo-lines-v1:sha256:5dbd6e323f3ea4a510da1fe2f7625e3f9e19a8899ca3ab22291c7e9896aadf96:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3MDJiNTlkOWE1YjhjZjhmODEyN2Y2MzVkZDFjYjM5MmRjNDQ4OTNlOTEzZWM2Y2E4YTQyNjllNTY4NjhjZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI3NzlkMTE4ZDZlM2NiZjQ1MDUzOTc0OGRlZTdhNDMwN2FjYmU2NDQ2Y2JhMjk3ZjI3NjBmYTVkMGJiYTFiYzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhYzhjNTExNGY0ZmMyYWJjYjcxOWVhMzA1ZTk2MzMwM2ZlNjZkYzRlNTU2MDAyMjFjZDQyNzJlMDAyY2MyY2QifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-31T14:36:53.458Z"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:776164d7e8aea91ff488f00ab49f3a805af529f8dd42923b0517875a0d4576d0",
+  "claims": [
+    {
+      "id": "claim_0103bdf862284b05b02cc6845ae9ff5e",
+      "statement": "Bootstrap объявляет защищённые проект, DNS-зону и бакет стейта с включённым версионированием.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/bootstrap/index.ts#L16-L23",
+          "version": "repo-lines-v1:sha256:93bd97d954e8db7fb08046fa495730531982dd217b81cd8019bb17c0ea85f085:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTY1MzYwZWExNGRkYmM3MmJkMzZmMTU5MTBjYjJjYzhlNzVjZjUzZjNiOTY4ZGQzMWEwMDZiZTE3NzE0YzU4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjk4Yzc3MGFhMDAzYTI0NDQ1MmY2MDg4YTZiOGU2MmJmZmNkYjBkYTIxZDZhYTY2MWFjN2E3Y2U3NzgzYWM1ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjI2ZDA5Yjk4NmY2NTcwNWI2NDJjYTUzZTQ1YTc3ZDE1Mzc1OGE3YzM2Mzg1OGFhYjJlODRhMzQwMjg4ZWQ2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDU0OWZmMGZjOWE0MjBmYzBhMzc5N2QwZTcwMGFlNzQ0NmI5ZTYwNWY1YmNkYTZlNzUzNTA2MzNiNDA0NzAxMiJ9"
+        },
+        {
+          "resource": "repo://pulumi/bootstrap/index.ts#L73-L80",
+          "version": "repo-lines-v1:sha256:fe71b959090a7735fe64affc80e0225d812eff259137547eccf37bb35401ed36:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWMzYTY0ZjdhMjNlNGFhY2E5YTA0ZTNiNTMyMzk2ZWFiYzliNDM5MTg2OWJjNGZiZjVmNzNjNTBlNzk4NWQzMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDk5NjdlYzFlZDM4MzZmOGViMTdhZmYxNzJiNWJmZWY3ZGU2MDQ4NWE0MzljNmNhMTFjNTkxZTE3NTU3MzlhZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmI1NTY5NGViMTEyZWU3MzdiNzgyZDc2ZWRmNGI1MDUzNjZkMGEwYmYxMjg1NDRiMTVkZjFjZWM4NDNmOWQzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGQ0MjA5ZDE2OWRjZGQ0MmJlZWYxZGUwNmViNjk3N2U4ZWJjNTQ0YmI5Y2JhYjhkMTc5NTE5OTYxNTFhNDljYiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ea547aa2841e43138f0ec721d1c69fcd",
+      "statement": "Основная программа отвергает конфликтующие настройки авторизации и связывает OpenStack provider с созданием сервисного пользователя.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/index.ts#L13-L34",
+          "version": "repo-lines-v1:sha256:2d2daacbb831082d9ee8fca23e45442e77b3db0b8f5def05ce1f053b14259ea5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiZDkxZWY4ZWY4YzNhZjY0ZmU0ZWFjY2ZmYmI4NjU4ZGVhYzM0MmI2OTYwM2VkMzI5NGI1ZjBiZTFlZDdjNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzMzkxOWRjOGQ4Njc3ZjhiMGNlMzcwNjljZTg2ZDQ3NDA2YjJjMWY5MDA4ZDhhMDEyZDlmYTY3Mzc3NWIyNWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyZDRjMzgwZWMwNjE2NDNlNWI1MTU4NTZiNDM3OWQ3NjFhNTliNWUyNmJmZWZlN2M2Mzc3NTVmMDJmZjIyN2UifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L175-L184",
+          "version": "repo-lines-v1:sha256:634f2bc6f051429d370b605c5176d9435f3f1543499942ed17653bc14d42067a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyZmM2NDdhNDlhZTE1MTM4ODAxMjg4ODA2YWEwNDQyYmJmYzNjNmU4MDAzN2ZiYTQyZGU5ZTc2ZjAxYjI2NDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZjViNDBiMTU4NDU3ZDE3ODY0ZjIxNzkwNzg2ZGQ1YTJlY2RiNjRiNjZhNjUxZjc4OGQ0ZTI1Y2QzMzAzZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyZDkwOWUxNjdjNzAwZTA2NWVjMjFhOGQ0YzIwYjI0ZmYzOWVkMzU3MGQwMWU3ZjBkY2NiNjIzNDA2MDQ2ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkZjUzOTZlMWUzMDMwMzU0YjkwODk4NTZlZjYwZTJmZjI3NTI5OWY3NGMxZTY1MjRhOTRjMWQ3ODVhMzJjZDcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_11fc7d8cd283495795674c4434cd6f43",
+      "statement": "Gateway объявлен с отдельным boot-диском и floating IP; ассоциация адреса зависит от интерфейса роутера, а boot-диск сохраняется при завершении экземпляра.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/index.ts#L244-L293",
+          "version": "repo-lines-v1:sha256:77073c25b0833607cb1b00c1633cddcb098fe49c09ab345bc02f7c76f8ba506f:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMmZjZTdjOTE5MjgxNGNmNjU0MWM4MzJiNmZlOTExYWQ1MjJmMGFmNTg2YTMwZGRkMjg3NWNiNWY2OTU4NWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMDM3MTYyMDM5YWI3MGYxZWI5MTZhODA3ZjhhYzc4Nzg2OTAwNTIwZmUyMTMzZmJmMGUzN2I4NjFhODQwZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjOTQ3MjlhODJlMjIyNDkxZjQwZGRmYmM1YmU0Nzc5NmU5Mjk3NjkyYmExNmE5NWVlOThmNGY4ZWJlZGE5MWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljZTVlY2MxNWRiNjNlYTgwMjZiZGM4YmJmZDk2NzgwMmEyMWI0MDA5NDU4ZmJiZjMyNzZkM2YyNzdjMzIyMDYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_17415d98ed54445894f6e77485af578f",
+      "statement": "При включении backend код объявляет приватный сервер с ограниченным ingress от gateway; site.yml настраивает gateway раньше backend и устанавливает Caddy только на gateway.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/site.yml#L5-L26",
+          "version": "repo-lines-v1:sha256:b42bd35d3ce39a82e801023cd3a0c87abadf39958be30a4b897ce5844b84c2e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjYTgyODJiZWQwNmM0YjI5ODM0ZTMyZDE0ODA1M2Y1NzFkMTU1NzM3YTk0YWZkZDc3MjZhZjNlOWVjZDNmMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3YjUyN2Y3MTM3NmY0MDE1MjBiMGJmZTQ2NWU2YTEzMzk3NTNiNGM5ZjRjZmRlMzM4MWYxYWUyNGVkMmI2MzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3MDg0YTczYzdhMDBmMzgyNTY0MTIwYjBhODZiZDRjMjlhNWFiOWJlNTcxZDNlNTcwYmZmOTNiMGM2YzVkMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L301-L358",
+          "version": "repo-lines-v1:sha256:edfddc0757a018b0c568edeb1b0f918cfcee3080c2fc87303eba3655ce60a531:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5YzE0ODg3MWYwNzc0YmUzMTQ2YjFjNWVkZTYzNzViMWIyNjRlMWY4YmM2OTYxZDAxMzg2MWVmMzFiYmZlNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjOTg3Mzc0YmM4NTY2MGE1ZjNlYmRkOGE2ZjkwNjQwNTdjMzJhMjJkMDdiYTJhNzJkODk1ZGFmOWNmY2IzOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwNmIwOWQ2NjZjOWY1OTlkNGQwMWMxN2Y3NzkyMjk3YjhhNjY2N2M0M2NlZTRhNTI2M2Q0NTY2OTU5OTkxMTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhMmJmNDgwMjU1M2ZmYmU2ZTNjZDlhOTgxYTdkY2Y0MjM2ODE1NzZlNTNlNzY1MDBjMTgxN2U4MmZlZDMzMGUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-31T14:36:53.458Z"
+  }
+}

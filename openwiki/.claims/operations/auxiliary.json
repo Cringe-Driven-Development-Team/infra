@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:a406109ec31600407d5106e9284d9a5dd31b411b54ea195ca1f9f904ad276a3e",
+  "claims": [
+    {
+      "id": "claim_2588229bb5b140a7ae6080c361444841",
+      "statement": "auxiliary.yml ограничен группой auxiliary и выполняет проверку параметров hooks до базовых ролей, hooks и restic_backup.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/auxiliary.yml#L4-L27",
+          "version": "repo-lines-v1:sha256:12c01e052749eb18168dd48ee52a705752a2bd99204b90fafb23c0d77bb833df:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwOTEzNWRiMDU3NDUzYWYxMGI4ZDA3OGIyMDA0NTIxZjI4MGM2MDQ0MmY5Mjg2Y2Q1N2NjMjk0MDA5ZjgzOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyN2VlNDVhYjNkYjZkYjkxMTA2NDEyNmNlNWVjMWE5MTYwNTBlNDUyYzlmYjg4NTcyZWNjYTMzZDI0Y2RhOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmNGQ2NmFkYTc4MmZiYWI2ODhhOWE0MTlmNTAyM2Y5Y2JjZDlkMjA1ZWIxNDk3MzM3YjgyNjg5NTA3MWQzOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b9e6683497b142f49aa72c06b4747165",
+      "statement": "Роль hooks проверяет закреплённый образ и параметры отправки, а env и конфигурацию proxy записывает с ограниченными правами без логирования содержимого.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/main.yml#L18-L42",
+          "version": "repo-lines-v1:sha256:81ed138e02ac4ea7e58d03c637afa1bdf0f4e512cf9abf589f8cbf072c2926db:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5M2Q3YTE4MWEyNTZlZDk1NTM5MDdjYWEyMmUwNzcwOGUyZWMzZDdiZDM4ZTg1YWVjYzQxODVmNzUyOGQxMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmYzY5NjRlNzA1ZDA5M2JhYjgwMzEyZDgwNDVjNDBjZjQwNDMzYzQxNjg1NjI5M2RjYmNmNGM1YWY0ODkzNjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzNWQxY2E2ZTliZWQzMTYxNmJhNTE3ZWJlYjQ4NTdiYmZlMjUzZTY5MDU2MTZiYmRhOTYxNDY0NzEwOTZiNjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ZTgwNGFmYmVmOWRiY2JlODQ1ZjNlY2NkNmI2Y2M1NjlkMWM1MDJjMDcwYmJiOTgwZmY1MDlkNzBmZDY3NTYifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L2-L37",
+          "version": "repo-lines-v1:sha256:71707c27bde9ef6e806b37911c62bb0abca8eb1e80493641307fa5a9fe64c047:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyYzU5NTEzNjA1ODM4ZTU2MDM1NDlhNDgzM2IzNTc3NzE4MGVkNGMyODJmMTI3M2Q0NDAyMjk5ZDhhNDRiMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5ODc0NTkwNzNjZDQ0YTNlMDA5NGI2ODczYjZkMzM0ODIxM2QyNmQ5MDMxYjhhYzg2ZmUzNDIwNjA3OGRmZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5YzdkNzA3ZTA1ZjM4ODMyNjJhMTM4NTM5NjkwZDEwMzcwOGJiNjNmZDllZjkzYTNkNzhlNzUyODg1ZDgwNmEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8f33e5d5972f4965b6a6266b531a2375",
+      "statement": "Hooks останавливает выкатку при неудачном анонимном pull, готовит права тома перед Compose и проверяет HTTPS health с контроллера после запуска.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/main.yml#L67-L92",
+          "version": "repo-lines-v1:sha256:d7212f61e804f6dcd4255fc95630d21df7f196047307a43278c74c2e0b9dc9a4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYmIwY2MyZmNhYzJkYzAyZTYxZmQwMjE2MTcyODYyMTUzNmQzNmUxZWE4MjBlMDdjMzhiMTkyZDlhYTFkNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1MjU5ZThmODQ4YWRiNmM3MmRkYWZhYmZhMDMyMTk5ZjJlYTU0NTMzNmJmYWY4MzBjMjgyZGYwYTg4ZWQ3YmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliOTdkZTEwNTRlNGZkZTFmMTRmMDBhYjdhYmE2MDM1ZjcxOWRlZWJhMGJmNWExZWRhNzAzODcyMjgwYzY1ZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/prepare-data.yml#L4-L22",
+          "version": "repo-lines-v1:sha256:4ec8330f48a6f5cacbba933d0bf94c5c2407264d355d9325b2d08df36e393339:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyZTQwMDMwNDdiNzZhNzNlYTQ0OTA0MzRmYmQxYTY2NDI0Njc0MTNjZDc0ODFlMjFiM2JjODBjMjBjOWFlOGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNDE4MGJmN2JhYjYwODMyNGI0Mjg0NTU0YzJhMzQyOTlmYjNiYWY0YWNiOWM4ZjdjYWYxMTIyMzdmMWJhM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjZGRhMWMwOTU3NmY4MWEyOTNhNWEzNzIzZGFmNTdiZDY1MTEzMjkyZmY5MmJiOWQ5ZDc3ZTA3ODA0ZTFhOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/pull-image.yml#L2-L17",
+          "version": "repo-lines-v1:sha256:447f175c1940d123935110ee0a072096202fd6bb200a4d9f23ce08f0a6b89304:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlMjczMmU0ZTI4NzVmZTIzODBlYzM5YzAzZmUxYjFjNmQ3MDdjNTdlMzlkMjYyNGVlZjI5ZDhmMGZmNGZlZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzODMzNTE2MjM3ZTNhMTQzNGVjOWZhMDJmMWNjNGJhZjI3NGVkMzBmYWE0NWVkOWVhYjI4ZjVlNTU4ZDc0ZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_717613488d5e4c64a4984246dfeaf206",
+      "statement": "Restic unit требует успешного CLI snapshot перед backup и архивирует snapshot, Caddy и Compose вместо живой WAL-базы, затем выполняет forget/prune.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/roles/restic_backup/defaults/main.yml#L6-L15",
+          "version": "repo-lines-v1:sha256:01723dc4bb8a8239990b93cd9319d5f8eed07d161ff390888a1bc2208f797c26:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczZGYyNDIwMzg0MmMyNjAzYTkwYjNiYTNlMjU4MWJhM2IxNDMwZjcyMDc2ZGI2NDFkMTg1N2Y4OTgzMmUyYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzMzQ1YzkyZWI0ZWZlNmU0NTEwMjk1N2U4ZDI0YjRiOWU3Nzk5MjMzNjBlNDM2YWVjNTI2MzM3M2ZlNzQzNWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0MGYxZWZhNTk3MWZhNTA0YmQ0OThjMDg5NzI3ZTkwMGMwOTFkMDhjMDE3ZWRjNmE0NmUwYTc2YjU3Njg3YzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5YjAyMTZiYTI5NDdmNjRhYjU2MjM2OTIzMTdiNDZiMjczYzMzZTg2ODIyMGNiOGVlYjRhNTdjZjBhYTgxMTIifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/restic_backup/templates/restic-backup.service.j2#L13-L16",
+          "version": "repo-lines-v1:sha256:24233f5aafd97b9026972860d129f708d798718d05d953570d07daca0b61f071:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDVlN2RmOWEwMzE1ZjMxZjBmNjhlM2NmMGE4ODlkMzBjNWQyMmNjMTQ0NzY4ZGZmZDQ0MTEzMTYwNzA4MjcxNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNmQzMTE3NjliYzUwMWNiMjQ0NDVjZTE5YzM0ZjFlZjQzNjQ4M2VlMWNmNGFlYjI1MmUyZWE0NGQzYmYzMjhkMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZmNhYTdiYWRlNDc2ZDZkMzAzNWRkNjMyYWJhMDU3MjExODIxM2RmY2UzODc5YTA4ZWM3NzE3YzI3NDg4OGQxOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_19f1f0d2db754d6aa195f995d61d5522",
+      "statement": "Проверка hooks snapshot требует непустой обычный файл и отдельно указывает на необходимость проверки restic и изолированного восстановления.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/tasks/verify-hooks-snapshot.yml#L2-L15",
+          "version": "repo-lines-v1:sha256:eefc9fd896740f8416917113ea9d770a7a9f937a4b85893b6d19d69cb6277d07:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMGVmNDY2ZDc0ZTJjMzI2Nzc4YWUwZjI4NzU0MjU3YjUyNGNlMTJjYjJkMjExMTMyMjg5NzE1YjFiMzdiMzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2Nzg2NjNlMTM4YmJkYTIyMzM1OWY2NmZiNWYzMTczMDBiMjgwNDgxZGU3OWYxM2NjMzU1ZjYxYzg1NmE1MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-31T14:36:53.458Z"
+  }
+}
