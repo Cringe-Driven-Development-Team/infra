@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:dbac92ee41a2abced578670e155ea410d62f3660c535a3d475cd77d46aa29e0a",
+  "claims": [
+    {
+      "id": "claim_a73cb51b62344b6b8aa098ad9ff27885",
+      "statement": "bootstrap.yml устанавливает Python и применяет users от root, а site.yml настраивает gateway и backend, включая Caddy только на gateway.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/bootstrap.yml#L5-L26",
+          "version": "repo-lines-v1:sha256:f39c8af7cacd7b3488a89dd332cdf41364c01be16bcf42afeda1d25d3773d1c8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyZjM3MGMxY2E1MDAwNDZlMWVlNjk3YjRmNDkwZTJiZDdhZTc3N2YyNWMyYzJiYWYwNjNkMzUzODUyYjVmNDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3MWZkZDZhNGI0ZDgxNWU0YzE4NmIyY2U0ODIzMDhkNWRjNTFlNWFlZDJkYjVkMGIzNWIxNzliYTk4ODMxNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI0ZGMwN2QyMDY2ZmMzNzI1Yjc1NjQ3MGExOWIxNDNmYTA2NDRkOTM0YjRjNWUxZDY0NDBkMWUwMDA0NTQ4ZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://ansible/site.yml#L5-L26",
+          "version": "repo-lines-v1:sha256:b42bd35d3ce39a82e801023cd3a0c87abadf39958be30a4b897ce5844b84c2e2:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjYTgyODJiZWQwNmM0YjI5ODM0ZTMyZDE0ODA1M2Y1NzFkMTU1NzM3YTk0YWZkZDc3MjZhZjNlOWVjZDNmMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3YjUyN2Y3MTM3NmY0MDE1MjBiMGJmZTQ2NWU2YTEzMzk3NTNiNGM5ZjRjZmRlMzM4MWYxYWUyNGVkMmI2MzUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3MDg0YTczYzdhMDBmMzgyNTY0MTIwYjBhODZiZDRjMjlhNWFiOWJlNTcxZDNlNTcwYmZmOTNiMGM2YzVkMzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_75fcf2cb1d174f739b90b9c35ac6981d",
+      "statement": "Выкатка API выбирает хост по app_backend_split, выкатка BFF ограничена gateway; выбор образов сохраняет ранее записанные значения другого компонента и проверяет API для BFF в split-раскладке.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/deploy-backend.yml#L6-L31",
+          "version": "repo-lines-v1:sha256:975555072435ffb1bed4ed715b23105ad34763e90804f673c47290dd0e2eb218:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZTYyYjQyYmFlZjU3YTYwN2RlZmM4ODIzNjdmNmMyODNiMDk1MDk0MWYyOGJmY2I1ODI4NmQyZjM5NGYxMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3ZGNhODg0Yzc4YTQ0MmIwNTA4ZjMxZTNkMzQ0ZTk5M2VmMWRmMDU2YzRiMTYzMTA5NmNhMzgxMzRkZDRkOTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFlNjlhZjIxNmRiYWNiMmY5MTQyNDgyMTYwYTU0Y2VjMmE3NmI3OGRlYjU5YmVjYzY0OWQ4ZmNmZDcyOTc0OTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkZTRkZGUxYTk3NmFmMmEzYmMwMWI0ZTUzM2RjY2IzMzc1NTllZWVmOTNhZWM1YmNiNTJkODRlMDMzYTlkZTUifQ"
+        },
+        {
+          "resource": "repo://ansible/deploy-bff.yml#L5-L27",
+          "version": "repo-lines-v1:sha256:bbf4e732fdc79069ec61addba46ce33275af38934b814c029d8bb0551e23761f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5YjVlMjZiZTJjOTFmNjJiYjc2N2E4M2RhM2IzMDYzNmRiYTg2NjBlY2I1NzMxYWE2NTcwMWI5Y2Q3NGE0MmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzYThmMzVjY2FmNjgyZTQzNTJiZTg2N2IzZWJiZTdjYmZiOTQ0MmExYWUxYjhjOTE3YzJhYjc5NDg1MmViNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MTczMDMwMDI5ZWQ0ZTg5NWZlNzM0ZDk5NzFkNmQyNGE0MTkyN2FjZTAzOWQyYjc5YjI5OTBkZWMyZmNlNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNiZGUwZmY3MzI4MTRiYTNiOWU1YmVjZWNlMWJlNjFiMWNkNDczMjU4NWVmMzc2MzQ4MjAyMTQxMzgyNGU5OTIifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/app/tasks/tags.yml#L4-L68",
+          "version": "repo-lines-v1:sha256:9d2f42b34a969486aad30595b23cbd6092ca39c95d5804be9b9f9ee481ca6dd4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNTcxNzcyYjA4YjRhYTJmYjQxODA1YWVkN2Y0OGJlNTYyODA2YWI1NGJiYjQyZmE2MGE0MzgxMGNlZjBhMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwYzdjZDM0OWJkOThlZDFjMzc0NDM5YmY2OTRiZDg1NDE3MzE2MWEwMzYzNGYxYTk5ZjAzMWVkNWFiZDI0OTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiOTE4M2RiYzYzOGViOWJjMTQxMTQzMzI1MjZjMmM2ZTM3Mzg4ZDA2OTJiMjI4NTIzZTA4NGYxNjE3MjAzMmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b76ad2bf44f546dea07d401cd45a0743",
+      "statement": "deploy-bff выполняет анонимный pull и проверку revision label до роли app, удаляя временный Docker config даже при ошибке.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/deploy-bff.yml#L22-L33",
+          "version": "repo-lines-v1:sha256:258a2410316804338008cdddf23b816422f9c1bae09db70a7fb5f419ad7f0c3d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5NjZlZTVhYzUxZjA2M2E5OTI2Y2M2YjgwMjQ2YTM1NjIxNjE2MGVhMDYxMjgyOWQ4ZTg1ZjlhYTY4YWViOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NzJiMmJjODBmZWFhNmYyMGNjOGFhMzI5ZDUwNjc4Y2QyOGUwYjE2M2EwNDI1NjFmNzYxZTBkNTY1MzBlNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA3N2IyZTNkZmQwNDg4YWRkN2VhNDY3YjVjNjM5NzA5YzRkNDRkNjkxNWQ4MzVjMjczY2YxOTE3M2YwZWZjNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhiY2FhODZkMTVmZjM3MGJmMzIxYjMwNDIwNjhlYjliNzE5ZTgxMWUwNDhhOTI1OGVhNmVkNDM0ZTNmYjkxMDIifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/app/tasks/pull-bff.yml#L5-L55",
+          "version": "repo-lines-v1:sha256:1a14bf481787e1193bdf44c215e90ed89f650cbc0871a13680dba33b38c80e0a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4YjU2MzU5ZmY4ZTQ5NjE5ZGI4YjMwNjQxZjMxMmI3MTJmYzM2NDhjMjVkNTVlNTI3OWJlN2M4ODM3YTg2NDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZjM4OTAwMjYxZTczMjZkM2Q0YzExZjM0ODQxM2EyMTlkZGY5MThhMjA3ODZiZDg4MGUwMmI5YTVmMTIzNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4ZjMwOGE0NDZiMzU1NmRmMTA0ZDk3NmFkMWMwYWU2MDExOGE1MzQ3MDFkZDgyMDk5MjQ4ZGU2NzA5ODAzZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6c2bd9d1504e4709bc3c917b47cd531d",
+      "statement": "При ошибке блока выкатки app восстанавливает env/Compose-файлы и завершает выполнение ошибкой, не откатывая контейнеры.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/roles/app/tasks/main.yml#L148-L193",
+          "version": "repo-lines-v1:sha256:af33c4723983c477651423a2a93152b86e943d2ca636ea776673c32bb5435bc8:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxYWQ0OWFkYTM0MDRhYzUzMzA4MjhlYzViZDEzNTY0ZGEzNmM5OWRkYWI3ZWZmMjI5MjExZGMyYTVmOTg0OWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiZDdlZTA4MmNhZDFiYjNkMTA2OTJhNzMxOWM0MDU0MDdlNDRhODJkYjIxNjNmYmMzOTM2MmQ5ZTE3YzQ2MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE3MWIwYjJiYzE4MzdlNTc5MzE4NTBjN2U3YTUyZjAxZGEwNjRkMDg4YzZkN2Y4MzM4MjJiMjA0NTVhYWFkODAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0NWViYjgwM2VmNTA0YzdkNmJjZTM2M2VlYTE3NmQ2NzlkZGViMmYzNmY4NjhiODBmNzZkZWIwOGIzZjJmMzcifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e1116cb31ac14016b2f82880e7729895",
+      "statement": "После применения маршрута Caddy выкатка BFF проверяет работающий образ и публичные HTML/RPC/скрытые маршруты.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/deploy-bff.yml#L34-L43",
+          "version": "repo-lines-v1:sha256:1d8afedc0ab9ce4415b888a74ee78aa9676040c921e38bd77a7ec4cd6171b579:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyZTViMzYwODk1NDNiZjExMTQzZGEyMTg4NGJlYzU4N2NhYzVhYmNmNTQyMjA0ZmRlNTg4OTQ2ZTEzZmFhNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0YmExMDNmZDhkN2EzOGU1MWM2NjVmZDczN2MxZGE3MDAwNjZlODkxODQwNGI3NmZlNzkyZDdkZDcxNzMwYjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYTc3MzI4ZjUyOTA1NTY2ZTNhOGZkM2VmNzlhYzQzYzEzODIwZTlhMzFkMTJmZDIyOTY3MTA0Y2YxNjBhYzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/app/tasks/main.yml#L195-L216",
+          "version": "repo-lines-v1:sha256:a1be2fb843f95d41e8d9bbd46766bfa2a168cb9b5a20665e0587ba91ecc5da80:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjOTExMWVkMmNmNDhlYzk4MThjOGU4ODc0Yzk4YzNkZjJiMDlmOGU3NzMzM2FlYjg1ZjAwZjY3OTZhNmQ3MmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkYTgzNTk4NTlmYWY0Y2RhYWUwZGUxYmM4NmFhZWU5YzNkNWFmYjk5MDFhMGMwOTc1M2RlN2VlODc1YThiNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZjYWVlMmNhODkzZTczMmMzYjczZjJlYmNlNmRjMmQ4ODgyNWM3NDA3MDgwZDMyZTM0ZTNlYzU3M2I2ZmQ2YTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyMGMzOWE2NDc4ODM1OGQ5ZDkxZjI1MjkxYzRhMmRmNjEwYjJiYWU1ZTNlM2JkMjM5NzgyYzgxNDA5ZTQyZDMifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/app/tasks/probe-bff.yml#L5-L60",
+          "version": "repo-lines-v1:sha256:91491e0d3fce1a6c0da84a8923ceab8b71e52d1803ba5281738f346c28e4ec5a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhZjUyZmZlMWRiY2JhYTVhMDQ4NzkzMDI5N2Y3YzhmODk2M2EwMDcwZGYxNzNhNTFiNjRjZjY2YmNjMjgzNzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0YmY4MjAzMzlkNmQwMzJlZTZhYWEyMjZlMThlYWQ5MDA0OTI4MzBlM2FiOTBiODhiYjY2MDgwOTM0NDYzMjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIxZTczNWUzMTRmZTI0NjMyMTVhNzYwMjE3NTBmYjFiYzkyNDIyMDhkNDA1ODk5M2YxNTk5NjUzYjU0MjNjOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-31T14:36:53.458Z"
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:da429c2eafc1fb8a3649007c79f6e48d1e2858cc15d920a6fba2687405715b7c",
+  "claims": [
+    {
+      "id": "claim_599bc5dbc4db4c88809de3d926f8e6f2",
+      "statement": "Runtime-ветка требует backend и объявляет материалы доступа и security group для Go provisioning, оставляя создание и удаление VPS сессий Go API.",
+      "evidence": [
+        {
+          "resource": "repo://pulumi/index.ts#L866-L921",
+          "version": "repo-lines-v1:sha256:728525c757daf9a7810b72bff47f817cfa477c8ceaf57fa1fc12b06a81404f5e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2YmEyYjU5OTY3MzJlNzEzOTBkM2UwY2M1YjliZmRmZTU4YWUzZDZkMzgzY2VhYTMyNzRiMzc1OTY1NWRlYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5MTk5NjI4OGYzOGYzM2NjY2RlM2M2YzFkY2FmMTkwODQwNGFiZWQwNGYwOWY2NWRkYjcwNDQ2ZjM5MmIxNjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjViOTJhN2RlZjlmOWY0ZThmMGIzOTU5NThmOTYzZTM5ZTA2YjU0NzcxZTE4ZjBlZjk0ZTIxNjQyY2U5NTYzNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0ZTVlMjEzNGFkMjcwYjI4MjQ5ZTc5NjNmMWZhM2E5NGVkYzBlODFmYzcxMWRmNjNhNDM2YWRmNDgwNGI2MzIifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.ts#L923-L947",
+          "version": "repo-lines-v1:sha256:e70586b54d5e559fb4e23f70ec938c930708a1bb8b3809da18061956fc260605:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjYTU0NDdjMTlmNzg0NzFkNGUyNTg3MWNlMzFmNWYzMzA3NTlhMDg2NzYxYjQ2ZGViZDIxYjA1ZWMyOTJkNjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3NjEwYTkyYmZiNWJiMTA0ZWRjYjU0YmZiMGFiOWY4ZDA0Zjc4NWEzYzg4OGJhN2I5NTM2Mzc0ODQ5YzhjZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1YTI4NjY0ZDEwYzM2MjMzMzI2MDU4ODkzNmU4NzVmOWQ3OGU5NmJiYmM3Mjc2YjA1NjYzNGYwMjhlNDg2ZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc1YzIwOTA1ZTE1NDAwYTQ1MGNlNGNjOGYzY2M0YjdmODI1NzZmNmYxMzJkY2Y3ZmExNjA0MjJmNmUwOWU4NDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_cc8da4bcfaa04684b1034b7d3a106aa1",
+      "statement": "Runtime playbook валидирует назначение и секреты до ожидания подключения, принимает cloud-init с кодом 0 или 2 и проверяет прежнее назначение перед ролями.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/runtime/site.yml#L13-L63",
+          "version": "repo-lines-v1:sha256:7c63145cf5eb8ceb4653ac7125b9152a979d9c48305a4038db0bb555120aee25:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzZGJjOTM4YzQ2NjA5ZjVlYTk4YjU0NWQ2N2RjMmUzMzAyOWMyNWE0ZWVjZGMxOGNkOWUxYzI3ZjdhZGIwZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmZmNjYmM5YTRjNmFiZjYzNDExYWQxYWU4ZmNkOTU0YTMwMWI1ODhiNmMxNjNlZjVjZDE3ZWM2MmE4YjY0OWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzMzJlMWU4NWYwMDJlNGYzOGQ0M2IwNjkzMmM1ZGM2OGQ0OTY1NDdlMWJhNGMxMzYyYmQ0M2YzNjk2YzIzZDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_854ebcd5c2a94fd18d98c09e28eefc4d",
+      "statement": "Проверка назначения отклоняет несовпадающий env и остановленную ранее выполнявшуюся сессию, а для активного агента завершает host без перезапуска.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/runtime/roles/runtime_agent/tasks/assignment.yml#L7-L52",
+          "version": "repo-lines-v1:sha256:f9471de8dfda664ac5a0b1a9bbcde21be3a87bf12ab1b7d3f1e4f4629324d4b6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiMmZjZTA0MGNmY2YxZDNlNDM5YmNkNWY2OTczNzNlNDQ1YTZiY2VjMjJjOWVkZTdkMDk1M2I0N2MzMGUzYjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwZjcyNmY1ZTExMGMyODMxMjUxODY2Mjc5MDgyZmZiZjlhYTk0MjAyZjM4MTQ0MTNhM2Y2ODg1MDgyODI1M2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM3MjFkMDI5ZWVlMzExZDc1YTQ3MGY5ODkzNjJhM2Q1MWVhYWYzZGIzNzMxNWZkZDZiNjFiYThjOWNkMjRmMTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8abf6813b970425ca49c53a0abc21694",
+      "statement": "Runtime_host загружает firewall перед Docker; шаблон ограничивает выход kernel DNS и HTTP/HTTPS с исключением запрещённых назначений, а proxy требует клиентский сертификат и CN backend.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/runtime/roles/runtime_host/tasks/main.yml#L58-L102",
+          "version": "repo-lines-v1:sha256:31777542d53714a5f2000c611cf1ee2672c61327011934483d0fbd9710013408:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2NDA1YmQ5YWYyNTRlNWE3ZTNmYzVhYWQ2NTllNjhlYTY5N2I4N2M4NmNhODhmZGY1NmJiMmI5NzVkODMxY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmNTlkYTAxNDkzOGI1ZDc1MTc1OTQzYjNjMGM4NmQyMzE4OWEyMTMyY2Q5MzA2ZDk0NWFhYTAzZTAxN2E1YmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiYzM0YTMzYTcyNTQyOGQ3MTg2NzEzNDM4MzhlMGQxYjg3NmUyN2YyODhhNTM4NDcxZmYzM2Y5OGFmYzkwNWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFmMDk2MDM2NDhmNTkwYTFkMmU5YmM1OGI5NWFhMmY5OWQxZmY4ZTQ3YTA2ZTRiODY3Njk5MGUyNzQxOTk1NmQifQ"
+        },
+        {
+          "resource": "repo://ansible/runtime/roles/runtime_host/templates/firewall.nft.j2#L33-L50",
+          "version": "repo-lines-v1:sha256:eb1d2fcf8ac333d3c9055801fe610feb80192f0e20199071ef1ffab02981c538:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhY2IwYzBjNjUzZDc4ZjRlY2U3NWY5N2NiNGU5ZWUzMjNjNDcwNTcyNzBmMTAyOWFjMjY1NGMwMzExNzI3ZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwNzdjNmY0NzVlM2M1YjEzZTI4ODc0NzRmYTk4NzI0ZWE1ZjExMTA2NDc5MzVkZWMzOTVmMGU5YTYzZTA4M2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4YzI0YWYzZjc0ZTVhNDQ5YWQ2OTNmNmU0MmYwMDZjZjhlZTk2MDY3MWRhNDE4NmY4MTU0OWE0MDVjNjVkY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5OTE4MjIyZjAwNjhiZWQzZTA5ZjNkNGVjYzYxOTZmZDkwMDMwNTlkMWEzZGZhMDE4NTY0OTQ5ZGUxYTEyZjUifQ"
+        },
+        {
+          "resource": "repo://ansible/runtime/roles/runtime_host/templates/nginx-agent.conf.j2#L8-L34",
+          "version": "repo-lines-v1:sha256:7d3a095c41950d16cfc6b5f75ff5731090cb1f765c7df35be706ccc5987c7eeb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiYmRjZDBlNTU2ZTE1NGRmMTIxY2ZlYjBmMWVlMmNkOTQyMWU3ZDM2OGJjYjJiYWZjMGUwZDFiYzEwYTcwYjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlN2E3OWQ4NmYzY2ZkODQ1MWM1YjdmNDg2YmJiNGVhMjliYjk1NDA1Y2RkZTk4Y2U3ZmQ5NDMyODViNjYwM2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgxNWY3ZGVlYzdhYmZkZDAzYjYwNjU1NGVjZGYzYzYwMDk4MGUwNzU3NTNiMDlhODlhYTQwZWVmZGFkZmUyNzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3OTRkMDJhODEyMTk0NGQxNzZkMjY1ZTliYjljYzU5ZjZhYjg5MGJjYWRmOGFlZmRlYmRiYmI0ZjJlYTg0NDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b5fdda65c9334bd9a4637adcb57abe49",
+      "statement": "Роль runtime_agent проверяет checksum wheel, устанавливает зависимости отдельно и wheel с --no-deps, защищает env и запускает сервис после настройки зависимости от firewall.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/runtime/roles/runtime_agent/tasks/main.yml#L24-L104",
+          "version": "repo-lines-v1:sha256:8f02badad30d240ea1f1e2f546d4c6c2883024f71408d229c6eab74d839ad912:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxZTYxOWEzNDVlM2VkZWI2YTJiZjgwZDdiZWIyMGMyNTdkODFlNWY3N2IyN2JlODg5MzdhOGQ3NjQ2ODFhY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmNTlkYTAxNDkzOGI1ZDc1MTc1OTQzYjNjMGM4NmQyMzE4OWEyMTMyY2Q5MzA2ZDk0NWFhYTAzZTAxN2E1YmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2ZmI0NTllMjJmNDY1N2RiN2I5YmQ2MmM4YjY2YzMwM2QyNWNiOGZhMzEwNGVkOGJlYWI4MTcxZGNhMWRkNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzOWE1MjdjYTFlOTIyYjJlMTllZTk5NzAyYzUyZDM3OTQzZjkzYzhjMWZhOTViZDIzNWNkZDJiZjE5MzgwZWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4554e55272ee40c89a78ca552d7f3530",
+      "statement": "Репозиторий проверяет runtime ingress и secret outputs mock-тестами Pulumi, а runtime playbook — lint и syntax-check в CI.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/infra.yml#L69-L75",
+          "version": "repo-lines-v1:sha256:71afb690e7e59bc4c360fd4b0d7c066bb63083e1a7538041d90735d899cc7684:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjRjNjEzMTQwYmMyNTJjYjRhMjdiMDg3ZTg4YmMxNDA2MWQ4ZjY4YWQ4ZThlMGU4Y2Q0N2JlZDNiMjhkODVkYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOThmOThkNTE5NTk5MjgzZTQyNTRiMGZjMzRiZWQ0YTQxZDgzNGEwYzEwMGIzYWU0NDM2MTU5OGM0NGI5ZDgzMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGE5ZDIzNTVjYzUzZTg4NDg5N2QxYThiNWMzNGE3NTQ3YjQzYTY4M2Y2NDdhNTE2MDA4MjM1ZTc4OGM5ZjZkMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmFkNjVlNWNlY2M3YzNiYTM4OWM1YzIxMzM1NjIxYTM2YWQ5NTAyNmY2OGM0ZWIwMmFlYTc4N2NiOGExZGU3MCJ9"
+        },
+        {
+          "resource": "repo://pulumi/index.test.ts#L119-L130",
+          "version": "repo-lines-v1:sha256:8df3ada146eb054153fc47be1479bd838c7e768a981d1a98ed06576c70f9ba31:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1NmQ0MjUxNWIwN2FjNDg4MDJiM2QzOTlhMmI2MWNlZDE2M2FiZTM0NDNmMzRlNDQ0M2I4MmYxMzA5YjFjMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2N2Y4NjEwZjYzYjk5NWI5YTQwNjljMzk4OTBhYTg1N2EwODQ5YjczZjY1YmM5OTk2NGVlMmVhYTJhYWJiMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxNDMwNmQxMGUwMDIyMjU5ZTE5MzZhMDI4YTlhMzY0MWRkM2FhNmY5MWI4NThiODM3YTIzMTg0MDJhYmE0YzQifQ"
+        },
+        {
+          "resource": "repo://pulumi/index.test.ts#L171-L180",
+          "version": "repo-lines-v1:sha256:675b82b2fb7d3ef29c89b41e59684be5c0667a609145d5bb8315faefcedddbdc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlNWMxMGQ3OTEzMDYyZDM0ZjQ5YjM5YjlmZGRlOTFhNWExNTliYmZhYjczNDNlODAwNTdkYzVhZWVhZjQ3ZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxNGYxMTU0Yzc5NjkyYjVjYjBmYjM3ODczMmU0N2NhNzcwMDk3ZWIxZjZkMWU3ZmRlYTEzOGI4NDlhNjYwYzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2ZjViNDBiMTU4NDU3ZDE3ODY0ZjIxNzkwNzg2ZGQ1YTJlY2RiNjRiNjZhNjUxZjc4OGQ0ZTI1Y2QzMzAzZDIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.2",
+    "at": "2026-10-31T14:36:53.458Z"
+  }
+}
