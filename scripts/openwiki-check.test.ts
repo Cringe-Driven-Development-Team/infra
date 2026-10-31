@@ -1,7 +1,8 @@
 import { afterAll, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { checkOpenWiki } from './openwiki-check.ts';
 
 const roots: string[] = [];
@@ -267,14 +268,21 @@ test('workflow selects generated wiki changes, excluding the source brief', () =
     expect(workflow.on.pull_request.paths).toEqual(['openwiki/**', '!openwiki/INSTRUCTIONS.md']);
 });
 
-test('closed generator corpus agrees with freshness for allowed and excluded fixtures', () => {
+test('actual OpenWiki 0.7.2 generator corpus agrees with freshness for allowed and excluded fixtures', async () => {
     const { root } = fixture();
-    write(root, '.gitignore', readFileSync(resolve(import.meta.dir, '../.openwikiignore'), 'utf8'));
+    const executable = Bun.which('openwiki');
+    const packageRoot = process.env.OPENWIKI_PACKAGE_ROOT ?? (executable && resolve(dirname(realpathSync(executable)), '../..'));
+    if (!packageRoot) throw new Error('Install openwiki@0.7.2 or set OPENWIKI_PACKAGE_ROOT to its package directory (see README).');
+    const metadata = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+    expect(metadata.name).toBe('openwiki');
+    expect(metadata.version).toBe('0.7.2');
+    const { OpenWikiIgnore } = await import(pathToFileURL(join(packageRoot, 'dist/agent/openwiki-ignore.js')).href);
+    write(root, '.openwikiignore', readFileSync(resolve(import.meta.dir, '../.openwikiignore'), 'utf8'));
+    const ignore = await OpenWikiIgnore.load(root);
     for (const path of [...sources, ...excluded]) {
-        const result = Bun.spawnSync(['git', 'check-ignore', '--no-index', '-q', path], { cwd: root });
-        expect(result.exitCode, path).toBe(excluded.includes(path) && !path.startsWith('openwiki/') ? 0 : 1);
+        expect(ignore.ignores(path), path).toBe(excluded.includes(path) && !path.startsWith('openwiki/'));
     }
-    expect(Bun.spawnSync(['git', 'check-ignore', '--no-index', '-q', 'unlisted/new.txt'], { cwd: root }).exitCode).toBe(0);
+    expect(ignore.ignores('unlisted/new.txt')).toBe(true);
 });
 test('wiki CI has no production environment or secrets; infra CI excludes wiki paths', () => {
     const text = readFileSync(resolve(import.meta.dir, '../.github/workflows/openwiki-freshness.yml'), 'utf8');
