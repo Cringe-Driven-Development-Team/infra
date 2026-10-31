@@ -120,3 +120,19 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 
 Задачи и PR ведём по [CONTRIBUTING.md](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md) организации. Завести задачу, разбить её на
 sub-issues, поставить на доску или открыть PR — скилл `cdd-tasks`.
+
+## OpenWiki
+
+Собственная `openwiki/quickstart.md` после bootstrap объясняет декларативный код
+этого репозитория; фактическое состояние облака проверяется отдельно. Правила
+корпуса и русских страниц — [openwiki/INSTRUCTIONS.md](openwiki/INSTRUCTIONS.md).
+Проверка: `bun scripts/openwiki-check.ts --against <полный SHA infra/main>`.
+До bootstrap отсутствие quickstart/checkpoint — ожидаемая ошибка проверки.
+
+Для общего поиска держи рядом `docs`, `frontend`, `backend`, `infra`, установи
+OpenWiki MCP и один раз выполни `openwiki link` из родительской папки, выбрав
+четыре готовые wiki и имя `CDD`; при нескольких пространствах —
+`openwiki workspace use CDD`. Без MCP читай Markdown и исходники напрямую.
+После bootstrap ручное обновление из соседнего docs:
+`bun run wiki:update-local --repo ../infra`. Генерация локальная, CI проверяет
+отдельный wiki-only PR без модели, production environment и секретов.
