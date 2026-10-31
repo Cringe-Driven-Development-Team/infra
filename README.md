@@ -14,3 +14,8 @@
 
 Порядок: `pulumi up` → `ansible-playbook bootstrap.yml` → `site.yml` → `verify.yml`.
 Пошаговая инструкция со всеми командами и значениями «что вводить руками» — [RUNBOOK.md](RUNBOOK.md).
+
+Проверки OpenWiki: `bun test scripts/openwiki-check.test.ts`. Тест границ корпуса
+использует настоящий парсер OpenWiki 0.7.2: нужен `npm install -g openwiki@0.7.2`
+либо `OPENWIKI_PACKAGE_ROOT=/путь/к/node_modules/openwiki` для уже установленного
+пакета (например, из соседнего `docs`). Модель и облачные учётные данные не нужны.
