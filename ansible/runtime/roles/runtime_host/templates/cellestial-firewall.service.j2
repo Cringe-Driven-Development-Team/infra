@@ -1,0 +1,17 @@
+# Managed by Ansible (runtime_host). Правила сети kernel — до Docker и до агента.
+# PartOf: рестарт docker перезагружает правила; агент Requires этот unit — без правил он не стартует.
+# ExecStop нет: остановка не снимает правила (закрыто по умолчанию).
+[Unit]
+Description=Cellestial runtime kernel network firewall (nftables)
+Before=docker.service network-pre.target
+Wants=network-pre.target
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/cellestial/firewall.nft
+ExecStartPost=/usr/sbin/nft list chain inet cellestial forward
+
+[Install]
+WantedBy=multi-user.target docker.service

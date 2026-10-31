@@ -1,0 +1,31 @@
+---
+# Docker-сеть kernel: имя передаётся агенту (KERNEL_NETWORK), имя моста — для правил nftables
+runtime_host_network: cellestial-kernel
+runtime_host_bridge: cellestial0
+runtime_host_subnet: 172.30.0.0/24
+# Архитектура VPS в Selectel
+runtime_host_docker_arch: amd64
+# Порт Jupyter в контейнере kernel: единственное, куда хост ходит в контейнер
+runtime_host_jupyter_port: 8888
+# Порт TLS-прокси API агента на приватном адресе (security group runtime пускает его только с VPS2)
+runtime_host_proxy_port: 8443
+# Агент слушает только loopback (HOST/PORT в agent.env)
+runtime_host_agent_port: 8000
+# Назначения, закрытые для kernel (контракт сети: приватные, loopback, link-local/metadata,
+# multicast, зарезервированные); публичные адреса своей инфраструктуры — blocked_public_ips
+runtime_host_denied_networks:
+  - 0.0.0.0/8          # «эта» сеть
+  - 10.0.0.0/8         # RFC 1918
+  - 100.64.0.0/10      # CGNAT / служебные сети провайдера
+  - 127.0.0.0/8        # loopback хоста
+  - 169.254.0.0/16     # link-local, metadata 169.254.169.254
+  - 172.16.0.0/12      # RFC 1918, в т.ч. сам мост kernel
+  - 192.0.0.0/24       # IETF protocol assignments
+  - 192.0.2.0/24       # TEST-NET-1
+  - 192.88.99.0/24     # 6to4 relay
+  - 192.168.0.0/16     # RFC 1918, приватная подсеть проекта (VPS2, gateway, другие VPS)
+  - 198.18.0.0/15      # benchmarking
+  - 198.51.100.0/24    # TEST-NET-2
+  - 203.0.113.0/24     # TEST-NET-3
+  - 224.0.0.0/4        # multicast
+  - 240.0.0.0/4        # reserved и broadcast

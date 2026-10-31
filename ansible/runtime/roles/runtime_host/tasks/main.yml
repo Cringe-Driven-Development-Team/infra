@@ -1,0 +1,228 @@
+---
+# Debian 13: Docker CE, venv для агента, IPv6 выключен, сеть kernel и её firewall, TLS-прокси агента.
+- name: Packages of the runtime host
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - nftables
+      - nginx
+      - python3-venv
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Docker repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: [deb]
+    uris: https://download.docker.com/linux/debian
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [stable]
+    architectures: ["{{ runtime_host_docker_arch }}"]
+    signed_by: https://download.docker.com/linux/debian/gpg
+  register: runtime_host_docker_repo
+
+- name: Docker Engine
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: present
+    update_cache: "{{ runtime_host_docker_repo is changed }}"
+
+# --- IPv6 -------------------------------------------------------------------------------------------
+- name: Disable IPv6 on the host
+  ansible.builtin.template:
+    src: sysctl.conf.j2
+    dest: /etc/sysctl.d/90-cellestial-runtime.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply the runtime sysctl
+
+- name: Apply the sysctl before Docker networking
+  ansible.builtin.meta: flush_handlers
+
+# --- Firewall сети kernel ----------------------------------------------------------------------------
+# Правила — до сети и агента: unit стартует раньше docker и восстанавливает таблицу после рестарта
+# docker (PartOf) и reboot (enabled). Ошибка загрузки — ошибка задачи и запрет старта агента.
+- name: Firewall directory
+  ansible.builtin.file:
+    path: /etc/cellestial
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Kernel network firewall rules
+  ansible.builtin.template:
+    src: firewall.nft.j2
+    dest: /etc/cellestial/firewall.nft
+    owner: root
+    group: root
+    mode: "0600"
+    validate: /usr/sbin/nft -c -f %s
+  register: runtime_host_firewall_rules
+
+- name: Firewall unit
+  ansible.builtin.template:
+    src: cellestial-firewall.service.j2
+    dest: /etc/systemd/system/cellestial-firewall.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: runtime_host_firewall_unit
+
+- name: Load the firewall and enable it at boot
+  ansible.builtin.systemd_service:
+    name: cellestial-firewall.service
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if (runtime_host_firewall_rules is changed or runtime_host_firewall_unit is changed) else 'started' }}"
+
+- name: Read the loaded firewall table
+  ansible.builtin.command: nft list table inet cellestial
+  register: runtime_host_firewall_loaded
+  changed_when: false
+
+- name: The firewall closes the kernel network
+  ansible.builtin.assert:
+    that:
+      - "'hook forward' in runtime_host_firewall_loaded.stdout"
+      - "'hook input' in runtime_host_firewall_loaded.stdout"
+      - "'hook output' in runtime_host_firewall_loaded.stdout"
+      - "'iifname \"' ~ runtime_host_bridge ~ '\" drop' in runtime_host_firewall_loaded.stdout"
+    fail_msg: The cellestial nftables table is not loaded; the agent must not start.
+
+- name: Start Docker after the firewall
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
+
+# --- Сеть kernel -------------------------------------------------------------------------------------
+- name: Inspect the kernel network
+  ansible.builtin.command: docker network inspect {{ runtime_host_network }}
+  register: runtime_host_network_inspect
+  changed_when: false
+  failed_when: false
+
+# IPv4-only bridge с фиксированным именем интерфейса (по нему правила nftables); ICC выключен —
+# вторая линия против соседей по мосту
+- name: Create the kernel network
+  ansible.builtin.command: >-
+    docker network create --driver bridge --ipv4 --ipv6=false
+    --subnet {{ runtime_host_subnet }}
+    --opt com.docker.network.bridge.name={{ runtime_host_bridge }}
+    --opt com.docker.network.bridge.enable_icc=false
+    {{ runtime_host_network }}
+  when: runtime_host_network_inspect.rc != 0
+  changed_when: true
+
+- name: Read the kernel network
+  ansible.builtin.command: docker network inspect {{ runtime_host_network }}
+  register: runtime_host_network_state
+  changed_when: false
+
+- name: The kernel network matches the contract
+  ansible.builtin.assert:
+    that:
+      - runtime_host_network_config.Driver == 'bridge'
+      - not (runtime_host_network_config.EnableIPv6 | default(false))
+      - runtime_host_network_config.EnableIPv4 | default(true)
+      - not (runtime_host_network_config.Internal | default(false))
+      - runtime_host_network_config.Options['com.docker.network.bridge.name'] | default('') == runtime_host_bridge
+    fail_msg: >-
+      Docker network {{ runtime_host_network }} exists with another shape (IPv6, internal or another bridge);
+      the firewall rules would not cover it.
+  vars:
+    runtime_host_network_config: "{{ (runtime_host_network_state.stdout | from_json)[0] }}"
+
+# --- Образ kernel ------------------------------------------------------------------------------------
+- name: Pull the kernel image of the session language
+  ansible.builtin.command: docker pull {{ python_image if language == 'python' else r_image }}
+  register: runtime_host_pull
+  changed_when: "'Downloaded newer image' in runtime_host_pull.stdout"
+  retries: 3
+  delay: 10
+  until: runtime_host_pull is succeeded
+
+# --- TLS-прокси API агента ---------------------------------------------------------------------------
+- name: Remove the default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: TLS directory of the proxy
+  ansible.builtin.file:
+    path: /etc/nginx/cellestial
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Proxy certificates and key from the backend
+  ansible.builtin.copy:
+    content: "{{ item.content | trim }}\n"
+    dest: /etc/nginx/cellestial/{{ item.name }}
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: server.crt, content: "{{ server_cert_pem }}", mode: "0644" }
+    - { name: server.key, content: "{{ server_key_pem }}", mode: "0600" }
+    - { name: ca.crt, content: "{{ ca_cert_pem }}", mode: "0644" }
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload nginx
+  no_log: true
+
+- name: Agent proxy site
+  ansible.builtin.template:
+    src: nginx-agent.conf.j2
+    dest: /etc/nginx/conf.d/cellestial-agent.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Nginx waits for the network after reboot
+  block:
+    - name: Nginx drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/nginx.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Nginx network drop-in
+      ansible.builtin.template:
+        src: nginx-network.conf.j2
+        dest: /etc/systemd/system/nginx.service.d/10-cellestial-network.conf
+        owner: root
+        group: root
+        mode: "0644"
+      register: runtime_host_nginx_dropin
+
+- name: Check the nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Run nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    daemon_reload: "{{ runtime_host_nginx_dropin is changed }}"
+    enabled: true
+    state: started
+
+- name: Apply the proxy configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: The proxy listens on the private address
+  ansible.builtin.wait_for:
+    host: "{{ private_ip }}"
+    port: "{{ runtime_host_proxy_port }}"
+    timeout: 30

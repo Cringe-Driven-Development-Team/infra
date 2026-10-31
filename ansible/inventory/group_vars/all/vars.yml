@@ -66,3 +66,44 @@ avatars_bucket: cellestial-avatars-0               # выход avatarsBucket
 # avatarsCustomDomain), при пересоздании стека не меняется. Сертификат домена выпущен в панели;
 # технический <uuid>.selstorage.ru — выход avatarsPublicDomain.
 avatars_public_domain: avatars.cellestial.ru
+
+# Runtime-VPS пользовательских сессий (infra#89, backend#57): Go API на VPS2 сам создаёт, настраивает
+# (ansible/runtime) и удаляет VPS на сессию. Значения — выходы Pulumi runtime* (RUNBOOK.md, «Runtime-VPS»).
+# false — Go API получает только RUNTIME_ENABLED=false: остальных RUNTIME_*, файлов ключей и каталога
+# заданий на VPS2 нет. true — только при app_backend_split: true (security group runtime пускает SSH и
+# 8443 лишь с VPS2) и с заполненными vault_runtime_*.
+runtime_enabled: false
+runtime_provider: openstack
+runtime_os_auth_url: https://cloud.api.selcloud.ru/identity/v3
+runtime_os_username: cellestialRuntimeProvisioner                # выход runtimeOsUsername
+runtime_os_user_domain_name: "631994"                            # выход runtimeAccountId
+runtime_os_project_id: 55bd6170b9584be1832d5eec4b8ed6f9          # выход runtimeProjectId
+runtime_os_region: ru-9                                          # выход runtimeRegion
+runtime_availability_zone: ru-9a                                 # выход runtimeAvailabilityZone
+runtime_network_id: c173bf61-fb03-4988-bf5b-bd3c294b49ad         # выход runtimeNetworkId
+runtime_subnet_id: 01e6f4fc-d4b4-4d1d-8587-02e35bf1f932          # выход runtimeSubnetId
+# Security group runtime создаёт pulumi up (infra:runtime) — id появится после него
+runtime_security_group_id: ""                                    # выход runtimeSecurityGroupId
+# Debian 13: Selectel обновляет образ, id меняется — сверять с выходом после каждого pulumi up
+runtime_image_id: fd18de63-491e-4590-9708-07224a682510           # выход runtimeImageId
+runtime_flavor_id: "1012"                                        # выход runtimeFlavorId (SL1.1-2048)
+runtime_volume_type: fast.ru-9a                                  # выход runtimeVolumeType
+runtime_ssh_key_name: runtime-provisioner                        # выход runtimeKeypairName
+runtime_ssh_user: root
+# Окружение в metadata VPS и логах backend (RUNTIME_ENV_NAME, обязателен для openstack)
+runtime_env_name: production
+# Публичные адреса gateway и auxiliary VPS через запятую: kernel до них не достучится
+runtime_blocked_public_ips: 87.228.26.154,87.228.26.22           # выход runtimeBlockedPublicIps
+# Прочие RUNTIME_* (RUNTIME_ROOT_DISK_GIB, RUNTIME_PYTHON_IMAGE, RUNTIME_R_IMAGE, RUNTIME_KERNEL_DNS,
+# таймауты, лимиты) имеют значения по умолчанию в backend; задавать здесь только при необходимости:
+#   runtime_extra_env: { RUNTIME_PYTHON_IMAGE: "ghcr.io/...@sha256:...", RUNTIME_MAX_ACTIVE: "3" }
+runtime_extra_env: {}
+# Секреты runtime — выходы Pulumi с --show-secrets, в vault.yml (сертификаты не секретны, но
+# многострочные — лежат там же, рядом со своими ключами)
+runtime_os_password: "{{ vault_runtime_os_password }}"           # runtimeOsPassword
+runtime_secrets_key: "{{ vault_runtime_secrets_key }}"           # runtimeSecretsKey (base64 32 байт)
+runtime_ssh_private_key: "{{ vault_runtime_ssh_private_key }}"   # runtimeSshPrivateKey
+runtime_ca_cert: "{{ vault_runtime_ca_cert }}"                   # runtimeCaCert
+runtime_ca_key: "{{ vault_runtime_ca_key }}"                     # runtimeCaKey
+runtime_client_cert: "{{ vault_runtime_client_cert }}"           # runtimeClientCert
+runtime_client_key: "{{ vault_runtime_client_key }}"             # runtimeClientKey

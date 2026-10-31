@@ -1,0 +1,9 @@
+---
+- name: Apply the runtime sysctl
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/90-cellestial-runtime.conf
+  changed_when: true
+
+- name: Reload nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded

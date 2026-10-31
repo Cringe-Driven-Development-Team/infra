@@ -1,0 +1,4 @@
+# Managed by Ansible (runtime_host). nginx слушает приватный адрес — ждать сеть после reboot.
+[Unit]
+Wants=network-online.target
+After=network-online.target

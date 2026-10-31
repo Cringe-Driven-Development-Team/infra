@@ -1,0 +1,17 @@
+{
+  "session_id": "01234567-89ab-cdef-0123-456789abcdef",
+  "language": "python",
+  "private_ip": "192.168.199.50",
+  "token": "0000000000000000000000000000000000000000000000000000000000000000",
+  "server_cert_pem": "-----BEGIN CERTIFICATE-----\nnot-a-real-certificate\n-----END CERTIFICATE-----\n",
+  "server_key_pem": "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n",
+  "ca_cert_pem": "-----BEGIN CERTIFICATE-----\nnot-a-real-certificate\n-----END CERTIFICATE-----\n",
+  "python_image": "ghcr.io/example/kernel-python@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "r_image": "ghcr.io/example/kernel-r@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "kernel_dns": "1.1.1.1",
+  "blocked_public_ips": ["203.0.113.1", "203.0.113.2"],
+  "agent_wheel": "/app/agent/cellestial_runtime_agent-0.1.0-py3-none-any.whl",
+  "agent_wheel_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "agent_requirements": "/app/agent/requirements.txt",
+  "agent_service": "/app/agent/cellestial-agent.service"
+}

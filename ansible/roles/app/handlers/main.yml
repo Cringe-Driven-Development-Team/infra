@@ -8,3 +8,12 @@
       --wait --wait-timeout {{ app_wait_timeout }} redis
     chdir: "{{ app_compose_dir }}"
   changed_when: true
+
+# Go API читает ключи и сертификаты runtime при старте: новые файлы видит только новый контейнер
+- name: Recreate the API with the new runtime files
+  ansible.builtin.command:
+    cmd: >-
+      docker compose up -d --no-deps --force-recreate --pull never
+      --wait --wait-timeout {{ app_wait_timeout }} api
+    chdir: "{{ app_compose_dir }}"
+  changed_when: true
