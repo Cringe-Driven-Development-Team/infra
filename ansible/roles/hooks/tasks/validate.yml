@@ -34,6 +34,7 @@
     - TELEGRAM_APIDOG_TOPIC_ID
     - APIDOG_ACCESS_TOKEN
     - APIDOG_TELEGRAM_USER_MAP
+    - APIDOG_MR_REVIEWERS
   when: hooks_env.WEBHOOK_ALERTS_SEND_ENABLED | default('false') | string == 'true'
 
 - name: Проверить числовые идентификаторы Apidog при включённой отправке

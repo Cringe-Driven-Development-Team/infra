@@ -346,7 +346,8 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
 
    Для включённого sender также нужны `TELEGRAM_BOT_TOKEN`,
    `TELEGRAM_APIDOG_BOT_TOKEN` (отдельный бот Apidog), `TELEGRAM_CHAT_ID`,
-   `TELEGRAM_APIDOG_TOPIC_ID`, `APIDOG_ACCESS_TOKEN` и `APIDOG_TELEGRAM_USER_MAP`.
+   `TELEGRAM_APIDOG_TOPIC_ID`, `APIDOG_ACCESS_TOKEN`, `APIDOG_TELEGRAM_USER_MAP`
+   и `APIDOG_MR_REVIEWERS`.
    Токен чтения MR и карту хранить только в `vault_hooks_env`. Карта — строка JSON:
    `{"1066826":{"name":"Имя участника","telegramId":"123"}}` (пример с вымышленным
    Telegram ID). Ключ — Apidog user ID, `name` — проверенное отображаемое имя,
@@ -356,6 +357,13 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
    организации без вывода значений. При добавлении участников обновлять карту;
    неизвестный ID отображается без пинга, пустая карта `{}` допустима.
    Не передавать токен в argv, URL, логи или комментарии GitHub.
+
+   Постоянную пару ревьюверов MR менять через `ansible-vault edit` в
+   `vault_hooks_env.APIDOG_MR_REVIEWERS`: строка JSON с ровно двумя объектами
+   `{ "name": "…", "telegramId": "…" }`, сначала Александр Батовкин, затем
+   Ярослав Михалев. Имена непустые, Telegram ID — разные положительные числовые
+   строки из проверенного источника; значения не выводить в логи. Порядок массива
+   задаёт порядок упоминаний при открытии MR и не зависит от `reviewerIds` Apidog.
 
    Публичные defaults роли: `APIDOG_PROJECT_ID=1382426`,
    `APIDOG_TARGET_BRANCH_ID=1388508` (main),
