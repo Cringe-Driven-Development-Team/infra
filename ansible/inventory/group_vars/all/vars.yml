@@ -32,7 +32,7 @@ docker_users:
 # проекте Compose). true — на gateway Caddy и BFF, на приватной VPS2 (группа backend) Go API, Postgres и
 # Redis; BFF ходит в Go по приватному адресу. Данные не переносятся: на VPS2 новая пустая база.
 # Переключение и откат — RUNBOOK.md, «Go и Postgres на VPS2».
-app_backend_split: false
+app_backend_split: true
 # Приватный адрес VPS2 (выход Pulumi backendPrivateIp): из inventory, где он ansible_host группы backend
 app_backend_address: "{{ hostvars[groups['backend'][0]]['ansible_host'] if groups.get('backend') else '' }}"
 # Приватный адрес gateway (выход Pulumi gatewayPrivateIp): только с него VPS2 пускает SSH и Go API
@@ -72,7 +72,7 @@ avatars_public_domain: avatars.cellestial.ru
 # false — Go API получает только RUNTIME_ENABLED=false: остальных RUNTIME_*, файлов ключей и каталога
 # заданий на VPS2 нет. true — только при app_backend_split: true (security group runtime пускает SSH и
 # 8443 лишь с VPS2) и с заполненными vault_runtime_*.
-runtime_enabled: false
+runtime_enabled: true
 runtime_provider: openstack
 runtime_os_auth_url: https://cloud.api.selcloud.ru/identity/v3
 runtime_os_username: cellestialRuntimeProvisioner                # выход runtimeOsUsername
@@ -82,8 +82,7 @@ runtime_os_region: ru-9                                          # выход ru
 runtime_availability_zone: ru-9a                                 # выход runtimeAvailabilityZone
 runtime_network_id: c173bf61-fb03-4988-bf5b-bd3c294b49ad         # выход runtimeNetworkId
 runtime_subnet_id: 01e6f4fc-d4b4-4d1d-8587-02e35bf1f932          # выход runtimeSubnetId
-# Security group runtime создаёт pulumi up (infra:runtime) — id появится после него
-runtime_security_group_id: ""                                    # выход runtimeSecurityGroupId
+runtime_security_group_id: 1094a1f0-02b3-4469-a515-41c345c94670  # выход runtimeSecurityGroupId
 # Debian 13: Selectel обновляет образ, id меняется — сверять с выходом после каждого pulumi up
 runtime_image_id: fd18de63-491e-4590-9708-07224a682510           # выход runtimeImageId
 runtime_flavor_id: "1012"                                        # выход runtimeFlavorId (SL1.1-2048)

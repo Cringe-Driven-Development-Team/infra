@@ -147,7 +147,8 @@ jobs:
         run: |
           set -o pipefail
           ansible-playbook -i inventory/ci.yml site.yml --check --diff \
-            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" \
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" -e "jump_known_hosts=$RUNNER_TEMP/infra/known_hosts" \
+            --ssh-common-args="$INFRA_SSH_ARGS" \
             | tee "$RUNNER_TEMP/ansible-check.txt"
       # Вспомогательная VPS (infra#54): её host key (hooks.cellestial.ru) — тоже в SSH_KNOWN_HOSTS
       - name: auxiliary.yml --check --diff
@@ -224,7 +225,8 @@ jobs:
         working-directory: ansible
         run: |
           ansible-playbook -i inventory/ci.yml site.yml \
-            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" -e "jump_known_hosts=$RUNNER_TEMP/infra/known_hosts" \
+            --ssh-common-args="$INFRA_SSH_ARGS"
       - name: auxiliary.yml
         working-directory: ansible
         run: |
@@ -235,5 +237,6 @@ jobs:
         working-directory: ansible
         run: |
           ansible-playbook -i inventory/ci.yml verify.yml \
-            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" -e "jump_known_hosts=$RUNNER_TEMP/infra/known_hosts" \
+            --ssh-common-args="$INFRA_SSH_ARGS"
       - *cleanup

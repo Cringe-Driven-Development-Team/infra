@@ -641,7 +641,7 @@ Go API на VPS2 сам создаёт VPS на пользовательскую
 `192.168.199.0/24` с security group `runtime`, диск Debian 13, сервер с keypair `runtime-provisioner`, без
 floating IP (наружу — SNAT роутера). Настраивает её плейбуком `ansible/runtime` по SSH на приватный адрес
 и ходит к агенту по mTLS на `:8443`. Инфраструктура для этого — раздел «Runtime-VPS сессий» в
-`pulumi/README.md`; выключатель — `runtime_enabled` в `group_vars/all/vars.yml` (по умолчанию `false`:
+`pulumi/README.md`; выключатель — `runtime_enabled` в `group_vars/all/vars.yml` (на проде `true`; при `false`
 Go API получает только `RUNTIME_ENABLED=false`, ключей runtime на VPS2 нет).
 
 **Квоты** проекта `pulumi-cellestial`, ru-9a (quota-manager API, 2026-10-29): `compute_cores` 600, занято 6;
