@@ -99,12 +99,17 @@ class HooksChecks(unittest.TestCase):
             "TELEGRAM_APIDOG_BOT_TOKEN": "fake-apidog-bot",
             "APIDOG_ACCESS_TOKEN": "fake-access-token",
             "APIDOG_TELEGRAM_USER_MAP": json.dumps({"1066826": {"name": "Test person", "telegramId": "123"}}),
+            "APIDOG_MR_REVIEWERS": json.dumps([
+                {"name": "Test reviewer one", "telegramId": "123"},
+                {"name": "Test reviewer two", "telegramId": "456"},
+            ]),
         }
         variables = self.variables | {"vault_hooks_env": env}
         result = self.play(tasks, variables)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        for key in ["TELEGRAM_APIDOG_BOT_TOKEN", "APIDOG_ACCESS_TOKEN", "APIDOG_TELEGRAM_USER_MAP"]:
+        for key in ["TELEGRAM_APIDOG_BOT_TOKEN", "APIDOG_ACCESS_TOKEN", "APIDOG_TELEGRAM_USER_MAP",
+                    "APIDOG_MR_REVIEWERS"]:
             with self.subTest(missing=key):
                 missing_env = env.copy()
                 del missing_env[key]
