@@ -76,6 +76,7 @@ const sources = [
     'pulumi/index.ts', 'pulumi/bootstrap/index.ts', 'pulumi/selectel-storage.test.ts',
     'ansible/site.yml', 'ansible/roles/app/templates/compose.yml.j2',
     'ansible/roles/app/templates/env.j2', 'ansible/runtime/site.yml',
+    'ansible/runtime/roles/runtime_agent/templates/agent.env.j2',
     '.github/workflows/infra.yml', 'SUMMARY.md', 'AGENTS.md',
     '.openwikiignore', 'openwiki/INSTRUCTIONS.md',
 ];
@@ -213,6 +214,10 @@ const excluded = [
     'ansible/.env', 'ansible/.env.local', 'pulumi/dist/index.js',
     'pulumi/selectel.env', 'ansible/id_rsa', 'ansible/id_ed25519',
     'pulumi/docs/superpowers/old.md', 'pulumi/state.json.bak',
+    'ansible/tests/__pycache__/test_hooks.cpython-312.pyc',
+    'ansible/tests/test_hooks.pyc', 'ansible/tests/test_hooks.pyo',
+    'ansible/runtime/roles/runtime_agent/templates/agent.env',
+    'ansible/runtime/roles/runtime_agent/templates/agent.env.local',
     'openwiki/architecture.md', '.github/workflows/automation.yml',
 ];
 for (const path of excluded) {

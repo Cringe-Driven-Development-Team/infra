@@ -70,3 +70,8 @@
 **/id_dsa.*
 **/state.json.*
 **/plan.json.*
+# Safe declarative template; actual agent.env and other env files stay excluded.
+!ansible/runtime/roles/runtime_agent/templates/agent.env.j2
+**/__pycache__/**
+**/*.pyc
+**/*.pyo

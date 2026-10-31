@@ -2,9 +2,11 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 function isWikiSourcePath(path: string): boolean {
+    if (path === 'ansible/runtime/roles/runtime_agent/templates/agent.env.j2') return true;
     if (
         !path ||
-        /(^|\/)(node_modules|sdks|dist|coverage|artifacts|generated|superpowers|state|plans|secrets|authorized_keys|inventory|\.pulumi|\.git)(\/|$)/.test(path) ||
+        /\.(pyc|pyo)$/.test(path) ||
+        /(^|\/)(node_modules|__pycache__|sdks|dist|coverage|artifacts|generated|superpowers|state|plans|secrets|authorized_keys|inventory|\.pulumi|\.git)(\/|$)/.test(path) ||
         /(^|\/)(\.env(?:[./]|$)|env\.sh$|clouds\.ya?ml(?:\.|$)|\.?vault[^/]*|(?:state|plan)\.json(?:\.|$)|id_(?:rsa|ed25519|ecdsa|dsa)(?:\.|$))/.test(path) ||
         /\.(env|pem|key|pub|p12|pfx|tfstate)(?:\.|$)/.test(path) ||
         /(^|\/)Pulumi\.[^/]+\.ya?ml(?:\.|$)/.test(path)
