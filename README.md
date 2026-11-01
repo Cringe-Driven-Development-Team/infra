@@ -19,3 +19,9 @@
 использует настоящий парсер OpenWiki 0.7.2: нужен `npm install -g openwiki@0.7.2`
 либо `OPENWIKI_PACKAGE_ROOT=/путь/к/node_modules/openwiki` для уже установленного
 пакета (например, из соседнего `docs`). Модель и облачные учётные данные не нужны.
+
+Изменения `openwiki/**` в `main` запускают [Publish docs wiki](.github/workflows/publish-docs-wiki.yml):
+он вызывает `pages.yml` в `docs/main`; для диагностики доступен ручной запуск.
+Нужен secret `DOCS_PAGES_TOKEN` с Actions: write только для репозитория docs;
+настройка и публичная wiki — в [README docs](https://github.com/Cringe-Driven-Development-Team/docs#readme).
+Локальная проверка dispatch без GitHub: `bun test scripts/openwiki-publish.test.ts`.
