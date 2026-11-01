@@ -70,6 +70,23 @@ class HooksChecks(unittest.TestCase):
     def import_task(self, path):
         return [{"name": "Run production tasks", "ansible.builtin.import_tasks": str(ANSIBLE / path)}]
 
+    def test_release_topic_and_token_are_required_for_configured_release_notifications(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        env = self.variables["vault_hooks_env"] | {
+            "TELEGRAM_RELEASES_TOPIC_ID": "88", "GITHUB_API_TOKEN": "private-test-token"}
+        result = self.play(tasks, self.variables | {"vault_hooks_env": env})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for change in [{"TELEGRAM_RELEASES_TOPIC_ID": "0"},
+                       {"TELEGRAM_RELEASES_TOPIC_ID": "9007199254740992"},
+                       {"GITHUB_API_TOKEN": ""}, {"GITHUB_API_TOKEN": None}]:
+            with self.subTest(change=tuple(change)):
+                candidate = env | change
+                if candidate.get("GITHUB_API_TOKEN") is None:
+                    candidate.pop("GITHUB_API_TOKEN", None)
+                result = self.play(tasks, self.variables | {"vault_hooks_env": candidate})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("private-test-token", result.stdout + result.stderr)
+
     def test_preflight_accepts_no_registry_credentials_and_rejects_invalid_webhook_configuration(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
         result = self.play(tasks)
