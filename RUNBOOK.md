@@ -790,3 +790,62 @@ Release uncertain после timeout/5xx/ошибки записи не повт
 
 До публикации нового image этот runbook является подготовкой, действующий digest
 в defaults не изменяется. Секреты и raw payload в отчёт о переключении не включать.
+
+### Приёмка переключения 2026-11-01 (UTC)
+
+Переключение выполнено: [.github#48](https://github.com/Cringe-Driven-Development-Team/.github/pull/48),
+[frontend#136](https://github.com/Cringe-Driven-Development-Team/frontend/pull/136),
+[infra#102](https://github.com/Cringe-Driven-Development-Team/infra/pull/102).
+Действующий image — `ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:103ea0dee401b9a65f52358b05911bf08083bc2228414ddfd460ecfd1cce6bb2`,
+source tag — `sha-242507b884c31843bfcdfd6a8f490d2da768375f`. Проверены registry
+manifest, анонимный pull на auxiliary и фактический image запущенного контейнера.
+
+- Post-merge [.github Checks](https://github.com/Cringe-Driven-Development-Team/.github/actions/runs/41356812343)
+  и [публикация image](https://github.com/Cringe-Driven-Development-Team/.github/actions/runs/41356812555) — success.
+- [Frontend CI](https://github.com/Cringe-Driven-Development-Team/frontend/actions/runs/41357223302)
+  — Check, Publish release и course-sync success. Team/course main совпали:
+  `542a571db9fe7109c0961dc3680ce4297851c86a`.
+- [Infra CI](https://github.com/Cringe-Driven-Development-Team/infra/actions/runs/41358553255)
+  — тесты, apply (`auxiliary.yml`) и `verify.yml` success; контейнер healthy,
+  публичный `/health` — HTTP 200. Предварительный `auxiliary.yml --check --diff`
+  завершился с `ok=57 changed=5 failed=0`.
+- До обновления создан verified snapshot
+  `/data/snapshots/pre-release-webhooks-20261101.sqlite`. После миграции SQLite
+  `2 → 3` проверены `integrity_check=ok` и все 613 прежних sent-карточек:
+  HTML, тема, кнопки и Telegram message IDs совпали со snapshot.
+- В Vault добавлены только `GITHUB_API_TOKEN` и `TELEGRAM_RELEASES_TOPIC_ID=3375`;
+  прежние значения сверены и сохранены. Отдельный fine-grained PAT читает только
+  frontend; его работа проверена из контейнера. `/opt/hooks/.env` имеет права
+  `0600 root:root`; временный локальный файл передачи токена удалён.
+- У org hook `702764072` добавлены `deployment_status` и `workflow_job`.
+  Прежние события, URL, JSON content type и SSL verification сохранены;
+  поле secret при обновлении не передавалось.
+- Неизменяемая граница activation — **`2026-11-01T22:55:47Z`**
+  (`1793573747000` ms). Перед ней проверено завершение старых sender jobs.
+
+Для адресного восстановления готовности выпуска `542a571` проверены успешный
+CI и отсутствие его уведомления в прежнем журнале `release-automation`.
+Последний старый sender завершился в `22:27:10Z`, запись артефактов
+`7480076686` создана в `22:28:28Z` новым producer. Её подтверждённый success
+повторно зарегистрирован как status `21129679491` с `auto_inactive=false`;
+это контроль доставки существующего выпуска, без сборки и CD фронта.
+
+GitHub delivery `3851670442712547328`, GUID
+`88ef9220-d647-11f1-9386-862eb90a5e84`, принята в `22:56:56.661Z`:
+HTTP **202**, duration **0.59 s**. Первичная подготовка raw `1371` завершилась
+без outbox, поскольку source предшествует activation. После этого выполнен
+только `release-recover 1371` (`22:57:42.373911Z`).
+
+Outbox **627** отправлен в `22:58:07.433335472Z` с HTTP 200,
+Telegram **message_id 8866**, topic **3375**. Проверены читаемое название
+`WEB-135` и кнопка PR #136. Ключ `ready` содержит SHA выпуска, а
+`operation_key` — `result:Cringe-Driven-Development-Team/frontend:publish:41357223302:1`.
+В этот момент [ручной Board run](https://github.com/Cringe-Driven-Development-Team/frontend/actions/runs/41359641614)
+ещё выполнялся; затем завершился success. Карточка frontend#135 осталась
+`Ready for release`.
+
+Native redelivery `3851670746724040704` с тем же GUID принята в
+`22:59:18.218Z`: HTTP **200**, duration **0.76 s**. Остались ровно один release
+outbox и тот же message ID; дубля нет. После проверки обновлён verified
+snapshot `/data/snapshots/queue.sqlite`. Реальные уведомления начала и результата
+CD/rollback этой приёмкой не запускались; их локальные сценарии проверены тестами.
