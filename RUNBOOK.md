@@ -744,3 +744,49 @@ openstack server delete --wait runtime-check && openstack volume delete runtime-
 - **`RUNTIME_SECRETS_KEY`** — `--replace` у `runtime-secrets-key`: токены агентов в БД, зашифрованные
   старым ключом, перестают читаться — только без активных окружений.
 - **Утечка vault** — все пять пунктов выше.
+
+
+## Переключение уведомлений frontend на webhook
+
+Подготовленная валидация не включает новый sender: граница release-activation
+изначально отсутствует в SQLite. Установить TELEGRAM_RELEASES_TOPIC_ID и читающий
+GITHUB_API_TOKEN через действующий Vault; бот, чат, proxy и Project PAT не переносить
+из их текущих областей ответственности. Project PAT остаётся только у Board Actions.
+
+Порядок после проверки и разрешения на merge/deploy:
+
+1. Влить сервис и проверить опубликованный commit image. Получить реальный registry
+   digest, проверить анонимный pull и закрепить его/source tag в hooks defaults.
+   Не подставлять локальный Docker image ID вместо registry manifest digest.
+2. Влить frontend producers/removal, проверить push/main CI, публикацию и course-sync.
+   Проверить отсутствие выполняющихся старых release notification jobs и старых
+   CD/Rollback send steps. Не отменять неизвестную доставку без проверки Telegram.
+3. Снять существующий verified SQLite snapshot и обновить вспомогательную VPS
+   существующим auxiliary.yml. Это обновление webhook-сервиса, не CD фронта.
+   /health должен ответить 200; обычные GitHub/Apidog алерты продолжают работать.
+4. У org hook 702764072 добавить deployment_status и workflow_job к текущему набору
+   events, сохранив URL, secret, SSL verification и остальные подписки.
+5. Зафиксировать текущую UTC-границу, затем в /opt/hooks выполнить:
+
+   ```bash
+   release_cutover_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+   sudo docker compose exec -T hooks bun run src/cli.ts release-activate "$release_cutover_utc"
+   ```
+
+   Граница неизменяема; повтор того же значения идемпотентен. До неё release-события
+   не рассылаются автоматически. Запоздавшие enqueue дополнительно проверяют live
+   entry/main и время постановки; merged/closed/re-enqueued сообщения пропускаются.
+6. Адресно сверить события промежутка между удалением старого sender и activation
+   с прежним журналом и Telegram. Только для подтверждённо неотправленной source
+   delivery разрешён release-recover <raw-delivery-id>; массового replay нет.
+7. На разрешённом контрольном PR/run сопоставить GitHub delivery time, HTTP 202,
+   outbox key, message_id и время принятия Telegram. Повтор delivery не должен
+   отправлять второй результат. Отдельно проверить работу Board.
+
+Release uncertain после timeout/5xx/ошибки записи не повторяется автоматически:
+сначала проверить Telegram, затем при установленном отсутствии сообщения можно
+вызвать существующий retry <outbox-id>. При release_skipped попытку не возобновлять.
+Для выкатки фронта ради проверки требуется отдельное поручение владельца.
+
+До публикации нового image этот runbook является подготовкой, действующий digest
+в defaults не изменяется. Секреты и raw payload в отчёт о переключении не включать.
