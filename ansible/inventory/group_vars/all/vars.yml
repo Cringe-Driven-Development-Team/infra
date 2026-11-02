@@ -21,8 +21,8 @@ frontend_cdn_domain: cdn.cellestial.ru
 frontend_static_domain: static.cellestial.ru
 # Content-Security-Policy на ответах BFF (HTML клиента). true — заголовок Content-Security-Policy-Report-Only:
 # браузер пишет нарушения в консоль и ничего не блокирует. false — политика применяется.
-# Переключать после прохода по экранам прода без нарушений; verify.yml ждёт тот же заголовок.
-caddy_csp_report_only: true
+# verify.yml ждёт тот же заголовок. Новый источник ресурсов у клиента — сначала правка политики в Caddyfile.j2.
+caddy_csp_report_only: false
 
 # Пользователи в группе docker (эквивалент root на хосте)
 docker_users:

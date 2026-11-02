@@ -27,6 +27,7 @@
         (app_probe_html.content_security_policy_report_only
         if caddy_csp_report_only | default(true) | bool
         else app_probe_html.content_security_policy) | default('') is search("default-src 'none'")
+      - caddy_csp_report_only | default(true) | bool or app_probe_html.content_security_policy_report_only is not defined
     fail_msg: >-
       {{ app_domain }} does not serve the guest HTML of the BFF
       release {{ bff_probe_release }} with nosniff, CSP and Cache-Control: private, no-store.
