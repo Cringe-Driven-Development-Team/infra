@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:ce66fed7fd442ec077e5b9f0634e9053bbb1bc2fc70d835455983445ef334f03",
+  "pageVersion": "sha256:75cfbbde38251f817f3a552ae47ad254e32298793040bab9618fa3bc4fda1931",
   "claims": [
     {
       "id": "claim_6ad569057a2f479784db72984cdbc77e",
@@ -31,16 +31,16 @@
       "statement": "Инфраструктурный workflow фильтрует пути Pulumi/Ansible, выполняет preview после checks для внутренних PR и последовательный apply на main с cancel-in-progress false.",
       "evidence": [
         {
-          "resource": "repo://.github/workflows/infra.yml#L138-L159",
-          "version": "repo-lines-v1:sha256:7c7d09afeb8fbb2715ad139a3a3ce91674367f28c656189644cc5031c01e4a7b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmODdiZWIxNDhiYzQ2NTVmMTdkM2E2YWM1OTkyNjRlM2EyMTNhZTE1N2RjMmRiMWMzZTYzNjBlMzQxODQ1ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0OTAxNzE3YmE0NGE3YTE2MDZkZjdlZDE4NmM1YzQ4ZjQyNzljOGEzODk1OTdjM2ZhMTMyOTVmYjdkZTUxZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMTk0ZmIwMjEzYWY3YjI0YWRjMDNmMzE0Mzk0ZmEyNTk3YTJmOTljNWZkYzU4NGI3MjNkNTM2ODY2NTFhYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjMDAyNGNkMmQzMjI3NTA0ZmM1OTU4YzE5OWNlOGJhMDRkZjcyN2M4ZjNlM2E1ZDcxMmUzNTVkOTFlY2ZmMjYifQ"
+          "resource": "repo://.github/workflows/infra.yml#L138-L160",
+          "version": "repo-lines-v1:sha256:1ffea8b5fbc5148b509cb81437ef2c0c6efc5f0e59e149dbbe7090a978611b52:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmODdiZWIxNDhiYzQ2NTVmMTdkM2E2YWM1OTkyNjRlM2EyMTNhZTE1N2RjMmRiMWMzZTYzNjBlMzQxODQ1ZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0OTAxNzE3YmE0NGE3YTE2MDZkZjdlZDE4NmM1YzQ4ZjQyNzljOGEzODk1OTdjM2ZhMTMyOTVmYjdkZTUxZGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMTk0ZmIwMjEzYWY3YjI0YWRjMDNmMzE0Mzk0ZmEyNTk3YTJmOTljNWZkYzU4NGI3MjNkNTM2ODY2NTFhYmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjMDAyNGNkMmQzMjI3NTA0ZmM1OTU4YzE5OWNlOGJhMDRkZjcyN2M4ZjNlM2E1ZDcxMmUzNTVkOTFlY2ZmMjYifQ"
         },
         {
-          "resource": "repo://.github/workflows/infra.yml#L184-L197",
-          "version": "repo-lines-v1:sha256:06ebdf2c3744152765268f8d05f79ed87f07e1dbaa0b9275fa51e0480de7437f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2NTM5MzZmM2QxNWYxMzlkYjdiM2FmZWZkYjdmZGMwODcwMDI4YjU5ZDI2Mjg4MjNjODE2MGZiY2UzY2M0M2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5YWI3ODJiYTU2YTM0YzI1Y2UxMjViNzhiYzhjN2Y0MmQxNGIwZDE1YmMxMjM3MWY1YTFhZTFlNDdmYjMwYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhMDQxMjRmZmVmNzRjMDllOTdiZTcwOTc3ZWMxNzNiNjBjYWNjNDdhNTI3ZjUxN2I4NzhjNzAyNzM4NTcyOGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmOGNkMDY2YWQyMzVkM2VkZGM4MDBiMjg3NzhmZmEyMDlkNzc4YzkzNjI2MThmM2ZhMGIzYjFjNTIxMDkzMWEifQ"
+          "resource": "repo://.github/workflows/infra.yml#L187-L198",
+          "version": "repo-lines-v1:sha256:317db2113fc898aa8f297f9110f626979a3f4c5b833672712bc332db72d3c16c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1YWFjMTk2MDA2ZjVjNmY2ZDVkZjY4YTM0YTVlYjI0NTBjMGFhNDM2MmZmOTBiODk0MjAwM2NiM2FkYTU0OTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5YWI3ODJiYTU2YTM0YzI1Y2UxMjViNzhiYzhjN2Y0MmQxNGIwZDE1YmMxMjM3MWY1YTFhZTFlNDdmYjMwYjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0YTYyNDAxMmE0YTNhMTVmNjRhMzAwMjc4MzRjOTJkNTdmOTRkN2NmMTgwZjBmN2YxYTY1OGJmMjc0MjAxOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmOGNkMDY2YWQyMzVkM2VkZGM4MDBiMjg3NzhmZmEyMDlkNzc4YzkzNjI2MThmM2ZhMGIzYjFjNTIxMDkzMWEifQ"
         },
         {
-          "resource": "repo://.github/workflows/infra.yml#L216-L238",
-          "version": "repo-lines-v1:sha256:10d7f52521512425f6a7004e42eea9f574b81ccb7e3a43bff1b53372db409b82:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YmM1NmNhZmUzZTg2ODU1Yzg3YmUzM2NlYmVmZmM0NTA3NDBhNWMwZDgyMzRlN2VmNjNiYTg1MDRjNGNkN2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNmMzA1OWJmOTQ4NjZhMmIwOTU2N2MwOThhY2M1MjI4NTgzNmY5YjIyMjMyNjU1YWYzZDJlMDU0NTljOGJjY2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUxZDEwMzAyYTljMzE3YTJhMmVhYTIzNjE0MTAwZGIwNTk3NjYxNzM1NDVlNDA4ZWZlNmY0ZDA0MjQzZjgwZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjNzcxYTg2YWVjNzJlMjFiNTY1NjNmNzU2MzIzYjRjZWQzZDI5NzZiNzlmMDQxZDViMTBhNmJmN2U3ODYzNWUifQ"
+          "resource": "repo://.github/workflows/infra.yml#L217-L241",
+          "version": "repo-lines-v1:sha256:715d534fc8965e72487f6c6c9638df84fcf425c6d046039e851e9b2d6b34450b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YmM1NmNhZmUzZTg2ODU1Yzg3YmUzM2NlYmVmZmM0NTA3NDBhNWMwZDgyMzRlN2VmNjNiYTg1MDRjNGNkN2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkOWUwYmI4MTZkZjFhYjYwYWJiMzIyMTg2YmQ1MjBmZDY0MThiMTkyYThiODY1ZjA4ZDliMTg1OGM2NmFkMTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUxZDEwMzAyYTljMzE3YTJhMmVhYTIzNjE0MTAwZGIwNTk3NjYxNzM1NDVlNDA4ZWZlNmY0ZDA0MjQzZjgwZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjNzcxYTg2YWVjNzJlMjFiNTY1NjNmNzU2MzIzYjRjZWQzZDI5NzZiNzlmMDQxZDViMTBhNmJmN2U3ODYzNWUifQ"
         },
         {
           "resource": "repo://.github/workflows/infra.yml#L6-L15",
@@ -75,14 +75,52 @@
       "statement": "Hooks-тест проверяет исключение живой SQLite/WAL/SHM из restic backup и восстановление fixture с проверкой целостности и данных.",
       "evidence": [
         {
-          "resource": "repo://ansible/tests/test_hooks.py#L244-L302",
+          "resource": "repo://ansible/tests/test_hooks.py#L266-L324",
           "version": "repo-lines-v1:sha256:3198f2c92490f86e2d60a4bceadcb3bda80caca77ec04adbdb53221537012ed4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4NTM5NGQ1NzcxMTZhOTAzNWYzN2RiN2M5OGQyZTkxOTM5OTJmOWY1MDU3OTM2ZjkwZDYxMWMzM2I0OGIyNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2NDQ4OTZkOWU1OTJmNzQ4MThkMzEwZWE1NjI4OGUzOGU2N2MyYWMxYjNmMDFkNTM4NmJlODdhZGQ0MjFiMWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1N2IyZjNmNzI1M2U1ZjAzYmNkOGRmNDkxYTIyOWFiZTMxYTBkYmNlYWNmMDMwZTZkZTMwZjFhMzc0NTEwNTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4M2VhMzc0ZmQ5YjcxMmUyYTAzMDJiMjZjNjNlNDNjNmRmMThjOGVkN2ZlMTk1OGVmYzkxN2I4MTkzYzY1ODYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_afc2c07ecf5842a59c02b282f154c4e2",
+      "statement": "Тест уведомлений о выпусках проверяет успешную валидную конфигурацию, отказ при нулевой или слишком большой теме и пустом либо отсутствующем GITHUB_API_TOKEN, а также отсутствие тестового токена в выводе отказа.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/tests/test_hooks.py#L73-L88",
+          "version": "repo-lines-v1:sha256:804a053ec4efd72ccbdbbde1cf3cdcd0a64dd334c1badcbb2dc72ce883ceb702:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwNDcyZmNkMjdmN2FiYjAzOGRhZjBiNjdlZWYyOWQ4OGIyZGY0MzJlNTRhMjc4YWIyYjkyODUyMTc0MTRiMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzNTVmNjAzM2IzNjU3MWQ5N2Y0MzVlYmUwNzViNDE5NDUxMmM0NTI4ZTE5ODUyYTFiNDdjMmQ4MDFjMzdmNjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJiZjQzODliNzlkZDQ1ZmQ2OWNjZGJlZDIwOGRiMDcyZTczMTg3OGQyZjQ0MDIwNzM2ZGY3MTE1YTgzN2FmMjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwYmZiZGQ4MTU3NzUxZjk0MjE3YjJkMTMwZDdhNjY4OWI5ZThkNGY3YTlhNzBmZDg3MjM0N2Y2N2FjZTNjMjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_42945491d6374fe48c6cc167c0d1721d",
+      "statement": "Тест отправки Apidog проверяет отказ при отсутствии APIDOG_MR_REVIEWERS и других обязательных параметров и отсутствие тестовых секретов в выводе.",
+      "evidence": [
+        {
+          "resource": "repo://ansible/tests/test_hooks.py#L109-L146",
+          "version": "repo-lines-v1:sha256:49c42743059c5251ac52ca9c02b9a179c68ad135bff80009655292017d78b8e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3OWY1MTRkMGNlZjFkYTUxZWE5MDM2OTE2NjFmMzQ4MGE2Y2I0YmFmNGZhMWE3MjdmNDY0YjIxNTI5OTQ0NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiZWU3ODUzMjZmYTJjOGVlMzgwNThmZGYwNmQ5MDVmOGZiNjVlZWQwYmZiYmNkOTY2MzExN2E5ZDc5ZmIyMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNjNTA1NmZhZGVlZDBiNjFkZTQ0ODk0ZTMwNWQwOGQwOWViZWFiOGIwZTdiM2MwOWU2M2E2ZjY4NDM5YTAzYWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhkOWU4N2ZmNDFiNzM3MTg4NzE3MWZmMGE4MjNkYmJjNDc4ZDkyZjM3OTdiYzJkZTI2ODFlYjkwYzU3MjIyOWYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_3100ab0906e74b759b4ead281ec838ba",
+      "statement": "CI сохраняет SSH_KNOWN_HOSTS во временный known_hosts, использует его в INFRA_SSH_ARGS со строгой проверкой ключей и дополнительно передаёт тот же путь через jump_known_hosts в site.yml для preview/apply и verify.yml для apply.",
+      "evidence": [
+        {
+          "resource": "repo://.github/workflows/infra.yml#L119-L133",
+          "version": "repo-lines-v1:sha256:0351c0b6de950d845093a47b44f7e8e488b2235fe1f1066e0098a38922a67e3a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViYWVmZmZjY2UxYWJiZDBlZmQxMDk4NDhmNThlYTJmMzU5NmUyYzI3MjUwYzlhYjE5ZWYyODhiMmViMzgwODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlYjMyYTM1ZmJkNDY4ZDRmNWZkYzU2NzQyZDk4NmIyNWZiY2NlZjNkM2IyMTIzNjEyN2RlYWQwZTA4ODIwZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwYWU5ODE5MmMwZmU0YmRjZGI5ZTZjMTI1MTQwOTAxYWVjNDI1Y2MyNmRmNmFjYTRmMmM5ZmVmNzQwNzk2ZjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNTkwYWY0ZWJlZGJhNTE1MjczYWEyYTk2ZWEyN2JkYmYyNWM3NjMzMTI2NWE3NDk3NGZhYTI2NmQ4YjlmMmIifQ"
+        },
+        {
+          "resource": "repo://.github/workflows/infra.yml#L145-L152",
+          "version": "repo-lines-v1:sha256:4fa0ea7e6b1648dad4a444d410a928bfb43d475f37e5ee9cffef3987c7a083b4:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDBlMGJkYmUyYTM2Y2NkMzgxNzE0MDY1ZTNkZTlhNzMzMWJjZTM4OTYzZjZkNTE4M2ZlMDBmZGJlMzYzYWNiNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTJhODMzYjVlMGM4MzJkOTVmNWUzODg4MDg3NmZmZDQ1NjQ3ZWYyNjFlOGQ1NTRjYzdkMWRiZTZhNGNmMGUwYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGI3ZDY3YTBkYjgxNDAyNDAyYTc3NDc0Y2U3OTEwZWE1ODA0NjNmMDM3NjgwYTIzYzQxNTk2NDlhYmRlZWJlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzE1YTE1OGE1YzIyMWYyZTRkNDEyNDkwNWM1MGZkYWMxYjAxMTc3YTJlNDAyZjE4MDgxNzVkZDM4NzQ0YjRmMyJ9"
+        },
+        {
+          "resource": "repo://.github/workflows/infra.yml#L224-L241",
+          "version": "repo-lines-v1:sha256:eb1bd9ca5da69599b29f391bbec12da502d13237b0ffee3be2ed3513b6ab00f3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlOGNmMmJmZGE1M2U5ZDNiNzJmODIyOGM5OTI1MTNmMmI3NTc4M2NjMjYzNjkxZmM2MDlkOGQ2M2IyOTJhMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkOWUwYmI4MTZkZjFhYjYwYWJiMzIyMTg2YmQ1MjBmZDY0MThiMTkyYThiODY1ZjA4ZDliMTg1OGM2NmFkMTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4ZGEyZmY5MDY5ZmRmNGNkNzAzODVjNmQ2NDFhZTAyMWZkMDNhOWFiOGYwMDY1YWU3YTQwOWUxN2ZiODE3MWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjNzcxYTg2YWVjNzJlMjFiNTY1NjNmNzU2MzIzYjRjZWQzZDI5NzZiNzlmMDQxZDViMTBhNmJmN2U3ODYzNWUifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-10-31T14:36:53.458Z"
+    "at": "2026-11-02T22:05:37.662Z"
   }
 }
