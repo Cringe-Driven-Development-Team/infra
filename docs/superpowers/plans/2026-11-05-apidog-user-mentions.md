@@ -1,6 +1,6 @@
 # Имена и упоминания Apidog — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Способ выбирает пользователь до реализации. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Способ выбирает пользователь до реализации. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Восстановить имя и Telegram-упоминание Даши, Дениса и Ярослава в новых алертах Apidog.
 
@@ -28,16 +28,16 @@
 
 ## Task 1: Дополнить карту и проверить форматирование
 
-**Files:** изменить `ansible/inventory/group_vars/all/vault.yml`; читать `RUNBOOK.md`, `ansible/roles/hooks/defaults/main.yml` и соседний `.github/services/webhook-alerts/{src/config.ts,src/apidog.ts,src/apidog-merge.ts,tests/apidog.test.ts,tests/apidog-merge.test.ts,tests/config.test.ts}`. Код и фикстуры сервиса не менять.
+**Files:** изменить `ansible/inventory/group_vars/all/vault.yml`; читать `RUNBOOK.md`, `ansible/roles/hooks/defaults/main.yml` и соседний `.github/services/webhook-alerts/{src/config.ts,src/apidog.ts,src/apidog-merge.ts,tests/apidog.test.ts,tests/apidog-merge.test.ts,tests/main.test.ts,tests/http.test.ts}`. Код и фикстуры сервиса не менять.
 
 **Interfaces:** `loadConfig(env: Record<string, string | undefined>): Config`; `formatApidogMr(delivery: Delivery, config: FormatConfig & ApidogMergeConfig): OutgoingMessage[]`. Результат задачи — зашифрованный vault с прежними настройками и тремя новыми записями `Record<string, { name: string; telegramId: string }>`.
 
-- [ ] Сверить Telegram ID по `TELEGRAM_USER_MAP` для `GrayMouse9`, `iRedTea`, `YarikMix` и сообщениям/профилям Telegram. Подтверждённые Apidog ID взять из разговора; Дениса подтвердил пользователь. Имена: «Дарья», «Денис», «Ярослав Михалев». Не печатать ID.
-- [ ] Подготовить временную локальную проверку конфигурации вне Git, передавая расшифрованные данные через память/pipe. До изменения подтвердить отсутствие ожидаемых записей; итоговые диагностические сообщения содержат только имя проверки и PASS/FAIL. Не применять assert-вывод, который раскрывает фактические/ожидаемые значения.
-- [ ] Дополнить карту и повторно зашифровать vault действующим ключом. Сравнить структуры в памяти: `after_without_map == before_without_map`, прежние пары карты сохранены, разница ключей равна трём подтверждённым ID. Перечитать результат через `ansible-vault` без вывода содержимого.
-- [ ] Передать объединённые defaults и vault env в существующий `loadConfig`, затем проверить каждый новый ID через `formatApidogMr` как автора `MR_OPENED`, `MR_CLOSED`, `MR_MERGED` и как `closedById` для двух последних событий. Проверить наличие ожидаемой ссылки `tg://user?id=…`, отображаемого имени и отсутствие подстановки `Apidog user …` для проверяемой роли. При совпадении автора с ревьювером или закрывшим MR ссылка на него встречается один раз. Повторная проверка из предыдущего шага должна дать PASS.
-- [ ] В проверенном checkout `.github/services/webhook-alerts` выполнить `bun test tests/config.test.ts tests/apidog.test.ts tests/apidog-merge.test.ts`: exit 0, все тесты проходят. Временную проверку убрать; результаты без реальных значений сохранить для отчёта.
-- [ ] Выполнить `git diff --check`, проверить, что единственное изменение конфигурации — зашифрованный vault, и закоммитить его как `fix: восстановить упоминания участников Apidog`.
+- [x] Сверить Telegram ID по `TELEGRAM_USER_MAP` для `GrayMouse9`, `iRedTea`, `YarikMix` и сообщениям/профилям Telegram. Подтверждённые Apidog ID взять из разговора; Дениса подтвердил пользователь. Имена: «Дарья», «Денис», «Ярослав Михалев». Не печатать ID.
+- [x] Подготовить временную локальную проверку конфигурации вне Git, передавая расшифрованные данные через память/pipe. До изменения подтвердить отсутствие ожидаемых записей; итоговые диагностические сообщения содержат только имя проверки и PASS/FAIL. Не применять assert-вывод, который раскрывает фактические/ожидаемые значения.
+- [x] Дополнить карту и повторно зашифровать vault действующим ключом. Сравнить структуры в памяти: `after_without_map == before_without_map`, прежние пары карты сохранены, разница ключей равна трём подтверждённым ID. Перечитать результат через `ansible-vault` без вывода содержимого.
+- [x] Передать объединённые defaults и vault env в существующий `loadConfig`, затем проверить каждый новый ID через `formatApidogMr` как автора `MR_OPENED`, `MR_CLOSED`, `MR_MERGED` и как `closedById` для двух последних событий. Проверить наличие ожидаемой ссылки `tg://user?id=…`, отображаемого имени и отсутствие подстановки `Apidog user …` для проверяемой роли. При совпадении автора с ревьювером или закрывшим MR ссылка на него встречается один раз. Повторная проверка из предыдущего шага должна дать PASS.
+- [x] В проверенном checkout `.github/services/webhook-alerts` выполнить `bun test tests/main.test.ts tests/http.test.ts tests/apidog.test.ts tests/apidog-merge.test.ts`: exit 0, все тесты проходят. Временную проверку убрать; результаты без реальных значений сохранить для отчёта.
+- [x] Выполнить `git diff --check`, проверить, что единственное изменение конфигурации — зашифрованный vault, и закоммитить его как `fix: восстановить упоминания участников Apidog`.
 
 ## Task 2: Применить конфигурацию и проверить работающий сервис
 
