@@ -26,3 +26,4 @@ __pycache__/
 *.bak
 
 Claude outputs/
+docs/superpowers/

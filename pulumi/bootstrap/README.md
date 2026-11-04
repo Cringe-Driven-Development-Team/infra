@@ -3,8 +3,8 @@
 Отдельный стек (`infra-bootstrap`, стек `main`) создаёт долгоживущий проект Selectel `infra-shared`:
 бакет `cdd-infra-state` со стейтами всех Pulumi-стеков и DNS-зону домена `cellestial.ru.`. Прод
 (`pulumi-cellestial`) — отдельный проект, его создаёт и удаляет основной стек. Зачем отдельно — бакет
-стейта нельзя создать в стеке, чей стейт в нём лежит (задача #5, спека
-`docs/superpowers/specs/2026-09-26-pulumi-bootstrap-design.md`).
+стейта нельзя создать в стеке, чей стейт в нём лежит (задача #5,
+[историческая спека](https://github.com/Cringe-Driven-Development-Team/infra/blob/318ea27/docs/superpowers/specs/2026-09-26-pulumi-bootstrap-design.md)).
 
 | Префикс в бакете | Стейт |
 |---|---|
