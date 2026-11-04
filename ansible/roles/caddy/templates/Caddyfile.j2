@@ -2,15 +2,18 @@
 # для домена из первой строки (A-запись должна указывать на этот сервер).
 {# Политика под то, что грузит клиент: чанки JS и CSS — с CDN бакета релизов, картинки и шрифты —
     со статики, аватарки — со своего бакета, API — свой домен. data: в img-src — иконки: они заданы
-    в CSS как mask-image с SVG в data:. Инлайновых скриптов и style-атрибутов в разметке нет. -#}
+    в CSS как mask-image с SVG в data:. 'self' — файлы PWA, которые отдаёт BFF: service worker, манифест,
+    его иконки и стили офлайн-страницы. Инлайновых скриптов и style-атрибутов в разметке нет. -#}
 {% set caddy_csp = [
     "default-src 'none'",
     "script-src https://" ~ frontend_cdn_domain,
-    "style-src https://" ~ frontend_cdn_domain,
-    "img-src https://" ~ frontend_cdn_domain ~ " https://" ~ frontend_static_domain
+    "style-src 'self' https://" ~ frontend_cdn_domain,
+    "img-src 'self' https://" ~ frontend_cdn_domain ~ " https://" ~ frontend_static_domain
         ~ " https://" ~ avatars_public_domain ~ " data:",
     "font-src https://" ~ frontend_static_domain,
     "connect-src 'self'",
+    "manifest-src 'self'",
+    "worker-src 'self'",
     "base-uri 'none'",
     "form-action 'self'",
     "frame-ancestors 'none'",

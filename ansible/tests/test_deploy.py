@@ -735,10 +735,11 @@ class DeploymentChecks(unittest.TestCase):
 
     def test_caddy_routes_to_bff_once_it_is_deployed(self):
         csp = ("default-src 'none'; script-src https://cdn.example.org; "
-               "style-src https://cdn.example.org; "
-               "img-src https://cdn.example.org https://static.example.org "
+               "style-src 'self' https://cdn.example.org; "
+               "img-src 'self' https://cdn.example.org https://static.example.org "
                "https://avatars.example.org data:; "
-               "font-src https://static.example.org; connect-src 'self'; base-uri 'none'; "
+               "font-src https://static.example.org; connect-src 'self'; manifest-src 'self'; "
+               "worker-src 'self'; base-uri 'none'; "
                "form-action 'self'; frame-ancestors 'none'")
         # caddy_bff_enabled — из роли app, caddy_bff_deployed — из .env в роли caddy
         for values, deployed in [({"caddy_bff_deployed": False}, False),

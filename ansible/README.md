@@ -250,12 +250,14 @@ BFF сам разбирает остальное: `/api/trpc` и `/api/trpc/*` �
 - До первой выкатки BFF (в `.env` на VPS нет `BFF_IMAGE_REF`) Caddy на всех путях, кроме `/health`,
   отвечает `503` с телом `BFF is not deployed`.
 - Все ответы Caddy несут `X-Content-Type-Options: nosniff`, ответы BFF — ещё и
-  `Content-Security-Policy`: скрипты и стили — только с `frontend_cdn_domain`, картинки — с него,
-  `frontend_static_domain`, `avatars_public_domain` и из `data:` (иконки-маски), шрифты — с
-  `frontend_static_domain`, запросы — на свой домен. Пока `caddy_csp_report_only: true`
-  (`inventory/group_vars/all/vars.yml`), заголовок называется `Content-Security-Policy-Report-Only`: браузер
-  пишет нарушения в консоль и ничего не блокирует. Новый источник у клиента (воркер, инлайновый
-  стиль, чужой домен) — правка политики в `Caddyfile.j2`.
+  `Content-Security-Policy`, и браузер её применяет: скрипты — только с `frontend_cdn_domain`, стили — с него
+  и со своего домена, картинки — со своего домена, с него, `frontend_static_domain`,
+  `avatars_public_domain` и из `data:` (иконки-маски), шрифты — с `frontend_static_domain`, запросы,
+  манифест и service worker — со своего домена. Политика задаётся в `Caddyfile.j2`, режим — в
+  `caddy_csp_report_only` (`inventory/group_vars/all/vars.yml`); в BFF заголовка нет. Новый источник
+  ресурсов у клиента (чужой домен, воркер) — сначала правка политики, иначе браузер его заблокирует.
+  При правке проверьте заголовок `curl -sI https://<app_domain>/login` и пройдите экраны в браузере:
+  нарушения видны в консоли и на событии `securitypolicyviolation`.
 - Чанки браузер грузит с CDN (`<script type="module" crossorigin>`, запрос в режиме CORS). CORS
   настраивать не нужно: CDN-ресурс Selectel на запрос с `Origin` сам отвечает
   `Access-Control-Allow-Origin: *`. Проверка:
