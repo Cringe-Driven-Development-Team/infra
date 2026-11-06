@@ -738,7 +738,7 @@ class DeploymentChecks(unittest.TestCase):
                "style-src 'self' https://cdn.example.org; "
                "img-src 'self' https://cdn.example.org https://static.example.org "
                "https://avatars.example.org data:; "
-               "font-src https://static.example.org; connect-src 'self'; manifest-src 'self'; "
+               "font-src 'self' https://static.example.org; connect-src 'self'; manifest-src 'self'; "
                "worker-src 'self'; base-uri 'none'; "
                "form-action 'self'; frame-ancestors 'none'")
         # caddy_bff_enabled — из роли app, caddy_bff_deployed — из .env в роли caddy
