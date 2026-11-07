@@ -850,115 +850,97 @@ outbox и тот же message ID; дубля нет. После проверки
 snapshot `/data/snapshots/queue.sqlite`. Реальные уведомления начала и результата
 CD/rollback этой приёмкой не запускались; их локальные сценарии проверены тестами.
 
-## Восстановление API после перехода на PostgreSQL (infra#112)
+## Восстановление API: полный сброс БД приложения (infra#112)
+
+Решение владельца (backend#79, ревью backend#80): старые тестовые блокноты из S3 не переносятся.
+БД приложения на VPS2 сбрасывается **один раз** полностью: пользователи, блокноты, настройки 2FA,
+runtime-сессии и прочие данные приложения не сохраняются, после восстановления регистрируемся
+заново. S3-бакеты и объекты не удаляются. Сброс не входит в CD и не выполняется при старте API.
+Что и почему сбрасывается —
+[backend/docs/database-reset.md](https://github.com/Cringe-Driven-Development-Team/backend/blob/main/docs/database-reset.md).
 
 Production-операции выполняет оператор с авторизованным SSH-доступом к VPS2 и паролем Vault.
-Локальные тесты не подтверждают состояние production. Не менять SSH host key самостоятельно.
-Каноническая процедура и команды переноса —
-[backend/docs/notebook-migration.md](https://github.com/Cringe-Driven-Development-Team/backend/blob/main/docs/notebook-migration.md)
-из проверенной реализации backend#79; для ещё не опубликованной версии читать документ в том же
-checkout, из которого собирается инструмент. Архивные S3-объекты и бакет сохраняются.
+Не менять SSH host key самостоятельно. Логи и `.env` содержат секреты: в отчёт переносить только
+безопасные коды и выводы, не публиковать `.env`, полный `docker inspect` или `docker compose config`.
 
 ### Диагностика и постоянный ключ
 
-На VPS2 от root; команды ниже выполняются из `/opt/cellestial`:
+На VPS2 от root, из `/opt/cellestial`:
 
 ```bash
 cd /opt/cellestial
 docker compose ps -a
-docker inspect --format '{{.Config.Image}} {{.Image}} {{.State.Status}}' cellestial-api-1
+docker inspect --format '{{.Config.Image}} {{.State.Status}}' cellestial-api-1
 docker compose logs --tail=100 api
 ```
 
-Логи читать в защищённом терминале, в отчёт переносить только безопасные коды и выводы.
-`unhealthy` не устанавливает причину. В текущем backend `startup_config` означает отказ проверки
-настроек (в том числе TOTP), `totp_init` — отказ инициализации TOTP, `notebook_migration` — отказ
-проверки готовности переноса, включая ошибку SQL. Уточнить версию контейнера: после неудачного CD
-восстанавливаются `.env` и `compose.yml`, но контейнеры не откатываются. Не публиковать `.env`,
-полный `docker inspect` или `docker compose config`: они содержат секреты.
+`startup_config` — отказ проверки настроек (в том числе отсутствующий `TOTP_ENCRYPTION_KEY`),
+`totp_init` — отказ инициализации TOTP. После неудачного CD восстанавливаются `.env` и `compose.yml`,
+но контейнеры не откатываются.
 
-Проверить наличие прежнего TOTP-ключа в защищённом окружении контейнера, конфигурации и Vault;
-не выводить значения. Если ключ уже использовался, сохранить именно его. Если он утрачен,
-остановиться и восстановить его из защищённой копии; новый ключ не расшифрует старые TOTP-секреты.
-Только при первой настройке создать отдельный ключ `openssl rand -base64 32` один раз и записать
-`vault_totp_encryption_key` через `ansible-vault edit inventory/group_vars/all/vault.yml` на
-управляющей машине. Не использовать JWT/session/runtime-ключ. Обновлённый зашифрованный Vault
-сохранить вместе с резервной копией БД и обеспечить доступ к паролю вне этого архива.
+`vault_totp_encryption_key` лежит в зашифрованном `vault.yml` (добавлен в PR infra#113 впервые:
+production с 2FA не стартовал, сохранённых TOTP-секретов не было). Это постоянный ключ: не
+перевыпускать, хранить вместе с резервной копией БД. Сброс БД ключ не меняет.
 
-С управляющей машины проверить `deploy-backend.yml --tags validation` с тем же inventory,
-проверенными SSH-настройками, Vault и `backend_image_tag=sha-<commit>`, которые использует CD.
-Отсутствующий или неверный ключ должен завершить validation до изменения конфигурации сервера.
-
-### Остановка записей, backup и перенос
-
-Сначала определить текущую схему через `psql` (`\d notebooks`, `\d notebook_legacy_sources`):
-отсутствие таблицы или колонки не считать нулевым количеством неперенесённых данных. Если схема
-ещё старая, требуется запуск инструмента с SQL-миграциями. Если схема новая, выполнить оба
-контрольных SQL-запроса ниже. При незавершённом переносе остановить API и все иные источники
-изменения блокнотов, включая runtime-запись результатов; удостовериться, что нет другого API
-или воркера, пишущего в ту же БД. До окончания сверки исключить параллельные выкладки.
+### Остановка, облачные ресурсы и backup
 
 ```bash
 set -eu
 cd /opt/cellestial
 docker compose stop api
-install -d -m 0700 backups
-umask 077
-notebook_backup="backups/before-notebook-migration-$(date -u +%Y%m%dT%H%M%SZ).dump"
-docker compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$notebook_backup"
-docker compose exec -T postgres pg_restore --list < "$notebook_backup" > /dev/null
 ```
 
-До изменения production-схемы проверить полное восстановление в отдельную БД. Имя ниже должно
-быть свободно: ошибка `createdb` о существующей БД требует остановки, а не её удаления.
-
-```bash
-docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" -T template0 infra112_restore_check'
-docker compose exec -T postgres sh -c 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d infra112_restore_check' < "$notebook_backup"
-docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d infra112_restore_check -c "SELECT count(*) AS notebooks FROM notebooks"'
-docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) AS notebooks FROM notebooks"'
-# Только после успешного восстановления и совпадения счётчиков:
-docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" infra112_restore_check'
-```
-
-Сохранить backup, зашифрованный Vault с прежним TOTP-ключом и доступную копию исходных S3-объектов.
-По инструкции backend запустить `notebook-migrate`, затем `notebook-migrate -verify`.
-Передать исходный `notebooks_bucket` из inventory только как `MIGRATION_S3_NOTEBOOKS_BUCKET`;
-пароли/URL подключения не передавать аргументами. Пока образ не содержит утилиту, собрать
-standalone-бинарник из проверенной реализации backend#79 под архитектуру VPS2, сверить SHA-256
-после передачи и смонтировать read-only. Обычный API notebook bucket не получает.
-
-После успешного `-verify`, до возобновления записей:
+Убедиться, что другого API или воркера, пишущего в ту же БД, нет. До удаления данных найти
+облачные ресурсы runtime-сессий — после сброса таблица пустая, и reconcile их уже не удалит:
 
 ```bash
 docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
-SELECT count(*) AS pending_notebooks FROM notebooks WHERE revision IS NULL;
-SELECT count(*) AS unverified_sources FROM notebook_legacy_sources WHERE verified_at IS NULL;
+SELECT session_id, state, server_id, volume_id, port_id FROM runtime_environments
+WHERE server_id IS NOT NULL OR volume_id IS NOT NULL OR port_id IS NOT NULL;
 SQL
 ```
 
-Оба счётчика должны быть нулевыми. При ненулевом коде команды, SQL-ошибке, несовпадении сверки
-или ненулевом счётчике оставить API и записи остановленными, исправить причину и повторить
-перенос/проверку. Не удалять блокноты или S3-объекты. Старый API после изменения схемы не запускать;
-миграции Down не выполнять. Если перенос уже завершён, подтвердить счётчики и имеющиеся результаты
-сверки; повторную сверку с архивом после новых пользовательских правок не считать проверкой
-текущего содержимого — правила `-verify` описаны в backend.
+Удалить найденные ресурсы и проверить по меткам `cellestial_runtime=1`,
+`cellestial_env=production`, что серверов, томов и портов не осталось — порядок и команды
+`openstack` в разделе «Runtime-VPS сессий» и в
+[backend/docs/runtime-provisioning.md, «Ручная очистка»](https://github.com/Cringe-Driven-Development-Team/backend/blob/main/docs/runtime-provisioning.md#ручная-очистка).
 
-### Обычный CD и отчёт приёмки
+Резервная копия перед сбросом:
 
-После готовности infra#112 и backend#79 выполнить обычный CD подходящего SHA-тега с постоянным
-TOTP-ключом в Vault. Зафиксировать URL запуска и дождаться успешного healthcheck. Проверить
-`docker compose ps`, `/health` по внутреннему маршруту API, существующий блокнот с ячейками и
-результатами, превью в списке и публичную доступность аватара. Через защищённую проверку сравнить
-ключ Vault с ключом контейнера без вывода значений; после повторной выкладки подтвердить равенство.
+```bash
+install -d -m 0700 backups
+umask 077
+reset_backup="backups/before-reset-$(date -u +%Y%m%dT%H%M%SZ).dump"
+docker compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$reset_backup"
+docker compose exec -T postgres pg_restore --list < "$reset_backup" > /dev/null
+```
 
-В отчёте по задаче заполнить фактическими результатами (без credentials и содержимого блокнотов):
+### Сброс
 
-- Дата, оператор, image tag/digest, установленная причина отказа и безопасный код из логов.
-- Backup: защищённое место хранения, успешное пробное восстановление и совпавшие счётчики.
-- Версия/контрольная сумма инструмента, migrated/verified/skipped/failed, код завершения `-verify`.
-- `pending_notebooks=0`, `unverified_sources=0`, исходные S3-объекты сохранены.
-- URL успешного CD, API healthy; блокнот/результаты, превью и аватар проверены.
-- Ключ сохранён в Vault и backup, совпадает в контейнере и не изменился после повторной выкладки.
+```bash
+# Пустая БД с прежним владельцем; схему создаст API миграциями goose при старте
+docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
+# Сессии, версии сессий и счётчики попыток входа: старые токены и cookie перестают действовать
+# Пароль redis-cli берёт из REDISCLI_AUTH контейнера; API использует базу REDIS_DB=0
+docker compose exec -T redis redis-cli -n 0 FLUSHDB
+```
 
-До фактической общей приёмки не объявлять production восстановленным и backend#79 принятым.
+API остаётся остановленным до CD. Миграции Down не выполнять, старый API не запускать.
+
+### CD и отчёт приёмки
+
+После мержа infra#113 и backend#80 запустить обычный CD backend с SHA-тегом из `main`, затем
+повторно CD frontend (без живого Go он останавливается на `The Go API on VPS2 is healthy`).
+Дождаться успешного healthcheck и проверить:
+
+- `docker compose ps`, `/health` по внутреннему маршруту API, в логах нет `startup_config`,
+  `totp_init`, `database_migrate`;
+- новая регистрация и вход; старый логин не работает;
+- создание, редактирование и повторное открытие новых блокнотов;
+- загрузка нового аватара и его отображение;
+- облачных ресурсов прежних runtime-сессий нет.
+
+В отчёте по задаче: дата, оператор, image tag, безопасный код прежнего отказа, место хранения
+backup, удалённые облачные ресурсы, URL успешных CD backend и frontend, результаты проверок выше.
+Сохранность прежних пользователей и блокнотов не проверяется: они удалены намеренно.
+

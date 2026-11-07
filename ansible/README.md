@@ -105,9 +105,9 @@ Go — как `BFF_API_KEY`; 32+ символов `[A-Za-z0-9_-]` (`openssl rand
 `.env` и явный `services.api.environment.TOTP_ENCRYPTION_KEY`; validation отклоняет отсутствующий
 или некорректный ключ до записи файлов сервера, не раскрывая его в выводе.
 
-`notebooks_bucket` сохраняется в inventory как имя исходного бакета для offline-переноса;
-обычная выкатка API его не требует. Процедура восстановления и отчёт приёмки —
-[RUNBOOK, infra#112](../RUNBOOK.md#восстановление-api-после-перехода-на-postgresql-infra112).
+`notebooks_bucket` сохраняется в inventory как имя архивного бакета старых блокнотов;
+API его не использует, блокноты не переносятся (backend#79). Однократный сброс БД и отчёт приёмки —
+[RUNBOOK, infra#112](../RUNBOOK.md#восстановление-api-полный-сброс-бд-приложения-infra112).
 
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
@@ -520,8 +520,8 @@ S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_S
 `AWS_ENDPOINT_URL_S3`, `S3_AVATARS_BUCKET`, `S3_AVATARS_PUBLIC_URL`.
 Источники — `group_vars/all/vars.yml` и существующий Vault. API использует S3 для аватаров;
 блокноты и результаты хранятся в PostgreSQL. `S3_NOTEBOOKS_BUCKET` в окружении API отсутствует.
-Архивный бакет нужен только offline-инструменту через `MIGRATION_S3_NOTEBOOKS_BUCKET`;
-исходные S3-объекты и общий AWS-доступ сохраняются.
+Блокноты из архивного бакета не переносятся (backend#79): объекты и общий AWS-доступ сохраняются,
+API бакет не использует.
 
 Redis (infra#46) — refresh-сессии бэка. API получает `REDIS_HOST=redis`, `REDIS_PORT=6379`,
 `REDIS_PASSWORD` (Vault: `vault_redis_password`, 16+ символов `[A-Za-z0-9_-]` — например

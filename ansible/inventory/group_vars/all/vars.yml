@@ -62,7 +62,7 @@ notebooks_s3_secret_key: "{{ vault_notebooks_s3_secret_key }}"
 s3_endpoint: https://s3.ru-7.storage.selcloud.ru   # выход s3Endpoint
 s3_region: ru-7                                    # infra:s3Pool, он же регион подписи
 s3_force_path_style: true                          # S3-клиент бэка — path-style
-notebooks_bucket: cellestial-notebooks-0           # notebooksBucket: только offline-перенос
+notebooks_bucket: cellestial-notebooks-0           # notebooksBucket: архив, API его не использует
 avatars_bucket: cellestial-avatars-0               # выход avatarsBucket
 # Публичный URL аватарки — https://<avatars_public_domain>/<ключ>: свой домен бакета (выход
 # avatarsCustomDomain), при пересоздании стека не меняется. Сертификат домена выпущен в панели;
