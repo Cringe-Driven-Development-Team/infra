@@ -403,6 +403,158 @@ ansible-playbook auxiliary.yml
 в defaults роли, затем тот же playbook. Очередь не удалять. Логи:
 `ssh deploy@hooks.cellestial.ru 'cd /opt/hooks && sudo docker compose logs -n 100 hooks'`.
 
+### GitHubBot на auxiliary
+
+Сервис, env и права: [Ansible README](ansible/README.md#githubbot-на-auxiliary-infra111).
+Операции ниже выполняет владелец выкладки после подготовки реальных inputs.
+Текущее выполнение фиксировать в [журнале](docs/deployments/2026-11-07-githubbot.md).
+
+**Подготовка конфигурации.** Получить `chatId` из существующей org variable
+`TELEGRAM_CHAT_ID` и сверить группу через Telegram metadata. Топики читать через
+Telegram `list_topics`: брать `id` Backend/Frontend/UX, не IDs сообщений в других
+топиках. Releases не добавлять в фиксированную маршрутизацию. Для
+`notificationBotIds` получить ID автора настоящей карточки GitHub Monitoring
+или участника-бота группы и подтвердить username/`is_bot` через профиль бота.
+Имя само по себе не является проверкой доверия.
+
+Взять GitHub login → Telegram ID из org `TELEGRAM_USER_MAP`, затем сопоставить
+каждый ID с текущим username через список участников/профиль Telegram. Не
+угадывать username по GitHub login; непроверенных пользователей не добавлять.
+В owner-approved JSON вне Git собрать три repo с префиксами из Ansible README,
+три topic mapping и проверенных пользователей. JSON и реальные maps не публиковать.
+
+В BotFather завести **отдельного GitHubBot**, добавить в нужную группу,
+`/setprivacy` → Disable; владелец подтверждает `getMe.can_read_all_group_messages`
+и членство. Токен GitHub Monitoring занят уведомлениями и здесь не используется.
+Получить сервисный PAT с Issues read/write для allowlist и organization Projects
+read/write; проверить нужные approval/SSO. Существующий Actions secret
+`ADD_TO_PROJECT_PAT` нельзя прочитать обратно из GitHub, его имя не даёт credentials.
+Токены передавать только через согласованный закрытый канал, не argv/URL/логи.
+
+В `ansible/` выполнить `ansible-vault edit inventory/group_vars/all/vault.yml`:
+добавить словарь `vault_githubbot_env` с тремя **строковыми** значениями
+`TELEGRAM_BOT_TOKEN`, `GITHUB_TOKEN`, `GITHUBBOT_CONFIG_JSON` (JSON в одну строку).
+Имена сверять парсером YAML без вывода значений. Не использовать `decrypt`.
+
+**Образ и локальный config gate.** Дождаться зелёных service checks и
+`githubbot-image.yml` на полный исходный SHA. В доверенном успешном запуске
+штатного publisher репозитория `.github` сверить source SHA из summary с SHA
+запуска и тегом `ghcr.io/cringe-driven-development-team/githubbot:sha-<полный SHA>`.
+Проверить, что registry manifest digest этого тега и `Digest` анонимного pull
+закреплённого образа совпадают с digest из того же publisher summary.
+Проверить public pull с пустым Docker config и только OCI source
+`https://github.com/Cringe-Driven-Development-Team/.github`; записать
+реальные digest/source tag в `ansible/inventory/group_vars/auxiliary/vars.yml`.
+`org.opencontainers.image.revision` унаследован от базового Bun image и не
+идентифицирует исходный SHA GitHubBot; для этой сверки его не использовать.
+Локальный Docker image ID не подставлять вместо registry manifest digest.
+Следующий скрипт из `ansible/` делает anonymous pull, показывает только OCI source,
+затем проверяет настоящий Vault config без сети и polling. Он создаёт закрытый
+Docker env-файл и удаляет его даже при ошибке; это не Compose-encoded env-файл.
+Нужны Python с PyYAML, Docker и настроенный `ANSIBLE_VAULT_PASSWORD_FILE`:
+
+```bash
+python3 - <<'PY'
+import os, subprocess, tempfile
+from pathlib import Path
+import yaml
+
+variables = yaml.safe_load(Path('inventory/group_vars/auxiliary/vars.yml').read_text())
+image = variables['hooks_githubbot_image']
+with tempfile.TemporaryDirectory(prefix='githubbot-check-') as directory:
+    docker_config = Path(directory, 'docker-config')
+    docker_config.mkdir(mode=0o700)
+    subprocess.run(['docker', '--config', str(docker_config), 'pull', image], check=True)
+    subprocess.run(['docker', 'image', 'inspect', '--format',
+                    '{{index .Config.Labels "org.opencontainers.image.source"}}', image], check=True)
+    vault = subprocess.run(['ansible-vault', 'view', 'inventory/group_vars/all/vault.yml'],
+                           check=True, capture_output=True, text=True)
+    env = {'DATABASE_PATH': '/data/githubbot.sqlite',
+           'TELEGRAM_PROXY_URL': 'http://telegram-proxy:2080'}
+    env.update(yaml.safe_load(vault.stdout)['vault_githubbot_env'])
+    path = Path(directory, 'githubbot.env')
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
+        for name, value in env.items():
+            assert isinstance(value, str) and '\n' not in value and '\r' not in value
+            stream.write(f'{name}={value}\n')
+    subprocess.run(['docker', 'run', '--rm', '--pull', 'never', '--network', 'none',
+                    '--env-file', str(path), image, 'bun', 'run', 'src/main.ts', '--check-config'], check=True)
+PY
+```
+
+Успех offline gate не проверяет токены, privacy и API permissions. Перед запуском
+polling владелец проверяет `getMe`, `getWebhookInfo` и членство через закрытый API
+клиент. Непустой webhook URL — ошибка конфигурации, его не удалять автоматически.
+Для отдельного токена не должно быть другого `getUpdates` poller: выключить его
+на прежнем месте до старта, не запускать диагностический `getUpdates` параллельно.
+
+**Выкладка и проверка.** Infra PR содержит `Closes #111`, ссылку на service PR,
+digest/source SHA и зелёные CI URLs; service PR — `Part of
+Cringe-Driven-Development-Team/.github#60`. До merge проверить текущий head,
+обязательные checks и конфликты. После разрешения на merge/apply использовать
+штатный workflow `.github/workflows/infra.yml`; не запускать дополнительный
+Pulumi ради контейнера. После CI apply выполнить из `ansible/`:
+
+```bash
+. ./env.sh
+ansible-playbook -i inventory/openstack.yml verify.yml --limit auxiliary
+ansible-playbook -i inventory/openstack.yml verify.yml --limit localhost
+```
+
+Второй вызов запускает controller-level проверки всего стенда, включая auxiliary
+HTTPS/закрытые порты; первый — snapshot webhook-alerts и один healthy GitHubBot.
+На auxiliary проверить без раскрытия env:
+
+```bash
+sudo stat -c '%a %U:%G' /opt/hooks/githubbot.env
+sudo docker compose -f /opt/hooks/compose.yml ps --all githubbot
+sudo docker compose -f /opt/hooks/compose.yml exec -T githubbot sh -c 'test -w /data && test -w /data/githubbot.sqlite'
+sudo docker compose -f /opt/hooks/compose.yml exec -T githubbot bun run src/main.ts --health
+sudo docker inspect --format '{{json .HostConfig.PortBindings}}' "$(sudo docker compose -f /opt/hooks/compose.yml ps --quiet githubbot)"
+sudo docker inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' "$(sudo docker compose -f /opt/hooks/compose.yml ps --quiet githubbot)"
+```
+
+Ожидается mode 600, ровно один running/healthy, writable SQLite, health exit 0;
+`PortBindings` пустой (`{}`/`null`), mount — `hooks_githubbot_data`.
+Полный `docker inspect`/`compose config` не сохранять. В безопасных логах не должно
+быть конфликта polling HTTP409. Даже один healthy локальный контейнер не доказывает,
+что тот же токен нигде больше не используется; это подтверждает владелец токена.
+
+**Обновление, restart и recreate.** Новый проверенный public digest/source tag
+и Vault config доставляются тем же infra workflow; `restart` не перечитывает env.
+Для обычного рестарта на auxiliary: `sudo docker compose -f /opt/hooks/compose.yml
+restart --no-deps githubbot`. Не удалять `hooks_githubbot_data`, SQLite/WAL/SHM,
+не запускать `down -v`. Для проверки recreate владелец сначала создаёт
+`waiting_repo` заявкой `/issue GitHubBot smoke` в топике без фиксированного repo.
+Затем удаляет только контейнер: `sudo docker compose -f /opt/hooks/compose.yml
+rm --stop --force githubbot` (без `-v`) и повторяет штатную роль
+`ansible-playbook -i inventory/openstack.yml auxiliary.yml`. С остальными
+неизменными параметрами роль восстанавливает отсутствующий `githubbot`;
+сверить ID остальных контейнеров до/после. Выбор старой кнопки создаёт один issue,
+повторный callback не создаёт второй; mount по-прежнему `hooks_githubbot_data`.
+
+**Username и uncertain create.** Если username изменился, сверить Telegram ID
+и новый alias с владельцем, исправить `users` через Vault и доставить config с
+recreate. Не снимать защиту удалением SQLite: старая пара ID/alias остаётся
+заблокированной; `/assignme` использует ID. Если бот сообщил неизвестный исход
+создания, сверить repo, автора-сервисную учётку, время, заголовок и описание через
+GitHub API/UI. Найденную задачу использовать по URL и проверить Project/Status/
+Sprint; при дублях владелец выбирает нужную. Только убедившись в отсутствии
+созданной задачи, владелец отправляет новую `/issue`. Не повторять POST, не
+переводить SQLite journal вручную в `ready`, не удалять базу ради повтора.
+
+**Живая приёмка с владельцем.** Владелец отправляет команды или отдельно разрешает
+агенту отправку. Создавать только `GitHubBot smoke`, закрыть тестовые issues после
+приёмки. В Backend/Frontend/UX сверить repo, prefix, no-assignee, Backlog/empty
+Sprint; в другом топике проверить кнопки, отказ чужому автору и один issue после
+выбора. `/assignme`, `/assign @username`, `/unassign @username`, `/tosprint`,
+`/close` повторить reply к обеим настоящим карточкам и с URL. `/sprint` и
+`/sprint @username` сверить с API, включая closed и unassigned. Настоящий reply
+к GitHub Monitoring сохранить только обезличенным fixture в service repo и
+запустить его regression test. Проверить recreate по процедуре выше.
+Неопределённый POST проверять локальным fault injection service tests, без
+искусственного сбоя GitHub на проде. В журнале разделять live, offline и fixture.
+
 ### Бэкап и изолированное восстановление
 
 `restic-backup.timer` запускается ночью, хранит 7 дневных и 4 недельных снимка.

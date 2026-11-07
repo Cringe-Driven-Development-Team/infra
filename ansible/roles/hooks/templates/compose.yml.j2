@@ -37,6 +37,23 @@ services:
       - hooks
       - telegram_proxy
 
+  githubbot:
+    image: {{ hooks_githubbot_image }}
+    restart: unless-stopped
+    env_file: githubbot.env
+    depends_on:
+      - telegram-proxy
+    volumes:
+      - githubbot_data:/data
+    healthcheck:
+      test: ["CMD", "bun", "run", "src/main.ts", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    networks:
+      - telegram_proxy
+
   telegram-proxy:
     image: {{ hooks_proxy_image }}
     restart: unless-stopped
@@ -54,3 +71,4 @@ volumes:
   caddy_data: {}
   caddy_config: {}
   hooks_data: {}
+  githubbot_data: {}
