@@ -70,19 +70,20 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 | `vault_postgres_password` | `postgres_password` |
 | `vault_jwt_secret` | `jwt_secret` |
 | `vault_csrf_secret` | `csrf_secret` |
+| `vault_totp_encryption_key` | `totp_encryption_key` |
 | `vault_notebooks_s3_access_key` | `notebooks_s3_access_key` |
 | `vault_notebooks_s3_secret_key` | `notebooks_s3_secret_key` |
 | `vault_session_key` | `session_key` |
 | `vault_bff_api_key` | `bff_api_key` |
 
-`notebooks_s3_*` — S3-ключ Go API к приватному бакету ноутбуков, значения — выходы Pulumi
+`notebooks_s3_*` — общий S3-доступ к аватарам и архивным объектам блокнотов, значения — выходы Pulumi
 `notebooksAccessKey` и `notebooksSecretKey` (`pulumi stack output <имя> --show-secrets`, оба секретные;
 `pulumi/README.md`, «Бакет ноутбуков»). Ключ перевыпущен (пересоздан стек или пользователь) — обновить
 оба значения через `ansible-vault edit`. В `.env` Go API они попадут через роль `app`
 ([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)).
 
 Несекретные параметры S3 для бэка лежат открыто в `group_vars/all/vars.yml`: `s3_endpoint`,
-`s3_region`, `s3_force_path_style`, `notebooks_bucket`, `avatars_bucket`, `avatars_public_domain` —
+`s3_region`, `s3_force_path_style`, `avatars_bucket`, `avatars_public_domain` —
 значения из `pulumi stack output`; `avatars_public_domain` — свой домен бакета аватарок (выход
 `avatarsCustomDomain`), сертификат к нему выпускается в панели.
 
@@ -94,6 +95,19 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 `bff_api_key` — S2S-ключ запросов BFF к Go (`X-BFF-Key`, backend#41): BFF получает его как `BFF_KEY`,
 Go — как `BFF_API_KEY`; 32+ символов `[A-Za-z0-9_-]` (`openssl rand -hex 32`). Без них или в неверном
 формате выкатка останавливается до изменений VPS.
+
+`vault_totp_encryption_key` — постоянный отдельный ключ шифрования TOTP, standard base64
+ровно 32 байта. Если ключ уже использовался, перенести прежний без изменения. Только при первой
+настройке сгенерировать `openssl rand -base64 32` один раз и записать через
+`ansible-vault edit inventory/group_vars/all/vault.yml`. JWT, session и runtime-ключи для этого
+не использовать. Сохранять ключ между выкладками и вместе с защищённой резервной копией БД:
+замена ключа делает сохранённые TOTP-секреты нечитаемыми. Значение передаётся только API через
+`.env` и явный `services.api.environment.TOTP_ENCRYPTION_KEY`; validation отклоняет отсутствующий
+или некорректный ключ до записи файлов сервера, не раскрывая его в выводе.
+
+`notebooks_bucket` сохраняется в inventory как имя исходного бакета для offline-переноса;
+обычная выкатка API его не требует. Процедура восстановления и отчёт приёмки —
+[RUNBOOK, infra#112](../RUNBOOK.md#восстановление-api-после-перехода-на-postgresql-infra112).
 
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
 переменная `vault_<имя>` в `vault.yml` и строка `<имя>: "{{ vault_<имя> }}"` в `vars.yml`.
@@ -503,10 +517,11 @@ goose Down не запускается, прежний API должен подд
 GHCR credentials для `site.yml` не нужны, API он не скачивает.
 
 S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-`AWS_ENDPOINT_URL_S3`, `S3_NOTEBOOKS_BUCKET`, `S3_AVATARS_BUCKET`,
-`S3_AVATARS_PUBLIC_URL`. Источники — `group_vars/all/vars.yml` и существующий Vault.
-Go API хранит файлы блокнотов в `S3_NOTEBOOKS_BUCKET`, используя параметры `AWS_*`.
-Параметры аватарок передаются конфигурацией, но текущий API их ещё не читает.
+`AWS_ENDPOINT_URL_S3`, `S3_AVATARS_BUCKET`, `S3_AVATARS_PUBLIC_URL`.
+Источники — `group_vars/all/vars.yml` и существующий Vault. API использует S3 для аватаров;
+блокноты и результаты хранятся в PostgreSQL. `S3_NOTEBOOKS_BUCKET` в окружении API отсутствует.
+Архивный бакет нужен только offline-инструменту через `MIGRATION_S3_NOTEBOOKS_BUCKET`;
+исходные S3-объекты и общий AWS-доступ сохраняются.
 
 Redis (infra#46) — refresh-сессии бэка. API получает `REDIS_HOST=redis`, `REDIS_PORT=6379`,
 `REDIS_PASSWORD` (Vault: `vault_redis_password`, 16+ символов `[A-Za-z0-9_-]` — например

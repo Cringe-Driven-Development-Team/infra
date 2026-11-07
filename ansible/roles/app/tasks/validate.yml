@@ -68,6 +68,18 @@
     fail_msg: Application secrets must be nonempty single-line values.
   no_log: true
 
+# 43 символа base64 и один padding = декодируются ровно в 32 байта.
+# Undefined и нестроковые значения отклоняются до проверки regex.
+- name: Check the TOTP encryption key
+  ansible.builtin.assert:
+    that:
+      - totp_encryption_key is defined
+      - totp_encryption_key is string
+      - totp_encryption_key | length == 44
+      - totp_encryption_key is match('^[A-Za-z0-9+/]{43}=$')
+    fail_msg: vault_totp_encryption_key must be base64 of exactly 32 bytes; preserve the existing key.
+  no_log: true
+
 - name: Check the BFF secrets
   ansible.builtin.assert:
     that:
@@ -101,7 +113,6 @@
     that:
       - s3_region | length > 0
       - s3_endpoint is match('^https://[^ /]+$')
-      - notebooks_bucket | length > 0
       - avatars_bucket | length > 0
       - avatars_public_domain is match('^[a-zA-Z0-9.-]+$')
     fail_msg: Set S3 configuration in inventory/group_vars/all/vars.yml.
