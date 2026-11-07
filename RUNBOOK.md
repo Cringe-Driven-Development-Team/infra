@@ -344,6 +344,12 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
    Vault хранить строками; не включать worker до приёмки Task 10. Его дополнительные
    переменные и переключение описаны в [runbook сервиса](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/services/webhook-alerts/README.md).
 
+   Для пингов GitHub-инициаторов добавьте в `vault_hooks_env.TELEGRAM_USER_MAP`
+   проверенную карту GitHub login → числовой Telegram ID из переменной организации
+   `TELEGRAM_USER_MAP`. GitHub Actions vars автоматически не попадают в контейнер.
+   После применения сверяйте карту в Vault, `/opt/hooks/.env` и окружении hooks
+   без вывода значений; неизвестный аккаунт отображается обычным ником.
+
    Для включённого sender также нужны `TELEGRAM_BOT_TOKEN`,
    `TELEGRAM_APIDOG_BOT_TOKEN` (отдельный бот Apidog), `TELEGRAM_CHAT_ID`,
    `TELEGRAM_APIDOG_TOPIC_ID`, `APIDOG_ACCESS_TOKEN`, `APIDOG_TELEGRAM_USER_MAP`
