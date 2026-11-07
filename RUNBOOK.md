@@ -437,12 +437,18 @@ read/write; проверить нужные approval/SSO. Существующи
 Имена сверять парсером YAML без вывода значений. Не использовать `decrypt`.
 
 **Образ и локальный config gate.** Дождаться зелёных service checks и
-`githubbot-image.yml` на исходный SHA; взять digest из publisher summary.
-Проверить public pull с пустым Docker config, OCI source
-`https://github.com/Cringe-Driven-Development-Team/.github` и revision, записать
+`githubbot-image.yml` на полный исходный SHA. В доверенном успешном запуске
+штатного publisher репозитория `.github` сверить source SHA из summary с SHA
+запуска и тегом `ghcr.io/cringe-driven-development-team/githubbot:sha-<полный SHA>`.
+Проверить, что registry manifest digest этого тега и `Digest` анонимного pull
+закреплённого образа совпадают с digest из того же publisher summary.
+Проверить public pull с пустым Docker config и только OCI source
+`https://github.com/Cringe-Driven-Development-Team/.github`; записать
 реальные digest/source tag в `ansible/inventory/group_vars/auxiliary/vars.yml`.
+`org.opencontainers.image.revision` унаследован от базового Bun image и не
+идентифицирует исходный SHA GitHubBot; для этой сверки его не использовать.
 Локальный Docker image ID не подставлять вместо registry manifest digest.
-Следующий скрипт из `ansible/` делает anonymous pull, показывает только OCI labels,
+Следующий скрипт из `ansible/` делает anonymous pull, показывает только OCI source,
 затем проверяет настоящий Vault config без сети и polling. Он создаёт закрытый
 Docker env-файл и удаляет его даже при ошибке; это не Compose-encoded env-файл.
 Нужны Python с PyYAML, Docker и настроенный `ANSIBLE_VAULT_PASSWORD_FILE`:
@@ -460,7 +466,7 @@ with tempfile.TemporaryDirectory(prefix='githubbot-check-') as directory:
     docker_config.mkdir(mode=0o700)
     subprocess.run(['docker', '--config', str(docker_config), 'pull', image], check=True)
     subprocess.run(['docker', 'image', 'inspect', '--format',
-                    '{{index .Config.Labels "org.opencontainers.image.source"}} {{index .Config.Labels "org.opencontainers.image.revision"}}', image], check=True)
+                    '{{index .Config.Labels "org.opencontainers.image.source"}}', image], check=True)
     vault = subprocess.run(['ansible-vault', 'view', 'inventory/group_vars/all/vault.yml'],
                            check=True, capture_output=True, text=True)
     env = {'DATABASE_PATH': '/data/githubbot.sqlite',

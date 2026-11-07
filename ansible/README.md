@@ -670,10 +670,15 @@ SQLite и heartbeat находятся в отдельном named volume `hooks
 | Переменная | Источник и проверка |
 | --- | --- |
 | `hooks_githubbot_image` | `inventory/group_vars/auxiliary/vars.yml`: публичный GHCR **manifest digest** публикации `githubbot-image.yml`; не локальный image ID |
-| `hooks_githubbot_image_source_tag` | Там же: `ghcr.io/cringe-driven-development-team/githubbot:sha-` + полный исходный SHA; source/revision сверить по OCI labels |
+| `hooks_githubbot_image_source_tag` | Там же: `ghcr.io/cringe-driven-development-team/githubbot:sha-` + полный исходный SHA; SHA и совпадающий registry manifest digest тега/образа сверить с summary доверенного успешного запуска штатного `githubbot-image.yml` |
 | `vault_githubbot_env.TELEGRAM_BOT_TOKEN` | Отдельный GitHubBot из BotFather, не токен GitHub Monitoring или Apidog |
 | `vault_githubbot_env.GITHUB_TOKEN` | Сервисный PAT с Issues read/write разрешённых repo и organization Projects read/write |
 | `vault_githubbot_env.GITHUBBOT_CONFIG_JSON` | Однострочная JSON-строка с проверенными IDs, allowlists и username mappings |
+
+OCI `org.opencontainers.image.source` должен указывать на
+`https://github.com/Cringe-Driven-Development-Team/.github`. Унаследованный от Bun
+`org.opencontainers.image.revision` не является SHA исходников GitHubBot.
+Полная процедура анонимного pull и сверки digest — в [RUNBOOK](../RUNBOOK.md#githubbot-на-auxiliary).
 
 Defaults добавляют `DATABASE_PATH=/data/githubbot.sqlite` и
 `TELEGRAM_PROXY_URL=http://telegram-proxy:2080`; менять эти пути нельзя.

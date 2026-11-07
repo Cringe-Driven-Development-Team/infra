@@ -48,7 +48,7 @@
 
 | Шаг | Не выполнено / prerequisite | Ответственный и следующий шаг |
 | --- | --- | --- |
-| 2: image | Нужны public publication, remote manifest digest, source SHA и зелёные CI URLs | Владелец сервиса: довести service PR/publisher, проверить anonymous pull и OCI labels по [RUNBOOK](../../RUNBOOK.md#githubbot-на-auxiliary) |
+| 2: image | Нужны public publication, remote manifest digest, source SHA и зелёные CI URLs | Владелец сервиса: довести service PR/publisher, сверить полный SHA tag и совпадающий registry manifest digest с summary доверенного успешного штатного publisher, проверить anonymous pull и только OCI source (revision унаследован от Bun, это не SHA GitHubBot) по [RUNBOOK](../../RUNBOOK.md#githubbot-на-auxiliary) |
 | 2: credentials | Нужен отдельный BotFather token, runtime PAT Issues/Projects read/write; existing user map требует owner review | Владелец GitHubBot: согласовать сервисную учётку/доступ, получить dedicated credentials через закрытый источник |
 | 3: Vault/vars/privacy | Vault и inventory не менялись; реальная проверка getMe/privacy/membership/webhook не выполнялась | Владелец GitHubBot/infra: `ansible-vault edit inventory/group_vars/all/vault.yml`, реальные image/source vars, offline gate из RUNBOOK, BotFather Disable privacy; webhook не удалять автоматически |
 | 4: PR/apply | PR, публикация, merge, workflow dispatch и live apply вне локального поручения | Infra maintainer: PR с `Closes #111`, service PR/CI/digest; проверить текущий head/checks/conflicts, после разрешения штатный `infra.yml` |
@@ -65,7 +65,7 @@
 | Проверка | Результат и свидетельство |
 | --- | --- |
 | getMe privacy, membership, empty webhook, единственный poller | Не выполнялась |
-| Один healthy, env 0600, writable DB, без ports; digest/OCI SHA | Не выполнялась |
+| Один healthy, env 0600, writable DB, без ports; digest и полный SHA tag по publisher summary, OCI source | Не выполнялась |
 | `/issue GitHubBot smoke` в Backend / Frontend / UX → repo, prefix, no-assignee, Backlog, empty Sprint | Не выполнялась |
 | Другой topic → buttons; чужой callback отказ; автор → ровно один issue | Не выполнялась |
 | `/assignme`, `/assign @username`, `/unassign @username`, `/tosprint`, `/close` reply к GitHubBot | Не выполнялась |
