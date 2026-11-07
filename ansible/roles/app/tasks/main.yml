@@ -2,12 +2,11 @@
 - name: Validate the deployment inputs
   ansible.builtin.import_tasks: validate.yml
 
-- name: Choose the image tags
+- name: Choose the image references
   ansible.builtin.import_tasks: tags.yml
 
-# Новые .env и compose.yml пишутся до pull и запуска. Упала выкатка — возвращаются прежние: иначе
-# тег неудачной выкатки остался бы в .env, site.yml счёл бы BFF выкаченным, а следующая выкатка
-# унаследовала бы этот тег. Контейнеры при этом не откатываются — нужна выкатка с рабочим тегом.
+# Образы скачаны до записи .env и compose.yml. При ошибке записи/запуска возвращаются прежние
+# файлы; контейнеры автоматически не откатываются — нужна выкатка рабочего digest.
 # На свежей VPS2 compose.yml ещё нет: Caddy (роль caddy) её не готовит
 - name: Find the deployed Compose project
   ansible.builtin.stat:
@@ -134,12 +133,8 @@
         group: root
         mode: "0644"
 
-    # BFF уже скачан анонимно по digest и сверен (pull-bff.yml) до изменения файлов
-    - name: Pull the deployed image with temporary registry authentication
-      ansible.builtin.import_tasks: pull-image.yml
-      when: app_deploy_service == 'api'
-
-    - name: Pull missing public service images after GHCR logout
+    # Образы приложения уже скачаны по digest до изменения конфигурации.
+    - name: Pull missing public service images
       community.docker.docker_compose_v2_pull:
         project_src: "{{ app_compose_dir }}"
         services: "{{ ['caddy', 'postgres', 'redis'] | intersect(app_services) }}"
@@ -181,7 +176,7 @@
       ansible.builtin.fail:
         msg: >-
           Deployment failed at "{{ ansible_failed_task.name }}". The previous .env and compose.yml
-          are restored; containers are not rolled back — deploy a working tag.
+          are restored; containers are not rolled back — deploy a working digest.
 
   always:
     - name: Remove the copies of the project files

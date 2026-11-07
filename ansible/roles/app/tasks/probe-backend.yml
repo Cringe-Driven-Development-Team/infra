@@ -1,0 +1,18 @@
+---
+# Адрес VPS2 вычисляется вызывающим task до делегирования; runner приватный HTTP не вызывает.
+- name: Backend internal HTTP check
+  ansible.builtin.uri:
+    url: "http://{{ backend_probe_address }}:8080/health"
+    return_content: true
+    follow_redirects: none
+    use_proxy: false
+    timeout: 5
+  delegate_to: "{{ groups['gateway'][0] }}"
+  register: app_backend_health
+  failed_when: >-
+    app_backend_health.status | default(0) != 200
+    or (app_backend_health.json.status | default('')) != 'alive'
+  until: app_backend_health is succeeded
+  # retries — дополнительные попытки: 1 + 5 = не более шести запросов.
+  retries: 5
+  delay: 5

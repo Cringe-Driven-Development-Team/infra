@@ -20,7 +20,8 @@ services:
 {% endif %}
 {% if 'api' in app_services %}
   api:
-    image: {{ app_backend_image }}:${BACKEND_IMAGE_TAG:?backend tag is required}
+    image: ${BACKEND_IMAGE_REF:?backend image ref is required}
+    pull_policy: never
     restart: unless-stopped
     environment:
       HOST: ${HOST:-0.0.0.0}

@@ -1,7 +1,7 @@
 ---
 # Выкатка и откат BFF (infra#58, infra#74; CD/rollback frontend#4): bff_image_ref — опубликованный
 # публичный образ по digest, bff_release_sha — полный SHA его релиза. Образ скачивается анонимно и
-# сверяется до изменения VPS; Go остаётся на своём теге; Caddy переключается на BFF после healthy.
+# сверяется до изменения VPS; Go остаётся на своём digest; Caddy переключается на BFF после healthy.
 - name: Deploy BFF to the single VPS
   hosts: gateway
   become: true

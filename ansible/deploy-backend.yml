@@ -1,8 +1,7 @@
 ---
-# Go API снаружи не публикуется (infra#58): готовность — healthcheck Compose, пользовательский путь
-# проверяет deploy-bff.yml. BFF, если выкачен, остаётся на своём образе.
-# Go — на gateway (app_backend_split: false) или на приватной VPS2 (true, infra#59): плей идёт по обеим
-# группам и сразу завершается на хосте, где Go не живёт.
+# Go API приватный: после запуска проверяются образ, внутренний HTTP и путь через BFF.
+# Выкатка и ручной откат используют один digest-ref; BFF остаётся на своём образе.
+# Go — на приватной VPS2. Gateway участвует только в делегированных HTTP/SSH-проверках.
 - name: Deploy backend
   hosts: gateway:backend
   become: true
@@ -10,26 +9,27 @@
   vars:
     app_deploy_service: api
   pre_tasks:
-    - name: Require exactly one gateway and at most one VPS2
+    - name: Require one gateway and a private backend VPS
       ansible.builtin.assert:
         that:
           - groups['gateway'] | length == 1
-          - groups.get('backend', []) | length <= 1
-          - not (app_backend_split | bool) or groups.get('backend', []) | length == 1
+          - app_backend_split | bool
+          - groups.get('backend', []) | length == 1
         fail_msg: >-
-          Supply backend_image_tag=sha-<commit> and an inventory with one gateway (and one backend VPS
-          when app_backend_split is true).
+          Supply backend_image_ref=<image>@sha256:<digest> and an inventory with one gateway and one backend VPS.
+          The private backend VPS requires app_backend_split=true.
       tags: validation
 
     - name: Go runs on another host
       ansible.builtin.meta: end_host
-      when: >-
-        ((app_backend_split | bool) and inventory_hostname not in groups.get('backend', []))
-        or (not (app_backend_split | bool) and inventory_hostname not in groups['gateway'])
+      when: inventory_hostname not in groups.get('backend', [])
 
     - name: Validate before changing the server
       ansible.builtin.import_tasks: roles/app/tasks/validate.yml
       tags: validation
+
+    - name: Pull the backend before changing server configuration
+      ansible.builtin.import_tasks: roles/app/tasks/pull-image.yml
 
     - name: Gather server facts
       ansible.builtin.setup:
@@ -37,3 +37,38 @@
     - role: caddy
       when: inventory_hostname in groups['gateway']
     - app
+  post_tasks:
+    - name: Check the selected backend container
+      ansible.builtin.import_tasks: roles/app/tasks/check-backend-image.yml
+      vars:
+        backend_check_ref: "{{ backend_image_ref }}"
+
+    - name: Remember the private backend address before delegation
+      ansible.builtin.set_fact:
+        backend_probe_address: "{{ app_backend_address }}"
+
+    - name: Check the Go API from the gateway
+      ansible.builtin.import_tasks: roles/app/tasks/probe-backend.yml
+
+    - name: Read the BFF release from the gateway
+      ansible.builtin.slurp:
+        src: "{{ hostvars[groups['gateway'][0]].app_compose_dir }}/.env"
+      delegate_to: "{{ groups['gateway'][0] }}"
+      register: app_gateway_environment
+      no_log: true
+
+    - name: Select the deployed BFF release for the public probe
+      ansible.builtin.set_fact:
+        bff_probe_release: >-
+          {{ app_gateway_environment.content | b64decode
+          | regex_findall('(?m)^BFF_RELEASE_SHA=([0-9a-f]{40})$') | first | default('') }}
+      no_log: true
+
+    - name: Require a deployed BFF release
+      ansible.builtin.assert:
+        that:
+          - bff_probe_release is match('^[0-9a-f]{40}\Z')
+        fail_msg: A deployed BFF release is required for the external backend check.
+
+    - name: Check the backend through public Caddy and BFF
+      ansible.builtin.import_tasks: roles/app/tasks/probe-bff.yml

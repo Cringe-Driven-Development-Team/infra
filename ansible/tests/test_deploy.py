@@ -23,6 +23,7 @@ ANSIBLE = Path(__file__).resolve().parents[1]
 # Секреты BFF в формате, который принимает validate.yml
 # Образ BFF по digest и полный SHA релиза в формате, который принимает deploy-bff.yml (infra#74)
 BFF_REF = "ghcr.io/cringe-driven-development-team/bff@sha256:" + "a" * 64
+BACKEND_REF = "ghcr.io/cringe-driven-development-team/backend@sha256:" + "d" * 64
 BFF_SHA = "b" * 40
 BFF_VAULT = b"vault_session_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nvault_bff_api_key: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\n"
 
@@ -53,7 +54,9 @@ class DeploymentChecks(unittest.TestCase):
                                         "ansible_connection": "local",
                                     }
                                 }
-                            }
+                            },
+                            "backend": {"hosts": {"test-backend": {
+                                "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
                         }
                     }
                 }
@@ -73,7 +76,7 @@ class DeploymentChecks(unittest.TestCase):
             'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
-            'app_backend_split: false\napp_backend_address: ""\n'
+            'app_backend_split: true\napp_backend_address: "127.0.0.1"\n'
             'runtime_enabled: false\n'
         )
         password = b"test-vault-password-only"
@@ -90,7 +93,7 @@ class DeploymentChecks(unittest.TestCase):
         password_file.chmod(0o600)
         self.environment["ANSIBLE_VAULT_PASSWORD_FILE"] = str(password_file)
 
-    def validate(self, tag=None, playbook="deploy-backend.yml", variable="backend_image_tag",
+    def validate(self, tag=None, playbook="deploy-backend.yml", variable="backend_image_ref",
                  extra=None):
         command = [
             shutil.which("ansible-playbook") or "ansible-playbook",
@@ -113,16 +116,21 @@ class DeploymentChecks(unittest.TestCase):
             timeout=30,
         )
 
-    def test_valid_tag_and_vault(self):
-        result = self.validate("sha-1234567")
+    def test_valid_digest_and_vault(self):
+        result = self.validate(BACKEND_REF)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_missing_or_invalid_tag_is_rejected(self):
-        for tag in [None, "", "main", "sha-xyz", "sha-1234567;echo bad"]:
-            with self.subTest(tag=tag):
-                result = self.validate(tag)
+    def test_backend_requires_exact_package_digest(self):
+        image = "ghcr.io/cringe-driven-development-team/backend"
+        for ref in [None, "", "main", image + ":sha-1234567", image + "@sha256:" + "a" * 63,
+                    image + "@sha256:" + "A" * 64, image + "@sha256:" + "g" * 64,
+                    BFF_REF, BACKEND_REF + ";echo bad", BACKEND_REF + "\n"]:
+            with self.subTest(ref=ref):
+                result = self.validate(ref)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("sha-", result.stdout + result.stderr)
+                self.assertIn("backend_image_ref=", result.stdout + result.stderr)
+        result = self.validate(BFF_REF, extra={"app_backend_image": "ghcr.io/cringe-driven-development-team/bff"})
+        self.assertNotEqual(result.returncode, 0)
 
     def validate_bff(self, ref=BFF_REF, sha=BFF_SHA, extra=None):
         values = {key: value for key, value in
@@ -153,9 +161,9 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("app_bff_image is not overridable", result.stdout + result.stderr)
         # тег бэка необязателен, но если передан — проверяется
-        result = self.validate_bff(extra={"backend_image_tag": "main"})
+        result = self.validate_bff(extra={"backend_image_ref": "main"})
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("backend_image_tag=sha-", result.stdout + result.stderr)
+        self.assertIn("only by deploy-backend.yml", result.stdout + result.stderr)
 
     def test_bff_deploy_needs_no_registry_credentials(self):
         for name in ["GHCR_USERNAME", "GHCR_TOKEN"]:
@@ -164,7 +172,7 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_backend_deploy_does_not_change_the_bff(self):
-        result = self.validate("sha-1234567", extra={"bff_image_ref": BFF_REF,
+        result = self.validate(BACKEND_REF, extra={"bff_image_ref": BFF_REF,
                                                       "bff_release_sha": BFF_SHA})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("only by deploy-bff.yml", result.stdout + result.stderr)
@@ -197,7 +205,7 @@ class DeploymentChecks(unittest.TestCase):
                 {"name": "Choose tags",
                  "ansible.builtin.import_tasks": str(ANSIBLE / "roles/app/tasks/tags.yml")},
                 {"name": "Show tags", "ansible.builtin.debug": {
-                    "msg": "TAGS {{ app_backend_tag }} {{ app_bff_ref | default('-', true) }}"
+                    "msg": "TAGS {{ app_backend_ref }} {{ app_bff_ref | default('-', true) }}"
                            " {{ app_bff_release | default('-', true) }}"}},
             ],
         }]))
@@ -216,16 +224,17 @@ class DeploymentChecks(unittest.TestCase):
 
         old_ref = BFF_REF.replace("a" * 64, "c" * 64)
         old_sha = "d" * 40
-        deployed = (f"BACKEND_IMAGE_TAG=sha-aaaaaaa\nBFF_IMAGE_REF={old_ref}\n"
+        old_backend = BACKEND_REF.replace("d" * 64, "e" * 64)
+        deployed = (f"BACKEND_IMAGE_REF={old_backend}\nBFF_IMAGE_REF={old_ref}\n"
                     f"BFF_RELEASE_SHA={old_sha}\nJWT_SECRET=\"leaky\"\n")
         cases = [
             (deployed, {"bff_image_ref": BFF_REF, "bff_release_sha": BFF_SHA},
-             f"TAGS sha-aaaaaaa {BFF_REF} {BFF_SHA}"),
-            (deployed, {"backend_image_tag": "sha-ddddddd"},
-             f"TAGS sha-ddddddd {old_ref} {old_sha}"),
-            ("BACKEND_IMAGE_TAG=sha-aaaaaaa\n", {"backend_image_tag": "sha-ddddddd"},
-             "TAGS sha-ddddddd - -"),
-            (None, {"backend_image_tag": "sha-ddddddd"}, "TAGS sha-ddddddd - -"),
+             f"TAGS {old_backend} {BFF_REF} {BFF_SHA}"),
+            (deployed, {"backend_image_ref": BACKEND_REF},
+             f"TAGS {BACKEND_REF} {old_ref} {old_sha}"),
+            (f"BACKEND_IMAGE_REF={old_backend}\n", {"backend_image_ref": BACKEND_REF},
+             f"TAGS {BACKEND_REF} - -"),
+            (None, {"backend_image_ref": BACKEND_REF}, f"TAGS {BACKEND_REF} - -"),
         ]
         for env_file, tags, expected in cases:
             with self.subTest(tags=tags, deployed=env_file):
@@ -239,15 +248,11 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("deploy-backend.yml", result.stdout + result.stderr)
 
-    def test_missing_registry_credentials_are_rejected_without_leaks(self):
+    def test_backend_needs_no_registry_credentials(self):
         for name in ["GHCR_USERNAME", "GHCR_TOKEN"]:
-            with self.subTest(name=name):
-                previous = self.environment.pop(name)
-                result = self.validate("sha-1234567")
-                self.environment[name] = previous
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("Set " + name, result.stdout + result.stderr)
-                self.assertNotIn("fake-ghcr-token-test-only", result.stdout + result.stderr)
+            self.environment.pop(name, None)
+        result = self.validate(BACKEND_REF)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_multiple_hosts_are_rejected(self):
         data = yaml.safe_load(self.inventory.read_text())
@@ -256,7 +261,7 @@ class DeploymentChecks(unittest.TestCase):
             "ansible_connection": "local",
         }
         self.inventory.write_text(yaml.safe_dump(data))
-        result = self.validate("sha-1234567")
+        result = self.validate(BACKEND_REF)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("one gateway", result.stdout + result.stderr)
 
@@ -269,7 +274,7 @@ class DeploymentChecks(unittest.TestCase):
                     path = self.root / "wrong-pass"
                     path.write_bytes(password)
                     self.environment["ANSIBLE_VAULT_PASSWORD_FILE"] = str(path)
-                result = self.validate("sha-1234567")
+                result = self.validate(BACKEND_REF)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("decrypt", (result.stdout + result.stderr).lower())
 
@@ -281,7 +286,7 @@ class DeploymentChecks(unittest.TestCase):
                 b"vault_redis_password: fake-redis-password-0123\n" + BFF_VAULT
             )
         )
-        result = self.validate("sha-1234567")
+        result = self.validate(BACKEND_REF)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("vault_csrf_secret", result.stdout + result.stderr)
 
@@ -296,52 +301,31 @@ class DeploymentChecks(unittest.TestCase):
                         + BFF_VAULT
                     )
                 )
-                result = self.validate("sha-1234567")
+                result = self.validate(BACKEND_REF)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("vault_redis_password", result.stdout + result.stderr)
 
-    def test_registry_logout_on_success_and_login_or_pull_failure(self):
-        binary_directory = self.root / "bin"
-        binary_directory.mkdir()
-        docker = binary_directory / "docker"
-        shutil.copyfile(ANSIBLE / "tests/docker_stub.py", docker)
-        docker.chmod(0o700)
-        (self.root / "compose.yml").write_text("services: {}\n")
-        playbook = self.root / "registry-test.yml"
-        playbook.write_text(yaml.safe_dump([{
-            "name": "Exercise the real registry-auth tasks with a Docker CLI substitute",
-            "hosts": "gateway", "gather_facts": False,
-            "vars": {"app_compose_dir": str(self.root), "app_deploy_service": "api",
-                     "ansible_python_interpreter": sys.executable},
-            "tasks": [{"name": "Run the production auth block",
-                       "ansible.builtin.import_tasks": str(
-                           ANSIBLE / "roles/app/tasks/pull-image.yml")}],
-        }]))
-        self.environment["PATH"] = str(binary_directory) + os.pathsep + self.environment["PATH"]
-        self.environment["TEST_DOCKER_ROOT"] = str(self.root)
-        events_path = self.root / "docker-events.jsonl"
-        for failure in ["", "login", "pull"]:
+    def test_backend_pull_ignores_saved_credentials(self):
+        for name in ["GHCR_USERNAME", "GHCR_TOKEN"]:
+            self.environment.pop(name, None)
+        for failure in ["", "pull"]:
             with self.subTest(failure=failure):
-                events_path.unlink(missing_ok=True)
                 self.environment["TEST_DOCKER_FAILURE"] = failure
-                result = subprocess.run(
-                    [shutil.which("ansible-playbook") or "ansible-playbook",
-                     "-i", str(self.inventory), str(playbook)],
-                    cwd=ANSIBLE, env=self.environment, capture_output=True,
-                    text=True, timeout=30,
-                )
+                (self.root / ".env").write_text("old-environment")
+                (self.root / "compose.yml").write_text("old-compose")
+                config = self.root / "docker-config.json"
+                config.write_text(json.dumps({"auths": {"ghcr.io": {"auth": "saved-test-token"}}}))
+                result, events = self.run_with_docker_stub("pull-image.yml", {"backend_image_ref": BACKEND_REF})
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode == 0, failure == "", output)
-                events = [json.loads(line) for line in events_path.read_text().splitlines()]
-                commands = [event["command"] for event in events]
-                self.assertEqual(commands, ["login", "logout"] if failure == "login"
-                                 else ["login", "compose", "logout"])
-                self.assertNotIn("ghcr.io", json.loads(
-                    (self.root / "docker-config.json").read_text())["auths"])
-                self.assertNotIn("fake-ghcr-token-test-only", output)
-                self.assertNotIn("fake-ghcr-token-test-only", events_path.read_text())
-                if failure == "pull":
-                    self.assertIn("controlled-pull-failure", output)
+                self.assertEqual([e["command"] for e in events], ["pull"])
+                argv = events[0]["args"]
+                self.assertEqual(argv[-1], BACKEND_REF)
+                self.assertFalse(Path(argv[argv.index("--config") + 1]).exists())
+                self.assertEqual((self.root / ".env").read_text(), "old-environment")
+                self.assertEqual((self.root / "compose.yml").read_text(), "old-compose")
+                self.assertIn("saved-test-token", config.read_text())
+                self.assertNotIn("saved-test-token", output)
 
     def run_with_docker_stub(self, tasks, variables):
         binary_directory = self.root / "bin"
@@ -349,7 +333,8 @@ class DeploymentChecks(unittest.TestCase):
         docker = binary_directory / "docker"
         shutil.copyfile(ANSIBLE / "tests/docker_stub.py", docker)
         docker.chmod(0o700)
-        (self.root / "docker-config.json").write_text(json.dumps({"auths": {}}))
+        if not (self.root / "docker-config.json").exists():
+            (self.root / "docker-config.json").write_text(json.dumps({"auths": {}}))
         playbook = self.root / "stub-test.yml"
         playbook.write_text(yaml.safe_dump([{
             "name": "Exercise the real tasks with a Docker CLI substitute",
@@ -370,6 +355,46 @@ class DeploymentChecks(unittest.TestCase):
         events = ([json.loads(line) for line in events_path.read_text().splitlines()]
                   if events_path.exists() else [])
         return result, events
+
+    def test_backend_pull_failure_keeps_project_and_container(self):
+        # Exercise the real pre_tasks ordering; replace deployment with a local write marker.
+        production = yaml.safe_load((ANSIBLE / 'deploy-backend.yml').read_text())[0]
+        production['become'] = False
+        production['roles'] = []
+        production['vars'].update(app_backend_image='ghcr.io/cringe-driven-development-team/backend',
+                                  app_compose_dir=str(self.root),
+                                  ansible_python_interpreter=sys.executable)
+        for task in production['pre_tasks']:
+            if 'ansible.builtin.import_tasks' in task:
+                task['ansible.builtin.import_tasks'] = str(ANSIBLE / task['ansible.builtin.import_tasks'])
+        production['post_tasks'] = [{'name': 'Simulate configuration and container switch',
+            'ansible.builtin.copy': {'content': '{{ backend_image_ref }}',
+                                    'dest': str(self.root / 'switch-marker'), 'mode': '0600'}}]
+        playbook = self.root / 'preflight.yml'
+        playbook.write_text(yaml.safe_dump([production]))
+        binary = self.root / 'bin'
+        binary.mkdir()
+        shutil.copyfile(ANSIBLE / 'tests/docker_stub.py', binary / 'docker')
+        (binary / 'docker').chmod(0o700)
+        self.environment.update(PATH=str(binary) + os.pathsep + self.environment['PATH'],
+                                TEST_DOCKER_ROOT=str(self.root))
+        for ref, failure, succeeds in [(BACKEND_REF, 'pull', False), ('main', '', False),
+                                        (BACKEND_REF, '', True)]:
+            with self.subTest(ref=ref, failure=failure):
+                (self.root / '.env').write_text('old-env')
+                (self.root / 'compose.yml').write_text('old-compose')
+                (self.root / 'switch-marker').unlink(missing_ok=True)
+                self.environment['TEST_DOCKER_FAILURE'] = failure
+                result = subprocess.run(['ansible-playbook', '-i', str(self.inventory), str(playbook),
+                                         '-e', json.dumps({'backend_image_ref': ref})], cwd=ANSIBLE,
+                                        env=self.environment, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode == 0, succeeds, result.stdout + result.stderr)
+                marker = self.root / 'switch-marker'
+                self.assertEqual(marker.exists(), succeeds)
+                if succeeds:
+                    self.assertEqual(marker.read_text(), BACKEND_REF)
+                self.assertEqual((self.root / '.env').read_text(), 'old-env')
+                self.assertEqual((self.root / 'compose.yml').read_text(), 'old-compose')
 
     def test_bff_image_is_pulled_anonymously_and_checked_before_changes(self):
         for name in ["GHCR_USERNAME", "GHCR_TOKEN"]:
@@ -432,7 +457,7 @@ class DeploymentChecks(unittest.TestCase):
         variables.update(app_backend_split=False, app_backend_address="", runtime_enabled=False,
                          app_bff_go_api_url="http://api:8080/api/v1",
                          app_services=["caddy", "api", "postgres", "redis", "bff"])
-        variables.update(app_backend_tag="sha-1234567", app_bff_ref=BFF_REF, app_bff_release=BFF_SHA,
+        variables.update(app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF, app_bff_release=BFF_SHA,
                          app_domain="app.example.org", s3_region="ru-7",
                          s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
                          avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
@@ -578,7 +603,7 @@ class DeploymentChecks(unittest.TestCase):
         variables.update(
             app_backend_split=split, app_backend_address=address if split else "",
             app_bff_go_api_url=f"http://{address}:8080/api/v1" if split else "http://api:8080/api/v1",
-            app_services=services, app_backend_tag="sha-1234567", app_bff_ref=BFF_REF,
+            app_services=services, app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF,
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
             s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
             avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
@@ -615,7 +640,7 @@ class DeploymentChecks(unittest.TestCase):
         # секреты Go, Postgres, Redis и S3 на публичной машине не лежат
         for secret in ["pg-secret", "jwt-secret", "csrf-secret", "redis-secret", "s3-secret"]:
             self.assertNotIn(secret, env)
-        self.assertNotIn("BACKEND_IMAGE_TAG", env)
+        self.assertNotIn("BACKEND_IMAGE_REF", env)
 
     def test_split_layout_backend_publishes_the_api_only_on_the_private_address(self):
         config, env = self.render_host(["api", "postgres", "redis"], split=True)
@@ -643,7 +668,7 @@ class DeploymentChecks(unittest.TestCase):
             "gather_facts": False,
             "vars": {"app_compose_dir": str(self.root / "{{ inventory_hostname }}"),
                      "app_bff_image": "ghcr.io/cringe-driven-development-team/bff",
-                     "app_deploy_service": "api", "backend_image_tag": "sha-1234567",
+                     "app_deploy_service": "api", "backend_image_ref": BACKEND_REF,
                      "ansible_python_interpreter": sys.executable},
             "tasks": [
                 {"name": "Choose", "ansible.builtin.import_tasks": str(ANSIBLE / "roles/app/tasks/tags.yml")},
@@ -695,32 +720,39 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertIn("не больше одной VPS2", result.stdout + result.stderr)
 
     def test_split_layout_needs_one_backend_host(self):
-        result = self.validate("sha-1234567", extra={"app_backend_split": True})
+        data = yaml.safe_load(self.inventory.read_text())
+        del data['all']['children']['backend']
+        self.inventory.write_text(yaml.safe_dump(data))
+        result = self.validate(BACKEND_REF, extra={"app_backend_split": True})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("one backend VPS", result.stdout + result.stderr)
 
-    def test_registry_switch_and_explicit_rollback_image(self):
-        variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
-        variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
-        environment = Environment(undefined=StrictUndefined)
-        environment.filters["bool"] = to_bool
-        template = environment.from_string(
-            (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text())
-        expected = "ghcr.io/cringe-driven-development-team/backend"
-        for override in [None, "ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development"]:
-            with self.subTest(override=override):
-                values = dict(variables, app_bff_ref="", app_backend_split=False,
-                              app_backend_address="", runtime_enabled=False, app_services=["caddy", "api", "postgres", "redis"])
-                if override is not None:
-                    values["app_backend_image"] = override
-                rendered = template.render(values).replace(
-                    "${BACKEND_IMAGE_TAG:?backend tag is required}", "sha-1234567")
-                data = yaml.safe_load(rendered)
-                self.assertEqual(data["services"]["api"]["image"],
-                                 (override or expected) + ":sha-1234567")
-                self.assertEqual(set(data["volumes"]),
-                                 {"caddy_data", "caddy_config", "postgres_data", "redis_data"})
-                self.assertFalse(data["services"]["api"].get("ports"))
+    def test_combined_layout_is_rejected_before_deployment(self):
+        result = self.validate(BACKEND_REF, extra={"app_backend_split": False})
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('private backend VPS', result.stdout + result.stderr)
+
+    def test_backend_compose_preserves_digest(self):
+        config, env = self.render_host(["api", "postgres", "redis"], split=True)
+        self.assertEqual(config["services"]["api"]["image"], BACKEND_REF)
+        self.assertEqual(config["services"]["api"]["pull_policy"], "never")
+        self.assertIn("BACKEND_IMAGE_REF=" + BACKEND_REF, env)
+
+    def test_running_backend_must_match_image_id_and_be_healthy(self):
+        image_id = "sha256:" + "1" * 64
+        self.environment["TEST_DOCKER_IMAGE_ID"] = image_id
+        cases = [("cid", f"{image_id} true healthy", True),
+                 ("", "", False), ("one\ntwo", "", False),
+                 ("cid", f"sha256:{'2' * 64} true healthy", False),
+                 ("cid", f"{image_id} false healthy", False),
+                 ("cid", f"{image_id} true unhealthy", False),
+                 ("cid", f"{image_id} true none", False)]
+        for container, state, succeeds in cases:
+            with self.subTest(container=container, state=state):
+                self.environment["TEST_DOCKER_CONTAINER"] = container
+                self.environment["TEST_DOCKER_STATE"] = state
+                result, _ = self.run_with_docker_stub("check-backend-image.yml", {"backend_check_ref": BACKEND_REF})
+                self.assertEqual(result.returncode == 0, succeeds, result.stdout + result.stderr)
 
     def render_caddy(self, **values):
         templates = Environment(undefined=StrictUndefined)
@@ -830,20 +862,20 @@ class DeploymentChecks(unittest.TestCase):
         data["all"]["children"]["backend"] = {"hosts": {"test-backend": {
             "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
         self.inventory.write_text(yaml.safe_dump(data))
-        result = self.validate("sha-1234567", extra=open_values)
+        result = self.validate(BACKEND_REF, extra=open_values)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # Go на gateway: runtime-VPS его не пустят
-        result = self.validate("sha-1234567", extra=dict(open_values, app_backend_split=False))
+        result = self.validate(BACKEND_REF, extra=dict(open_values, app_backend_split=False))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("app_backend_split", result.stdout + result.stderr)
         # id security group ещё не заполнен после pulumi up
-        result = self.validate("sha-1234567", extra=dict(open_values, runtime_security_group_id=""))
+        result = self.validate(BACKEND_REF, extra=dict(open_values, runtime_security_group_id=""))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("runtime_*", result.stdout + result.stderr)
         # битый ключ шифрования не попадает в вывод
         broken = vault.replace(RUNTIME_SECRETS["runtime_secrets_key"], "short-leaked-key")
         self.write_runtime_vault(broken)
-        result = self.validate("sha-1234567", extra=open_values)
+        result = self.validate(BACKEND_REF, extra=open_values)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("short-leaked-key", result.stdout + result.stderr)
         self.assertIn("vault_runtime_", result.stdout + result.stderr)
