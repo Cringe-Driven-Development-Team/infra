@@ -849,3 +849,116 @@ Native redelivery `3851670746724040704` с тем же GUID принята в
 outbox и тот же message ID; дубля нет. После проверки обновлён verified
 snapshot `/data/snapshots/queue.sqlite`. Реальные уведомления начала и результата
 CD/rollback этой приёмкой не запускались; их локальные сценарии проверены тестами.
+
+## Восстановление API после перехода на PostgreSQL (infra#112)
+
+Production-операции выполняет оператор с авторизованным SSH-доступом к VPS2 и паролем Vault.
+Локальные тесты не подтверждают состояние production. Не менять SSH host key самостоятельно.
+Каноническая процедура и команды переноса —
+[backend/docs/notebook-migration.md](https://github.com/Cringe-Driven-Development-Team/backend/blob/main/docs/notebook-migration.md)
+из проверенной реализации backend#79; для ещё не опубликованной версии читать документ в том же
+checkout, из которого собирается инструмент. Архивные S3-объекты и бакет сохраняются.
+
+### Диагностика и постоянный ключ
+
+На VPS2 от root; команды ниже выполняются из `/opt/cellestial`:
+
+```bash
+cd /opt/cellestial
+docker compose ps -a
+docker inspect --format '{{.Config.Image}} {{.Image}} {{.State.Status}}' cellestial-api-1
+docker compose logs --tail=100 api
+```
+
+Логи читать в защищённом терминале, в отчёт переносить только безопасные коды и выводы.
+`unhealthy` не устанавливает причину. В текущем backend `startup_config` означает отказ проверки
+настроек (в том числе TOTP), `totp_init` — отказ инициализации TOTP, `notebook_migration` — отказ
+проверки готовности переноса, включая ошибку SQL. Уточнить версию контейнера: после неудачного CD
+восстанавливаются `.env` и `compose.yml`, но контейнеры не откатываются. Не публиковать `.env`,
+полный `docker inspect` или `docker compose config`: они содержат секреты.
+
+Проверить наличие прежнего TOTP-ключа в защищённом окружении контейнера, конфигурации и Vault;
+не выводить значения. Если ключ уже использовался, сохранить именно его. Если он утрачен,
+остановиться и восстановить его из защищённой копии; новый ключ не расшифрует старые TOTP-секреты.
+Только при первой настройке создать отдельный ключ `openssl rand -base64 32` один раз и записать
+`vault_totp_encryption_key` через `ansible-vault edit inventory/group_vars/all/vault.yml` на
+управляющей машине. Не использовать JWT/session/runtime-ключ. Обновлённый зашифрованный Vault
+сохранить вместе с резервной копией БД и обеспечить доступ к паролю вне этого архива.
+
+С управляющей машины проверить `deploy-backend.yml --tags validation` с тем же inventory,
+проверенными SSH-настройками, Vault и `backend_image_tag=sha-<commit>`, которые использует CD.
+Отсутствующий или неверный ключ должен завершить validation до изменения конфигурации сервера.
+
+### Остановка записей, backup и перенос
+
+Сначала определить текущую схему через `psql` (`\d notebooks`, `\d notebook_legacy_sources`):
+отсутствие таблицы или колонки не считать нулевым количеством неперенесённых данных. Если схема
+ещё старая, требуется запуск инструмента с SQL-миграциями. Если схема новая, выполнить оба
+контрольных SQL-запроса ниже. При незавершённом переносе остановить API и все иные источники
+изменения блокнотов, включая runtime-запись результатов; удостовериться, что нет другого API
+или воркера, пишущего в ту же БД. До окончания сверки исключить параллельные выкладки.
+
+```bash
+set -eu
+cd /opt/cellestial
+docker compose stop api
+install -d -m 0700 backups
+umask 077
+notebook_backup="backups/before-notebook-migration-$(date -u +%Y%m%dT%H%M%SZ).dump"
+docker compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$notebook_backup"
+docker compose exec -T postgres pg_restore --list < "$notebook_backup" > /dev/null
+```
+
+До изменения production-схемы проверить полное восстановление в отдельную БД. Имя ниже должно
+быть свободно: ошибка `createdb` о существующей БД требует остановки, а не её удаления.
+
+```bash
+docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" -T template0 infra112_restore_check'
+docker compose exec -T postgres sh -c 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d infra112_restore_check' < "$notebook_backup"
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d infra112_restore_check -c "SELECT count(*) AS notebooks FROM notebooks"'
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) AS notebooks FROM notebooks"'
+# Только после успешного восстановления и совпадения счётчиков:
+docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" infra112_restore_check'
+```
+
+Сохранить backup, зашифрованный Vault с прежним TOTP-ключом и доступную копию исходных S3-объектов.
+По инструкции backend запустить `notebook-migrate`, затем `notebook-migrate -verify`.
+Передать исходный `notebooks_bucket` из inventory только как `MIGRATION_S3_NOTEBOOKS_BUCKET`;
+пароли/URL подключения не передавать аргументами. Пока образ не содержит утилиту, собрать
+standalone-бинарник из проверенной реализации backend#79 под архитектуру VPS2, сверить SHA-256
+после передачи и смонтировать read-only. Обычный API notebook bucket не получает.
+
+После успешного `-verify`, до возобновления записей:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+SELECT count(*) AS pending_notebooks FROM notebooks WHERE revision IS NULL;
+SELECT count(*) AS unverified_sources FROM notebook_legacy_sources WHERE verified_at IS NULL;
+SQL
+```
+
+Оба счётчика должны быть нулевыми. При ненулевом коде команды, SQL-ошибке, несовпадении сверки
+или ненулевом счётчике оставить API и записи остановленными, исправить причину и повторить
+перенос/проверку. Не удалять блокноты или S3-объекты. Старый API после изменения схемы не запускать;
+миграции Down не выполнять. Если перенос уже завершён, подтвердить счётчики и имеющиеся результаты
+сверки; повторную сверку с архивом после новых пользовательских правок не считать проверкой
+текущего содержимого — правила `-verify` описаны в backend.
+
+### Обычный CD и отчёт приёмки
+
+После готовности infra#112 и backend#79 выполнить обычный CD подходящего SHA-тега с постоянным
+TOTP-ключом в Vault. Зафиксировать URL запуска и дождаться успешного healthcheck. Проверить
+`docker compose ps`, `/health` по внутреннему маршруту API, существующий блокнот с ячейками и
+результатами, превью в списке и публичную доступность аватара. Через защищённую проверку сравнить
+ключ Vault с ключом контейнера без вывода значений; после повторной выкладки подтвердить равенство.
+
+В отчёте по задаче заполнить фактическими результатами (без credentials и содержимого блокнотов):
+
+- Дата, оператор, image tag/digest, установленная причина отказа и безопасный код из логов.
+- Backup: защищённое место хранения, успешное пробное восстановление и совпавшие счётчики.
+- Версия/контрольная сумма инструмента, migrated/verified/skipped/failed, код завершения `-verify`.
+- `pending_notebooks=0`, `unverified_sources=0`, исходные S3-объекты сохранены.
+- URL успешного CD, API healthy; блокнот/результаты, превью и аватар проверены.
+- Ключ сохранён в Vault и backup, совпадает в контейнере и не изменился после повторной выкладки.
+
+До фактической общей приёмки не объявлять production восстановленным и backend#79 принятым.

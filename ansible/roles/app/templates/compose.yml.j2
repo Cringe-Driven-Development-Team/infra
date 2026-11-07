@@ -31,6 +31,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?postgres database is required}
       JWT_SECRET: ${JWT_SECRET:?jwt secret is required}
       CSRF_SECRET: ${CSRF_SECRET:?csrf secret is required}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP encryption key is required}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
       COOKIE_SECURE: "true"
@@ -39,7 +40,6 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?S3 configuration is required}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?S3 configuration is required}
       AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3:?S3 configuration is required}
-      S3_NOTEBOOKS_BUCKET: ${S3_NOTEBOOKS_BUCKET:?S3 configuration is required}
       S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET:?S3 configuration is required}
       S3_AVATARS_PUBLIC_URL: ${S3_AVATARS_PUBLIC_URL:?S3 configuration is required}
       REDIS_HOST: ${REDIS_HOST:-redis}
