@@ -65,7 +65,7 @@ else:
     elif command == "compose" and "ps" in args:
         print(os.environ.get("TEST_DOCKER_CONTAINER", ""))
     elif command == "inspect":
-        print(os.environ.get("TEST_DOCKER_RUNNING", ""))
+        print(os.environ.get("TEST_DOCKER_STATE", os.environ.get("TEST_DOCKER_RUNNING", "")))
     else:
         print("Unexpected Docker CLI call", file=sys.stderr)
         sys.exit(1)

@@ -198,7 +198,7 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: все пути, кроме закрытого `/health`, — BFF (до его первой выкатки — `503 BFF is not deployed`), раздел «Клиент и BFF»; сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
-| hooks | auxiliary | Проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Публичный image `webhook-alerts` по registry digest; анонимный pull; worker по умолчанию выключен |
+| hooks | auxiliary | GitHubBot (long polling, `githubbot.env` 0600, отдельный том `hooks_githubbot_data`, без портов) и проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Публичный image `webhook-alerts` по registry digest; анонимный pull; worker по умолчанию выключен |
 | restic_backup | auxiliary | ночной CLI snapshot очереди перед `restic backup`; только snapshot, тома Caddy и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
 Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml`, `deploy-bff.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
@@ -656,6 +656,65 @@ TLS/Reality handshake — сверку SNI, public key, short ID, flow и finger
 без отключения проверки сертификата. Отказ другого домена ожидаем.
 Не включать sender до отдельной проверки `getMe`, тестового сообщения и очереди.
 Откат — по [RUNBOOK](../RUNBOOK.md#telegram-proxy-на-auxiliary).
+
+## GitHubBot на auxiliary (infra#111)
+
+Роль задаёт в том же проекте `/opt/hooks` один service `githubbot`, без публичных
+портов. Его Telegram-запросы идут через `telegram-proxy:2080`, GitHub — напрямую.
+SQLite и heartbeat находятся в отдельном named volume `hooks_githubbot_data`;
+перезапуск и recreate сохраняют том. Существующий snapshot Restic относится
+к очереди webhook-alerts: резервная копия SQLite GitHubBot им не подтверждается.
+
+Обязательные inputs перед preview/apply:
+
+| Переменная | Источник и проверка |
+| --- | --- |
+| `hooks_githubbot_image` | `inventory/group_vars/auxiliary/vars.yml`: публичный GHCR **manifest digest** публикации `githubbot-image.yml`; не локальный image ID |
+| `hooks_githubbot_image_source_tag` | Там же: `ghcr.io/cringe-driven-development-team/githubbot:sha-` + полный исходный SHA; source/revision сверить по OCI labels |
+| `vault_githubbot_env.TELEGRAM_BOT_TOKEN` | Отдельный GitHubBot из BotFather, не токен GitHub Monitoring или Apidog |
+| `vault_githubbot_env.GITHUB_TOKEN` | Сервисный PAT с Issues read/write разрешённых repo и organization Projects read/write |
+| `vault_githubbot_env.GITHUBBOT_CONFIG_JSON` | Однострочная JSON-строка с проверенными IDs, allowlists и username mappings |
+
+Defaults добавляют `DATABASE_PATH=/data/githubbot.sqlite` и
+`TELEGRAM_PROXY_URL=http://telegram-proxy:2080`; менять эти пути нельзя.
+Отсутствующие реальные inputs останавливают preflight до изменений VPS.
+В inventory нет фиктивного digest или необязательного переключателя запуска.
+
+JSON содержит `chatId` (отрицательная decimal string), `notificationBotIds`
+(положительные decimal strings), `repositories:[{name,defaultPrefix,prefixes}]`,
+`topics:[{threadId,repository}]` и `users:[{telegramId,username,githubLogin}]`.
+`threadId` — положительное число, `telegramId` — положительная decimal string.
+Разрешены `backend` (`Backend.`), `frontend` (`Frontend.` и `BFF.`), `figma`
+(`Figma.`). Только Backend/Frontend/UX имеют фиксированный repo; Releases
+и остальные топики предлагают кнопки. Карту пользователей хранить в Vault.
+
+Роль рендерит отдельный `githubbot.env` с mode 0600, анонимно скачивает image,
+запускает `bun run src/main.ts --check-config` без polling и готовит владельца
+тома `bun:bun` перед общим Compose up. Секретные tasks скрывают лог и diff.
+Не выводить `docker compose config` или полный `docker inspect` боевого
+контейнера: они могут раскрыть env.
+
+`verify.yml --limit auxiliary` требует ровно один контейнер `githubbot`, включая
+остановленные, и настоящий Docker `Running=true`, `Health.Status=healthy`.
+Healthcheck вызывает `bun run src/main.ts --health`: heartbeat не старше 120 с,
+interval 30 с, timeout 5 с, retries 3, start period 40 с. Эта проверка не доказывает
+отсутствие poller на другом хосте или доставку reply от другого бота.
+Controller-level plays запускаются отдельно через `--limit localhost`.
+
+Локальная проверка с реальным, заранее собранным image не использует сеть:
+
+```bash
+GITHUBBOT_TEST_IMAGE=githubbot:test COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
+ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-bff.yml auxiliary.yml
+ansible-lint auxiliary.yml roles/hooks roles/restic_backup tasks/verify-hooks-snapshot.yml verify.yml
+```
+
+Fake Docker тест выполняет настоящие tasks verify для zero/two/stopped/unhealthy/
+missing-health/one-healthy; real-image тест проверяет env, offline config checker,
+права bun и SQLite/WAL после recreate. Процедура получения IDs, privacy,
+обновления/рестарта и ручной сверки uncertain create — [RUNBOOK](../RUNBOOK.md#githubbot-на-auxiliary).
+Результат выкладки фиксировать в [журнале](../docs/deployments/2026-11-07-githubbot.md);
+зелёные локальные тесты не означают выполненную живую приёмку.
 
 ## Плейбук runtime-VPS (infra#89)
 

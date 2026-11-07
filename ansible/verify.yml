@@ -301,6 +301,39 @@
     - name: Проверить результат snapshot
       ansible.builtin.import_tasks: tasks/verify-hooks-snapshot.yml
 
+- name: "Проверка GitHubBot на вспомогательной VPS"
+  hosts: auxiliary
+  gather_facts: false
+  become: true
+  vars_files:
+    - roles/hooks/defaults/main.yml
+  tasks:
+    - name: Найти все контейнеры GitHubBot включая остановленные
+      ansible.builtin.command:
+        argv: [docker, compose, ps, --all, --quiet, githubbot]
+        chdir: "{{ hooks_compose_dir }}"
+      register: verify_githubbot_containers
+      changed_when: false
+
+    - name: GitHubBot существует в единственном экземпляре
+      ansible.builtin.assert:
+        that:
+          - verify_githubbot_containers.stdout_lines | length == 1
+        fail_msg: "Ожидался ровно один контейнер сервиса githubbot, включая остановленные"
+
+    - name: Прочитать состояние и настоящий health контейнера GitHubBot
+      ansible.builtin.command:
+        argv: [docker, inspect, --format, "{{ '{{json .State}}' }}", "{{ verify_githubbot_containers.stdout | trim }}"]
+      register: verify_githubbot_state
+      changed_when: false
+
+    - name: GitHubBot запущен и healthy
+      ansible.builtin.assert:
+        that:
+          - (verify_githubbot_state.stdout | from_json).Running == true
+          - (verify_githubbot_state.stdout | from_json).Health.Status | default('') == 'healthy'
+        fail_msg: "GitHubBot должен быть running и healthy по Docker inspect"
+
 # Go на приватной VPS2 (infra#59): с gateway он отвечает только с верным S2S-ключом (backend#41).
 # Проверка — после переноса (app_backend_split), в Go к тому моменту выкачен backend#41.
 - name: "Go на VPS2 и S2S-ключ"

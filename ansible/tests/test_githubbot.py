@@ -175,6 +175,33 @@ class GithubBotChecks(unittest.TestCase):
                 for value in ["test-$value", ENV["TELEGRAM_BOT_TOKEN"], "Alice"]:
                     self.assertNotIn(value, result.stdout + result.stderr)
 
+    def test_verify_requires_exactly_one_running_healthy_container(self):
+        self.fake_docker()
+        plays = yaml.safe_load((ANSIBLE / "verify.yml").read_text())
+        verify = [p for p in plays if p["name"] == "Проверка GitHubBot на вспомогательной VPS"]
+        self.assertEqual(len(verify), 1, "verify.yml must execute GitHubBot health checks on auxiliary")
+        self.assertEqual(verify[0]["hosts"], "auxiliary")
+        for containers, state, succeeds in [
+            ("", {"Running": True, "Health": {"Status": "healthy"}}, False),
+            ("first\nsecond", {"Running": True, "Health": {"Status": "healthy"}}, False),
+            ("first", {"Running": False, "Health": {"Status": "healthy"}}, False),
+            ("first", {"Running": True, "Health": {"Status": "unhealthy"}}, False),
+            ("first", {"Running": True}, False),
+            ("first", {"Running": True, "Health": {"Status": "healthy"}}, True),
+        ]:
+            with self.subTest(containers=containers, state=state):
+                events_path = self.root / "docker-events.jsonl"
+                events_path.unlink(missing_ok=True)
+                self.environment.update(TEST_DOCKER_CONTAINER=containers, TEST_DOCKER_STATE=json.dumps(state))
+                result = self.play(verify[0]["tasks"], self.variables | {"hooks_compose_dir": str(self.root)})
+                self.assertEqual(result.returncode == 0, succeeds, result.stdout + result.stderr)
+                events = [json.loads(line)["args"] for line in events_path.read_text().splitlines()]
+                self.assertEqual(events[0], ["compose", "ps", "--all", "--quiet", "githubbot"])
+                inspected = [e for e in events if "inspect" in e]
+                self.assertEqual(len(inspected), int(containers == "first"))
+                if inspected:
+                    self.assertEqual(inspected[0], ["inspect", "--format", "{{json .State}}", "first"])
+
     def test_real_image_config_checker_and_root_owned_sqlite_survive_recreate(self):
         image = os.environ.get("GITHUBBOT_TEST_IMAGE")
         if not image:
