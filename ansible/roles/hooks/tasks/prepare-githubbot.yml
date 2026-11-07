@@ -1,0 +1,54 @@
+---
+- name: Скачать закреплённый публичный образ GitHubBot
+  community.docker.docker_compose_v2_pull:
+    project_src: "{{ hooks_compose_dir }}"
+    services:
+      - githubbot
+    policy: always
+  no_log: true
+  diff: false
+
+- name: Проверить конфигурацию GitHubBot без polling
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "{{ hooks_compose_dir }}/compose.yml"
+      - run
+      - --rm
+      - --no-deps
+      - --pull
+      - never
+      - githubbot
+      - bun
+      - run
+      - src/main.ts
+      - --check-config
+  changed_when: false
+  no_log: true
+  diff: false
+
+# uid/gid берутся из закреплённого образа; SQLite и WAL остаются на месте.
+- name: Подготовить постоянный том GitHubBot для пользователя bun
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "{{ hooks_compose_dir }}/compose.yml"
+      - run
+      - --rm
+      - --no-deps
+      - --pull
+      - never
+      - --user
+      - root
+      - --entrypoint
+      - sh
+      - githubbot
+      - -c
+      - chown -R bun:bun /data && chmod 700 /data
+  changed_when: true
+  no_log: true
+  diff: false

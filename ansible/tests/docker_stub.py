@@ -34,6 +34,18 @@ else:
         if os.environ.get("TEST_DOCKER_FAILURE") == "pull":
             print("Error controlled-pull-failure", file=sys.stderr)
             sys.exit(1)
+    elif command == "compose" and "run" in args:
+        if "--check-config" in args:
+            # Echo a fake secret to prove no_log also hides a failing checker.
+            print('test-$value-"x"')
+            sys.exit(1 if os.environ.get("TEST_DOCKER_FAILURE") == "check" else 0)
+        if "--user" not in args or "root" not in args or "--entrypoint" not in args:
+            print("Unexpected preparation command", file=sys.stderr)
+            sys.exit(1)
+    elif command == "compose" and "up" in args:
+        pass
+    elif command == "compose" and "images" in args:
+        print("[]")
     elif command == "pull":
         # анонимная выкатка BFF: свой пустой --config, без входа в реестр
         config = Path(args[args.index("--config") + 1]) if "--config" in args else None

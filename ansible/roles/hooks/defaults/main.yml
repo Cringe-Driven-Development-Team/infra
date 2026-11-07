@@ -16,3 +16,7 @@ hooks_env: >-
        'APIDOG_PROJECT_NAME': '2026_2_Cringe_Driven_Development',
        'APIDOG_CONTRACT_URL': 'https://vb78fyael1.apidog.io/'}
      | combine(vault_hooks_env | default({})) }}
+# Образ и source tag задаются inventory после публичной публикации; секреты — только Vault.
+hooks_githubbot_env: >-
+  {{ {'DATABASE_PATH': '/data/githubbot.sqlite', 'TELEGRAM_PROXY_URL': 'http://telegram-proxy:2080'}
+     | combine(vault_githubbot_env | default({})) }}
