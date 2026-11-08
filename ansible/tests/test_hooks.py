@@ -193,6 +193,7 @@ class HooksChecks(unittest.TestCase):
         path = self.root / "proxy/config.json"
         path.parent.mkdir()
         tasks = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
+        tasks = next(task["block"] for task in tasks if "block" in task)
         render = next(task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "xray.json.j2")
         render = copy.deepcopy(render)
         render["ansible.builtin.template"]["src"] = str(ANSIBLE / "roles/hooks/templates/xray.json.j2")
