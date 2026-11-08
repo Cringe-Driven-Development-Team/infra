@@ -1020,3 +1020,116 @@ Native redelivery `3851670746724040704` с тем же GUID принята в
 outbox и тот же message ID; дубля нет. После проверки обновлён verified
 snapshot `/data/snapshots/queue.sqlite`. Реальные уведомления начала и результата
 CD/rollback этой приёмкой не запускались; их локальные сценарии проверены тестами.
+
+## Восстановление API: полный сброс БД приложения (infra#112)
+
+Решение владельца (backend#79, ревью backend#80): старые тестовые блокноты из S3 не переносятся.
+БД приложения на VPS2 сбрасывается **один раз** полностью: пользователи, блокноты, настройки 2FA,
+runtime-сессии и прочие данные приложения не сохраняются, после восстановления регистрируемся
+заново. S3-бакеты и объекты не удаляются. Сброс не входит в CD и не выполняется при старте API.
+Что и почему сбрасывается —
+[backend/docs/database-reset.md](https://github.com/Cringe-Driven-Development-Team/backend/blob/main/docs/database-reset.md).
+
+Production-операции выполняет оператор с авторизованным SSH-доступом к VPS2 и паролем Vault.
+Не менять SSH host key самостоятельно. Логи и `.env` содержат секреты: в отчёт переносить только
+безопасные коды и выводы, не публиковать `.env`, полный `docker inspect` или `docker compose config`.
+
+### Диагностика и постоянный ключ
+
+На VPS2 от root, из `/opt/cellestial`:
+
+```bash
+cd /opt/cellestial
+docker compose ps -a
+docker inspect --format '{{.Config.Image}} {{.State.Status}}' cellestial-api-1
+docker compose logs --tail=100 api
+```
+
+`startup_config` — отказ проверки настроек (в том числе отсутствующий `TOTP_ENCRYPTION_KEY`),
+`totp_init` — отказ инициализации TOTP. После неудачного CD восстанавливаются `.env` и `compose.yml`,
+но контейнеры не откатываются.
+
+`vault_totp_encryption_key` лежит в зашифрованном `vault.yml` (добавлен в PR infra#113 впервые:
+production с 2FA не стартовал, сохранённых TOTP-секретов не было). Это постоянный ключ: не
+перевыпускать, хранить вместе с резервной копией БД. Сброс БД ключ не меняет.
+
+### Остановка, облачные ресурсы и backup
+
+```bash
+set -eu
+cd /opt/cellestial
+docker compose stop api
+```
+
+Убедиться, что другого API или воркера, пишущего в ту же БД, нет. До конца операции не запускать
+CD backend и frontend и не мержить в `main` backend и infra: параллельная выкладка поднимет API
+посреди сброса. До удаления данных найти
+облачные ресурсы runtime-сессий — после сброса таблица пустая, и reconcile их уже не удалит:
+
+```bash
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+SELECT session_id, state, server_id, volume_id, port_id FROM runtime_environments
+WHERE state <> 'DELETED' OR server_id IS NOT NULL OR volume_id IS NOT NULL OR port_id IS NOT NULL;
+SQL
+```
+
+Удалить найденные ресурсы и проверить по меткам `cellestial_runtime=1`,
+`cellestial_env=production`, что серверов, томов и портов не осталось — порядок и команды
+`openstack` в разделе «Runtime-VPS сессий» и в
+[backend/docs/runtime-provisioning.md, «Ручная очистка»](https://github.com/Cringe-Driven-Development-Team/backend/blob/main/docs/runtime-provisioning.md#ручная-очистка).
+
+Резервная копия перед сбросом:
+
+```bash
+install -d -m 0700 backups
+umask 077
+reset_backup="backups/before-reset-$(date -u +%Y%m%dT%H%M%SZ).dump"
+docker compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$reset_backup"
+docker compose exec -T postgres pg_restore --list < "$reset_backup" > /dev/null
+```
+
+Пробное восстановление в отдельную БД: копия читается целиком, в ней есть таблицы приложения.
+
+```bash
+docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" reset_restore_check && pg_restore -U "$POSTGRES_USER" -d reset_restore_check --exit-on-error' < "$reset_backup"
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d reset_restore_check -Atc "SELECT count(*) FROM goose_db_version"'
+docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" reset_restore_check'
+```
+
+Ошибка любой команды — остановиться, БД приложения не трогать.
+
+### Сброс
+
+```bash
+# Пустая БД с прежним владельцем; схему создаст API миграциями goose при старте
+docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
+# Сессии, версии сессий и счётчики попыток входа: старые токены и cookie перестают действовать
+# Пароль redis-cli берёт из REDISCLI_AUTH контейнера; API использует базу REDIS_DB=0.
+# -e: ошибка Redis (WRONGPASS, NOAUTH) даёт ненулевой код и останавливает процедуру до запуска API
+docker compose exec -T redis redis-cli -e -n 0 FLUSHDB
+test "$(docker compose exec -T redis redis-cli -e -n 0 DBSIZE)" = 0
+```
+
+API остаётся остановленным до CD. Миграции Down не выполнять, старый API не запускать.
+
+### CD и отчёт приёмки
+
+После сброса БД и мержа backend#80 выполнить выкатку образа из `main` по полному
+`backend_image_ref=ghcr.io/cringe-driven-development-team/backend@sha256:<64 hex>`
+через `deploy-backend.yml` (раздел «Go и Postgres на VPS2»). Тег вместо digest не принимается.
+Если CD backend ещё передаёт `backend_image_tag`, сначала подготовить его переход на
+новый контракт (backend#42); не запускать такой CD в расчёте восстановить API.
+После готовности Go повторно запустить CD frontend.
+Дождаться успешного healthcheck и проверить:
+
+- `docker compose ps`, `/health` по внутреннему маршруту API, в логах нет `startup_config`,
+  `totp_init`, `database_migrate`;
+- новая регистрация и вход; старый логин не работает;
+- создание, редактирование и повторное открытие новых блокнотов;
+- загрузка нового аватара и его отображение;
+- облачных ресурсов прежних runtime-сессий нет.
+
+В отчёте по задаче: дата, оператор, полный image ref по digest и исходный SHA, безопасный код прежнего отказа, место хранения
+backup и результат пробного восстановления, удалённые облачные ресурсы, URL успешных CD backend и frontend, результаты проверок выше.
+Сохранность прежних пользователей и блокнотов не проверяется: они удалены намеренно.
+

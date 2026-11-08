@@ -43,6 +43,8 @@ postgres_password: "{{ vault_postgres_password }}"
 redis_password: "{{ vault_redis_password }}"
 jwt_secret: "{{ vault_jwt_secret }}"
 csrf_secret: "{{ vault_csrf_secret }}"
+# Постоянный ключ шифрования TOTP (base64 32 байт); хранить вместе с резервной копией БД.
+totp_encryption_key: "{{ vault_totp_encryption_key }}"
 # BFF (infra#58): ключ сессии — base64 ровно 32 байт (openssl rand -base64 32), один на выпуск и откат;
 # S2S-ключ — один для BFF (BFF_KEY) и Go (BFF_API_KEY), [A-Za-z0-9_-] от 32 символов
 session_key: "{{ vault_session_key }}"
@@ -55,7 +57,7 @@ notebooks_s3_secret_key: "{{ vault_notebooks_s3_secret_key }}"
 s3_endpoint: https://s3.ru-7.storage.selcloud.ru   # выход s3Endpoint
 s3_region: ru-7                                    # infra:s3Pool, он же регион подписи
 s3_force_path_style: true                          # S3-клиент бэка — path-style
-notebooks_bucket: cellestial-notebooks-0           # выход notebooksBucket
+notebooks_bucket: cellestial-notebooks-0           # notebooksBucket: архив, API его не использует
 avatars_bucket: cellestial-avatars-0               # выход avatarsBucket
 # Публичный URL аватарки — https://<avatars_public_domain>/<ключ>: свой домен бакета (выход
 # avatarsCustomDomain), при пересоздании стека не меняется. Сертификат домена выпущен в панели;

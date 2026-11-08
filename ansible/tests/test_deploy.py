@@ -4,6 +4,7 @@ Run with the deployment Python environment and COMPOSE_CLI pointing to a Compose
 command: COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
 """
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,8 @@ ANSIBLE = Path(__file__).resolve().parents[1]
 BFF_REF = "ghcr.io/cringe-driven-development-team/bff@sha256:" + "a" * 64
 BACKEND_REF = "ghcr.io/cringe-driven-development-team/backend@sha256:" + "d" * 64
 BFF_SHA = "b" * 40
+TOTP_KEY = base64.b64encode(bytes(range(32))).decode()
+TOTP_VAULT = f"vault_totp_encryption_key: {TOTP_KEY}\n".encode()
 BFF_VAULT = b"vault_session_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\nvault_bff_api_key: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\n"
 
 
@@ -68,6 +71,7 @@ class DeploymentChecks(unittest.TestCase):
             'postgres_password: "{{ vault_postgres_password }}"\n'
             'jwt_secret: "{{ vault_jwt_secret }}"\n'
             'csrf_secret: "{{ vault_csrf_secret }}"\n'
+            'totp_encryption_key: "{{ vault_totp_encryption_key }}"\n'
             'redis_password: "{{ vault_redis_password }}"\n'
             'session_key: "{{ vault_session_key }}"\n'
             'bff_api_key: "{{ vault_bff_api_key }}"\n'
@@ -85,7 +89,7 @@ class DeploymentChecks(unittest.TestCase):
             vault.encrypt(
                 b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
                 b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n"
-                + BFF_VAULT
+                + BFF_VAULT + TOTP_VAULT
             )
         )
         password_file = self.root / "vault-pass"
@@ -117,6 +121,36 @@ class DeploymentChecks(unittest.TestCase):
         )
 
     def test_valid_digest_and_vault(self):
+        result = self.validate(BACKEND_REF)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_totp_key_validation_rejects_invalid_values_without_leaks(self):
+        path = self.root / "group_vars/all/vault.yml"
+        vault = VaultLib([("default", VaultSecret(b"test-vault-password-only"))])
+        original = yaml.safe_load(vault.decrypt(path.read_bytes()))
+        cases = [None, "", 123, False, [], {}, "short-leaky-totp-key",
+                 "!" * 43 + "=", "_" * 43 + "=", TOTP_KEY + "\n",
+                 TOTP_KEY[:20] + "\n" + TOTP_KEY[20:]]
+        cases += [base64.b64encode(bytes(n)).decode() for n in (16, 31, 33, 64)]
+        for key in cases:
+            with self.subTest(key_type=type(key).__name__, length=len(str(key))):
+                values = dict(original, vault_totp_encryption_key=key)
+                if key is None:
+                    values.pop("vault_totp_encryption_key")
+                path.write_bytes(vault.encrypt(yaml.safe_dump(values).encode()))
+                result = self.validate(BACKEND_REF)
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn("Check the TOTP encryption key", output)
+                self.assertNotIn("Gather server facts", output)
+                self.assertNotIn("Write the application environment", output)
+                if isinstance(key, str) and len(key) > 10:
+                    self.assertNotIn(key, output)
+                self.assertNotIn(TOTP_KEY, output)
+
+    def test_api_validation_needs_no_notebook_bucket(self):
+        variables = self.root / "group_vars/all/vars.yml"
+        variables.write_text(variables.read_text().replace("notebooks_bucket: notebooks\n", ""))
         result = self.validate(BACKEND_REF)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -186,7 +220,7 @@ class DeploymentChecks(unittest.TestCase):
             b"vault_session_key: " + b"A" * 43 + b"=\nvault_bff_api_key: short-leaky-key\n",
         ]:
             with self.subTest(secrets=secrets):
-                (self.root / "group_vars/all/vault.yml").write_bytes(vault.encrypt(base + secrets))
+                (self.root / "group_vars/all/vault.yml").write_bytes(vault.encrypt(base + TOTP_VAULT + secrets))
                 result = self.validate_bff()
                 output = result.stdout + result.stderr
                 self.assertNotEqual(result.returncode, 0)
@@ -283,7 +317,7 @@ class DeploymentChecks(unittest.TestCase):
         (self.root / "group_vars/all/vault.yml").write_bytes(
             vault.encrypt(
                 b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
-                b"vault_redis_password: fake-redis-password-0123\n" + BFF_VAULT
+                b"vault_redis_password: fake-redis-password-0123\n" + BFF_VAULT + TOTP_VAULT
             )
         )
         result = self.validate(BACKEND_REF)
@@ -298,7 +332,7 @@ class DeploymentChecks(unittest.TestCase):
                     vault.encrypt(
                         b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
                         b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: \"" + password + b"\"\n"
-                        + BFF_VAULT
+                        + BFF_VAULT + TOTP_VAULT
                     )
                 )
                 result = self.validate(BACKEND_REF)
@@ -509,11 +543,12 @@ class DeploymentChecks(unittest.TestCase):
             app_bff_go_api_url=f"http://{address}:8080/api/v1",
             app_services=services, app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF,
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
-            s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
+            s3_endpoint="https://s3.example.org",
             avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
             app_cors_allowed_origins="https://app.example.org", postgres_password="pg-secret",
             jwt_secret="jwt-secret", csrf_secret="csrf-secret", redis_password="redis-secret",
             session_key="session-secret", bff_api_key="s2s-secret",
+            totp_encryption_key=TOTP_KEY,
             notebooks_s3_access_key="s3-key", notebooks_s3_secret_key="s3-secret")
         variables.update(secrets or {})
         templates = Environment(undefined=StrictUndefined)
@@ -532,6 +567,29 @@ class DeploymentChecks(unittest.TestCase):
                                  "json"], capture_output=True, text=True, timeout=30, check=True,
                                 env=clean)
         return json.loads(result.stdout), env
+
+    def test_totp_and_avatar_configuration_without_notebook_bucket(self):
+        services = ["api", "postgres", "redis"]
+        config, env = self.render_host(services)
+        api = config["services"]["api"]["environment"]
+        self.assertEqual(api["TOTP_ENCRYPTION_KEY"], TOTP_KEY)
+        self.assertNotIn("S3_NOTEBOOKS_BUCKET", api)
+        self.assertNotIn("S3_NOTEBOOKS_BUCKET", env)
+        self.assertEqual(api["AWS_ACCESS_KEY_ID"], "s3-key")
+        self.assertEqual(api["AWS_SECRET_ACCESS_KEY"], "s3-secret")
+        self.assertEqual(api["AWS_REGION"], "ru-7")
+        self.assertEqual(api["AWS_ENDPOINT_URL_S3"], "https://s3.example.org")
+        self.assertEqual(api["S3_AVATARS_BUCKET"], "avatars")
+        self.assertEqual(api["S3_AVATARS_PUBLIC_URL"], "https://avatars.example.org")
+        again, again_env = self.render_host(services)
+        self.assertEqual(again_env, env)
+        self.assertEqual(again["services"]["api"]["environment"], api)
+        for name, service in config["services"].items():
+            if name != "api":
+                self.assertNotIn("TOTP_ENCRYPTION_KEY", service.get("environment", {}))
+        config, env = self.render_host(["caddy", "bff"])
+        self.assertNotIn(TOTP_KEY, env)
+        self.assertNotIn("TOTP_ENCRYPTION_KEY", config["services"]["bff"]["environment"])
 
     def test_gateway_runs_only_caddy_and_bff(self):
         config, env = self.render_host(["caddy", "bff"])
@@ -787,7 +845,7 @@ class DeploymentChecks(unittest.TestCase):
         (self.root / "group_vars/all/vault.yml").write_bytes(vault.encrypt(
             b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
             b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n"
-            + BFF_VAULT + runtime_vault.encode()))
+            + BFF_VAULT + TOTP_VAULT + runtime_vault.encode()))
         variables = self.root / "group_vars/all/vars.yml"
         if "runtime_os_password:" not in variables.read_text():
             variables.write_text(variables.read_text() + "".join(
