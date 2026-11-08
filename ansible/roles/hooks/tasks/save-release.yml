@@ -1,0 +1,10 @@
+---
+- name: Атомарно сохранить состояние релизов
+  become: true
+  ansible.builtin.copy:
+    content: "{{ hooks_release_state | hooks_release_validate | to_nice_json }}\n"
+    dest: "{{ hooks_compose_dir }}/releases.json"
+    owner: root
+    group: root
+    mode: "0600"
+  when: not ansible_check_mode

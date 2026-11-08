@@ -34,3 +34,12 @@ Vault. Получи его лично у Дениса или менторов и
 `ANSIBLE_VAULT_PASSWORD_FILE`. Правь секреты через `ansible-vault edit` — при
 сохранении файл шифруется обратно. Коммить только зашифрованный `vault.yml`.
 Подробный порядок и команды — [Секреты (ansible-vault)](ansible/README.md#секреты-ansible-vault).
+
+Версии приложений VPS3 выбираются из `/opt/hooks/releases.json` (desired/confirmed),
+а не из inventory; обычный infra apply сохраняет выбранные digest обоих сервисов.
+Первая установка и восстановление состояния описаны в [RUNBOOK](RUNBOOK.md#состояние-релизов-vps3-первая-установка-и-восстановление).
+
+VPS3 application releases use [auxiliary-deploy.yml](.github/workflows/auxiliary-deploy.yml).
+A successful publisher dispatches one immutable digest; infrastructure apply keeps the
+selection in `/opt/hooks/releases.json`. All production writers share `infra-production`.
+See [RUNBOOK.md](RUNBOOK.md) for initialization and recovery.

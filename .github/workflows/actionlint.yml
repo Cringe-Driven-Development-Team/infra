@@ -24,4 +24,6 @@ jobs:
       - name: actionlint
         uses: docker://rhysd/actionlint:1.7.12
         with:
-          args: -color
+          # shortcut: actionlint 1.7.12 lacks queue; remove when supported (rhysd/actionlint#657).
+          # Hex escapes keep the exact regex in one Docker-action argument without shell quoting.
+          args: -color -ignore ^unexpected\x20key\x20\x22queue\x22\x20for\x20\x22concurrency\x22\x20section\.

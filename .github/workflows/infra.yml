@@ -9,6 +9,8 @@ on:
       - pulumi/**
       - ansible/**
       - .github/workflows/infra.yml
+      - scripts/ansible-ci-secrets.sh
+      - scripts/auxiliary_release.py
   push:
     branches: [main]
     paths: *infra-paths
@@ -68,7 +70,7 @@ jobs:
       - name: Ansible — синтаксис и тесты
         working-directory: ansible
         run: |
-          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-bff.yml auxiliary.yml
+          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-bff.yml auxiliary.yml deploy-auxiliary.yml initialize-auxiliary-releases.yml
           COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
       # Плейбук runtime-VPS (infra#89) запускает Go API на VPS2; vars — заглушка формата backend
       - name: Ansible — плейбук runtime-VPS
@@ -118,27 +120,12 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
         run: |
-          for name in SELECTEL_ENV_FILE DEPLOY_SSH_KEY SSH_KNOWN_HOSTS ANSIBLE_VAULT_PASSWORD; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Нет секрета $name в environment ${{ github.job == 'apply' && 'production' || 'infra-preview' }} (ansible/README.md, «CI/CD инфраструктуры»)"
-              exit 1
-            fi
-          done
           umask 077
-          d="$RUNNER_TEMP/infra"
-          mkdir -p "$d"
-          printf '%s\n' "$SELECTEL_ENV_FILE" > "$d/selectel.env"
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$d/ci-key"
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$d/known_hosts"
-          printf '%s\n' "$ANSIBLE_VAULT_PASSWORD" > "$d/vault-pass"
-          ssh-keygen -y -f "$d/ci-key" > "$d/ci-key.pub"
-          ssh-keygen -F cellestial.ru -f "$d/known_hosts" > /dev/null
-          {
-            echo "SELECTEL_ENV=$d/selectel.env"
-            echo "ANSIBLE_VAULT_PASSWORD_FILE=$d/vault-pass"
-            echo "INFRA_SSH_ARGS=-o UserKnownHostsFile=$d/known_hosts -o StrictHostKeyChecking=yes"
-            echo "INFRA_DEPLOY_KEY=$d/ci-key"
-          } >> "$GITHUB_ENV"
+          test -n "$SELECTEL_ENV_FILE"
+          bash scripts/ansible-ci-secrets.sh cellestial.ru hooks.cellestial.ru
+          printf '%s\n' "$SELECTEL_ENV_FILE" > "$RUNNER_TEMP/infra/selectel.env"
+          chmod 600 "$RUNNER_TEMP/infra/selectel.env"
+          echo "SELECTEL_ENV=$RUNNER_TEMP/infra/selectel.env" >> "$GITHUB_ENV"
       - &pulumi-install
         name: Pulumi — зависимости
         working-directory: pulumi
@@ -161,10 +148,26 @@ jobs:
       # Вспомогательная VPS (infra#54): её host key (hooks.cellestial.ru) — тоже в SSH_KNOWN_HOSTS
       - name: auxiliary.yml --check --diff
         working-directory: ansible
+        env:
+          AUXILIARY_INITIAL_RELEASES: ${{ vars.AUXILIARY_INITIAL_RELEASES }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -o pipefail
+          set -euo pipefail
+          initial_args=()
+          if [[ -n "$AUXILIARY_INITIAL_RELEASES" ]]; then
+            python - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          request = dict(operation='initialize', initial_releases_json=os.environ['AUXILIARY_INITIAL_RELEASES'],
+                         service='', image_ref='', source_sha='', request_id='')
+          Path(os.environ['RUNNER_TEMP'], 'initial-request.json').write_text(json.dumps(request))
+          PYTHON
+            python ../scripts/auxiliary_release.py validate --request "$RUNNER_TEMP/initial-request.json" --output "$RUNNER_TEMP/initial-releases.json"
+            python -c 'import json,os; p=os.environ["RUNNER_TEMP"]; json.dump({"hooks_initial_releases":json.load(open(p+"/initial-releases.json"))},open(p+"/initial-vars.json","w"))'
+            initial_args=(-e "@$RUNNER_TEMP/initial-vars.json")
+          fi
           ansible-playbook -i inventory/ci.yml auxiliary.yml --check --diff \
-            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" \
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" "${initial_args[@]}" \
             | tee "$RUNNER_TEMP/auxiliary-check.txt"
       - name: Сводка
         if: always()
@@ -204,6 +207,7 @@ jobs:
     concurrency:
       group: infra-production
       cancel-in-progress: false
+      queue: max
     defaults:
       run:
         shell: bash

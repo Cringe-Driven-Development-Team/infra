@@ -329,9 +329,10 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
 
 ### Развёртывание сервиса (infra#70, .github#20)
 
-Роль `hooks` разворачивает публичный GHCR image по registry manifest digest из
-`ansible/roles/hooks/defaults/main.yml`. Соответствующий SHA-тег хранится в
-`hooks_image_source_tag` для трассировки; Compose использует только `hooks_image`.
+Роль `hooks` читает оба выбранных Release из `/opt/hooks/releases.json` на VPS3.
+`desired` задаёт digest образа и source SHA; `confirmed` хранит последний проверенный
+релиз и может отставать после сбоя. Обычный apply всегда сохраняет обе версии
+`desired`, даже если `confirmed` старее. Inventory больше не закрепляет образы приложений.
 Локальный Docker image ID нельзя использовать вместо manifest digest.
 
 Перед первой выкаткой:
@@ -446,13 +447,13 @@ read/write; проверить нужные approval/SSO. Существующи
 
 **Образ и локальный config gate.** Дождаться зелёных service checks и
 `githubbot-image.yml` на полный исходный SHA. В доверенном успешном запуске
-штатного publisher репозитория `.github` сверить source SHA из summary с SHA
-запуска и тегом `ghcr.io/cringe-driven-development-team/githubbot:sha-<полный SHA>`.
+штатного publisher репозитория `.github` скачать `release.json` из артефакта
+`release-githubbot-<run_attempt>`, сверить `source_sha` с SHA запуска и тегом `ghcr.io/cringe-driven-development-team/githubbot:sha-<полный SHA>`.
 Проверить, что registry manifest digest этого тега и `Digest` анонимного pull
-закреплённого образа совпадают с digest из того же publisher summary.
+закреплённого образа совпадают с digest из `image_ref` того же `release.json`.
 Проверить public pull с пустым Docker config и только OCI source
 `https://github.com/Cringe-Driven-Development-Team/.github`; записать
-реальные digest/source tag в `ansible/inventory/group_vars/auxiliary/vars.yml`.
+проверенные Release в состояние через штатный executor (не в inventory).
 `org.opencontainers.image.revision` унаследован от базового Bun image и не
 идентифицирует исходный SHA GitHubBot; для этой сверки его не использовать.
 Локальный Docker image ID не подставлять вместо registry manifest digest.
@@ -467,8 +468,10 @@ import os, subprocess, tempfile
 from pathlib import Path
 import yaml
 
-variables = yaml.safe_load(Path('inventory/group_vars/auxiliary/vars.yml').read_text())
-image = variables['hooks_githubbot_image']
+import json
+# Локальный release.json — артефакт доверенного publisher, не inventory.
+release = json.loads(Path('release.json').read_text())
+image = release['image_ref']
 with tempfile.TemporaryDirectory(prefix='githubbot-check-') as directory:
     docker_config = Path(directory, 'docker-config')
     docker_config.mkdir(mode=0o700)
@@ -1133,3 +1136,66 @@ API остаётся остановленным до CD. Миграции Down �
 backup и результат пробного восстановления, удалённые облачные ресурсы, URL успешных CD backend и frontend, результаты проверок выше.
 Сохранность прежних пользователей и блокнотов не проверяется: они удалены намеренно.
 
+
+### Состояние релизов VPS3: первая установка и восстановление
+
+`/opt/hooks/releases.json` имеет schema `version: 1`, два ключа `services.githubbot`
+и `services.webhook-alerts`, у каждого `desired` и `confirmed` (Release либо null).
+Release содержит `service`, `image_ref` (полный GHCR repository + `@sha256:...`),
+`source_sha` (40 lowercase hex), положительные целые `publisher_run_id` и
+`publisher_run_attempt`. Файл не содержит секретов; writer сохраняет его атомарно
+через Ansible copy с root:root и 0600.
+
+На пустой VPS `auxiliary.yml` принимает явно переданные `hooks_initial_releases` —
+список ровно из двух проверенных Release, по одному для каждого сервиса. Loader
+проверяет их и строит desired с confirmed=null в памяти, выставляя
+`hooks_release_state_needs_initialization=true`. На существующей VPS loader читает
+файл и выставляет false. `--check` читает состояние и планирует без записи.
+Первичную запись после image/config gates и подтверждение контейнеров выполняет
+executor; до включения этой части bootstrap не считается завершённым.
+
+Если Compose уже существует, а состояния нет, обычный apply останавливается.
+Для read-only migration preview разрешён `--check` с двумя явными
+`hooks_initial_releases`: оба image_ref должны точно совпасть с образами сервисов
+`githubbot` и `hooks` из текущего `docker compose config`. Несовпадение останавливает
+preview; Compose и state не записываются.
+Используйте отдельную `operation=initialize` штатного executor с двумя проверенными
+Release; не удаляйте Compose для обхода проверки и не импортируйте версии неявно.
+При повреждении состояния восстановите проверенный файл/выполните initialize через
+тот же executor. Не подставляйте старые digest из Git и не используйте latest.
+После неуспешного deploy desired остаётся выбранным релизом, confirmed — последним
+проверенным; повторный apply использует desired, автоматического rollback нет.
+Все записи выполняются через очередь executor `infra-production`; параллельный
+локальный Ansible вне очереди не поддерживается.
+
+## VPS3 releases
+
+Use Actions → **Auxiliary deploy** on `main` for administrative operations; run no local
+Ansible writer alongside the queue. `operation=deploy` takes `service`, immutable
+`image_ref`, full `source_sha` and `request_id` in the form
+`service:publisher_run_id:publisher_run_attempt:caller_run_id:caller_run_attempt`.
+Keep `initial_releases_json` empty. Only successful push/main attempts of the allowlisted
+publisher workflows and their public GHCR digest/source labels are accepted. Metadata
+and registry failures stop the operation. Older or diverging source commits are rejected.
+
+For an existing VPS3 with Compose and healthy running containers but no release state,
+run `operation=initialize` with `initial_releases_json` containing exactly two explicit
+Release objects (`service`, `image_ref`, `source_sha`, `publisher_run_id`,
+`publisher_run_attempt`), one per service. Leave all deploy fields empty. Find the actual
+image digests and successful publisher attempts first; no latest tag or guessed run is
+accepted. The operation verifies Compose, container Config.Image, local ImageID, health
+and HTTPS before writing desired=confirmed, root:root 0600. Existing state must match
+completely. A new VPS without Compose uses explicit bootstrap via `hooks_initial_releases`
+instead; initialize does not provision it.
+
+For migration preview only, an administrator may set repository variable
+`AUXILIARY_INITIAL_RELEASES` to the same explicit pair. The PR auxiliary `--check` step
+validates publisher metadata/public registry and supplies it as `hooks_initial_releases`.
+Remove this temporary variable after real initialization. Production never consumes it;
+ordinary apply without saved state remains an error.
+
+A failed deploy can leave desired ahead of confirmed. Inspect the workflow summary and
+failed step, repair the cause, then dispatch the same release again through the executor.
+No rollback occurs automatically. Caller cancellation does not cancel the dispatched
+executor; inspect its own run before retrying. Shared networks, SQLite volumes and the
+other service remain in place during a targeted deploy.

@@ -14,6 +14,8 @@ from ansible.plugins.filter.core import to_json
 from jinja2 import Environment, StrictUndefined
 import yaml
 
+from test_hooks_release import state as release_state
+
 ANSIBLE = Path(__file__).resolve().parents[1]
 IMAGE = "ghcr.io/cringe-driven-development-team/githubbot@sha256:" + "a" * 64
 SOURCE = "ghcr.io/cringe-driven-development-team/githubbot:sha-" + "b" * 40
@@ -57,17 +59,20 @@ class GithubBotChecks(unittest.TestCase):
                     "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {
                         "fingerprint": "chrome", "serverName": "example.invalid", "password": "A" * 43, "shortId": ""}}}],
                 "routing": {"rules": [{"type": "field", "domain": ["full:api.telegram.org"], "outboundTag": "telegram-vless"}]}}}
+        self.variables['hooks_release_state'] = release_state()
+        self.variables['hooks_image'] = self.variables['hooks_release_state']['services']['webhook-alerts']['desired']['image_ref']
+        self.variables['hooks_image_source_tag'] = 'ghcr.io/cringe-driven-development-team/webhook-alerts:sha-' + 'b' * 40
         self.inventory = self.root / "inventory.yml"
         self.inventory.write_text(yaml.safe_dump({"all": {"hosts": {"local": {
             "ansible_connection": "local", "ansible_python_interpreter": sys.executable}}}}))
 
-    def play(self, tasks, variables, check=False):
+    def play(self, tasks, variables, check=False, timeout=45):
         path = self.root / "play.yml"
         path.write_text(yaml.safe_dump([{"name": "Exercise GitHubBot tasks", "hosts": "all", "gather_facts": False,
                                         "vars": variables, "tasks": tasks}]))
         return subprocess.run([shutil.which("ansible-playbook"), "-i", str(self.inventory), str(path),
                                *(["--check"] if check else []), "--diff"], cwd=ANSIBLE, env=self.environment,
-                              text=True, capture_output=True, timeout=45)
+                              text=True, capture_output=True, timeout=timeout)
 
     def run_tasks(self, relative_path, variables):
         return self.play([{"name": "Run production tasks", "ansible.builtin.import_tasks": str(ANSIBLE / relative_path)}], variables)
@@ -110,7 +115,7 @@ class GithubBotChecks(unittest.TestCase):
             cases.append({"hooks_githubbot_env": ENV | {key: value}})
         for case in cases:
             with self.subTest(case=list(case)):
-                result = self.run_tasks("roles/hooks/tasks/main.yml", self.variables | case)
+                result = self.run_tasks("roles/hooks/tasks/validate.yml", self.variables | case)
                 output = result.stdout + result.stderr
                 self.assertNotEqual(result.returncode, 0, output)
                 self.assertNotIn("TASK [Каталог проекта Compose]", output)
@@ -176,7 +181,7 @@ class GithubBotChecks(unittest.TestCase):
         self.fake_docker()
         main = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
         main = next(t["block"] for t in main if "block" in t)
-        prepare_index = next(i for i, t in enumerate(main) if t.get("ansible.builtin.import_tasks") == "prepare-githubbot.yml")
+        prepare_index = next(i for i, t in enumerate(main) if t.get("ansible.builtin.import_tasks") == "validate-candidate.yml")
         up_index = next(i for i, t in enumerate(main) if "community.docker.docker_compose_v2" in t)
         self.assertLess(prepare_index, up_index)
         tasks = [{"name": "Prepare GitHubBot", "ansible.builtin.import_tasks": str(ANSIBLE / "roles/hooks/tasks/prepare-githubbot.yml")}, main[up_index]]
@@ -202,12 +207,12 @@ class GithubBotChecks(unittest.TestCase):
 
     def test_first_deployment_preview(self):
         main = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
-        self.assertEqual(main[0]["ansible.builtin.import_tasks"], "validate.yml")
+        self.assertEqual([t["ansible.builtin.import_tasks"] for t in main[:2]], ["release-state.yml", "validate.yml"])
         preview = next(t for t in main if t.get("ansible.builtin.import_tasks") == "preview.yml")
         self.assertEqual(preview["when"], "ansible_check_mode")
         apply = next(t for t in main if "block" in t)
         self.assertEqual(apply["when"], "not ansible_check_mode")
-        self.assertTrue(any("ansible.builtin.uri" in t for t in main))
+        self.assertTrue(any(t.get("ansible.builtin.import_tasks") == "verify-release.yml" for t in main))
         self.fake_docker()
         old = "name: hooks\nservices:\n  hooks:\n    image: old:deployed\n"
         (self.root / "compose.yml").write_text(old)
@@ -310,7 +315,7 @@ class GithubBotChecks(unittest.TestCase):
     def test_verify_requires_exactly_one_running_healthy_container(self):
         self.fake_docker()
         plays = yaml.safe_load((ANSIBLE / "verify.yml").read_text())
-        verify = [p for p in plays if p["name"] == "Проверка GitHubBot на вспомогательной VPS"]
+        verify = [p for p in plays if p["name"] == "Проверка релизов на вспомогательной VPS"]
         self.assertEqual(len(verify), 1, "verify.yml must execute GitHubBot health checks on auxiliary")
         self.assertEqual(verify[0]["hosts"], "auxiliary")
         for containers, state, succeeds in [
@@ -324,15 +329,17 @@ class GithubBotChecks(unittest.TestCase):
             with self.subTest(containers=containers, state=state):
                 events_path = self.root / "docker-events.jsonl"
                 events_path.unlink(missing_ok=True)
-                self.environment.update(TEST_DOCKER_CONTAINER=containers, TEST_DOCKER_STATE=json.dumps(state))
-                result = self.play(verify[0]["tasks"], self.variables | {"hooks_compose_dir": str(self.root)})
+                self.environment.update(TEST_DOCKER_CONTAINER=containers, TEST_DOCKER_STATE=json.dumps([{
+                    'State': state, 'Config': {'Image': IMAGE}, 'Image': 'sha256:' + '1' * 64}]))
+                result = self.play([{'name': 'Verify GitHubBot', 'ansible.builtin.import_tasks': str(ANSIBLE / 'roles/hooks/tasks/verify-release.yml')}],
+                    self.variables | {"hooks_compose_dir": str(self.root), 'hooks_verify_services': ['githubbot'], 'hooks_verify_confirm': False})
                 self.assertEqual(result.returncode == 0, succeeds, result.stdout + result.stderr)
                 events = [json.loads(line)["args"] for line in events_path.read_text().splitlines()]
-                self.assertEqual(events[0], ["compose", "ps", "--all", "--quiet", "githubbot"])
+                self.assertEqual(events[0][-4:], ["ps", "--all", "--quiet", "githubbot"])
                 inspected = [e for e in events if "inspect" in e]
-                self.assertEqual(len(inspected), int(containers == "first"))
+                self.assertEqual(len(inspected), 2 * int(containers == "first"))
                 if inspected:
-                    self.assertEqual(inspected[0], ["inspect", "--format", "{{json .State}}", "first"])
+                    self.assertEqual(inspected[0], ["inspect", "first"])
 
     def test_real_image_config_checker_and_root_owned_sqlite_survive_recreate(self):
         image = os.environ.get("GITHUBBOT_TEST_IMAGE")

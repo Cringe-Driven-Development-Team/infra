@@ -149,7 +149,7 @@
     that:
       - hooks_githubbot_image | default('') is match('^ghcr[.]io/cringe-driven-development-team/githubbot@sha256:[0-9a-f]{64}$')
       - hooks_githubbot_image_source_tag | default('') is match('^ghcr[.]io/cringe-driven-development-team/githubbot:sha-[0-9a-f]{40}$')
-    fail_msg: Укажите опубликованный registry digest GitHubBot и полный SHA source tag в inventory.
+    fail_msg: Укажите опубликованный registry digest GitHubBot и полный SHA source tag в releases.json.
 
 - name: Проверить структуру переменных GitHubBot
   ansible.builtin.assert:
