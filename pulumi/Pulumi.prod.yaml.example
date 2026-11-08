@@ -64,7 +64,8 @@ config:
   # infra:runtimeUserName: cellestialRuntimeProvisioner   # уникально в аккаунте
   # 1 vCPU / 2 GiB: по vcpus/ram в ru-9 находятся два флейвора (SL1.1-2048 и m1.small) — задать имя
   # infra:runtimeFlavorName: SL1.1-2048
-  # infra:runtimeImageName: "Debian 13 (Trixie) 64-bit"   # по умолчанию; Python 3.13 для агента
+  # Debian 13 (Python 3.13 для агента), id фиксирован; тот же — runtime_image_id в ansible vars.yml
+  # infra:runtimeImageId: 9e866919-868b-4da0-9f02-d9559ae7f7c3
   # infra:runtimeVolumeType: fast.ru-9a                   # по умолчанию infra:volumeType
   # Объектное хранилище: пул (например ru-1) → endpoint s3.<pool>.storage.selcloud.ru
   infra:s3Pool: ru-1

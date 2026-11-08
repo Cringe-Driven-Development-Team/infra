@@ -333,7 +333,8 @@ pulumi config set infra:runtime true
 # SL1.1-2048 и m1.small, поэтому имя; список — ./scripts/list-flavors.sh
 pulumi config set infra:runtimeFlavorName SL1.1-2048
 pulumi config set infra:runtimeVolumeType fast.ru-9a           # по умолчанию infra:volumeType
-# pulumi config set infra:runtimeImageName "Debian 13 (Trixie) 64-bit"   # по умолчанию: Python 3.13 для агента
+# Debian 13 (Python 3.13 для агента), id фиксирован; тот же — runtime_image_id в ansible vars.yml
+pulumi config set infra:runtimeImageId 9e866919-868b-4da0-9f02-d9559ae7f7c3
 # pulumi config set infra:runtimeUserName cellestialRuntimeProvisioner    # по умолчанию; уникально в аккаунте
 ```
 
@@ -357,9 +358,9 @@ pulumi config set infra:runtimeVolumeType fast.ru-9a           # по умолч
 | `runtimeClientCert`, `runtimeClientKey` | ключ | `vault_runtime_client_cert`, `vault_runtime_client_key` | `/run/secrets/runtime/client.crt`, `client.key` |
 
 `RUNTIME_OS_AUTH_URL` — константа `https://cloud.api.selcloud.ru/identity/v3`, `RUNTIME_ENV_NAME` —
-`runtime_env_name: production` в `vars.yml`. Образ берётся
-`mostRecent`: Selectel обновляет Debian 13, и `runtimeImageId` меняется на следующем `up` — сверять с
-`runtime_image_id`. Перенос в vault, проверка доступа и ротация — RUNBOOK, «Runtime-VPS сессий».
+`runtime_env_name: production` в `vars.yml`. Образ фиксирован: `runtimeImageId` — это
+`infra:runtimeImageId`, равный `runtime_image_id` (тест `test_runtime_image`); новый образ — правкой обоих
+в одном PR после проверки `openstack volume create` из RUNBOOK. Перенос в vault, проверка доступа и ротация — RUNBOOK, «Runtime-VPS сессий».
 
 ## Передача в Ansible
 

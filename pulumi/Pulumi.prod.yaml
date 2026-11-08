@@ -10,6 +10,8 @@ config:
   infra:volumeType: fast.ru-9a
   infra:gatewayFlavorName: SL1.2-8192
   infra:imageName: Ubuntu 24.04 LTS 64-bit
+  # Образ runtime-VPS (Debian 13) фиксирован: тот же id — runtime_image_id в ansible vars.yml
+  infra:runtimeImageId: 9e866919-868b-4da0-9f02-d9559ae7f7c3
   infra:sshPublicKey: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0odNAHfl8l5IbkfcuP9I5HSDeShI+4rZ/gTHAkVw6E redtea@MacBook-Air-RedTea.local
   infra:sshPublicKeys:
     - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0odNAHfl8l5IbkfcuP9I5HSDeShI+4rZ/gTHAkVw6E redtea@MacBook-Air-RedTea.local

@@ -836,7 +836,8 @@ Go API получает только `RUNTIME_ENABLED=false`, ключей runti
    мерже в main.
 2. **Открытые значения** — `group_vars/all/vars.yml`, блок `runtime_*`: вписать
    `pulumi stack output runtimeSecurityGroupId`, сверить остальные с `pulumi stack output` (выход у каждой
-   строки в комментарии; `runtimeImageId` меняется при обновлении образа Selectel).
+   строки в комментарии). Образ фиксирован: `runtime_image_id` равен `infra:runtimeImageId` в
+   `Pulumi.prod.yaml`, новый образ — правкой обоих в одном PR (тест `test_runtime_image`).
 3. **Секреты** — в `vault.yml` из выходов, не печатая их в терминал (повторный запуск заменяет прежние
    `vault_runtime_*`):
 
