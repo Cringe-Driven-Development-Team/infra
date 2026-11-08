@@ -82,7 +82,7 @@ else:
     elif command == "compose" and "ps" in args:
         print(os.environ.get("TEST_DOCKER_PROXY", "proxy-container") if "telegram-proxy" in args else
               (args[-1] + "-container" if os.environ.get("TEST_DOCKER_DYNAMIC_INSPECT") else os.environ.get("TEST_DOCKER_CONTAINER", "")))
-    elif command == "inspect" and "--format" in args and ".State.Running" in args[args.index("--format") + 1]:
+    elif command == "inspect" and "--format" in args and args[args.index("--format") + 1] == "{{.State.Running}}":
         print("true")
     elif command == "inspect" and os.environ.get("TEST_DOCKER_DYNAMIC_INSPECT"):
         import yaml
