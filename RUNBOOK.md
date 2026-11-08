@@ -890,13 +890,15 @@ cd /opt/cellestial
 docker compose stop api
 ```
 
-Убедиться, что другого API или воркера, пишущего в ту же БД, нет. До удаления данных найти
+Убедиться, что другого API или воркера, пишущего в ту же БД, нет. До конца операции не запускать
+CD backend и frontend и не мержить в `main` backend и infra: параллельная выкладка поднимет API
+посреди сброса. До удаления данных найти
 облачные ресурсы runtime-сессий — после сброса таблица пустая, и reconcile их уже не удалит:
 
 ```bash
 docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
 SELECT session_id, state, server_id, volume_id, port_id FROM runtime_environments
-WHERE server_id IS NOT NULL OR volume_id IS NOT NULL OR port_id IS NOT NULL;
+WHERE state <> 'DELETED' OR server_id IS NOT NULL OR volume_id IS NOT NULL OR port_id IS NOT NULL;
 SQL
 ```
 
@@ -914,6 +916,16 @@ reset_backup="backups/before-reset-$(date -u +%Y%m%dT%H%M%SZ).dump"
 docker compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$reset_backup"
 docker compose exec -T postgres pg_restore --list < "$reset_backup" > /dev/null
 ```
+
+Пробное восстановление в отдельную БД: копия читается целиком, в ней есть таблицы приложения.
+
+```bash
+docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" reset_restore_check && pg_restore -U "$POSTGRES_USER" -d reset_restore_check --exit-on-error' < "$reset_backup"
+docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d reset_restore_check -Atc "SELECT count(*) FROM goose_db_version"'
+docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" reset_restore_check'
+```
+
+Ошибка любой команды — остановиться, БД приложения не трогать.
 
 ### Сброс
 
@@ -941,6 +953,6 @@ API остаётся остановленным до CD. Миграции Down �
 - облачных ресурсов прежних runtime-сессий нет.
 
 В отчёте по задаче: дата, оператор, image tag, безопасный код прежнего отказа, место хранения
-backup, удалённые облачные ресурсы, URL успешных CD backend и frontend, результаты проверок выше.
+backup и результат пробного восстановления, удалённые облачные ресурсы, URL успешных CD backend и frontend, результаты проверок выше.
 Сохранность прежних пользователей и блокнотов не проверяется: они удалены намеренно.
 
