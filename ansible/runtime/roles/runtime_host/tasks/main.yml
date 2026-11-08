@@ -1,38 +1,20 @@
 ---
-# Debian 13: Docker CE, venv для агента, IPv6 выключен, сеть kernel и её firewall, TLS-прокси агента.
-- name: Packages of the runtime host
-  ansible.builtin.apt:
-    name:
-      - ca-certificates
-      - nftables
-      - nginx
-      # нужны модулям deb822_repository и pip; в образе Debian 13 Selectel их нет (infra#132)
-      - python3-debian
-      - python3-packaging
-      - python3-venv
-    state: present
-    update_cache: true
-    cache_valid_time: 3600
+# Образ runtime-VPS (runtime-image/, infra#134): Docker CE, nginx, nftables, venv агента и слои kernel
+# уже в образе. Здесь — настройки сессии: IPv6 выключен, сеть kernel и её firewall, TLS-прокси агента.
+- name: Read the runtime image version
+  ansible.builtin.slurp:
+    src: /etc/cellestial/runtime-image
+  register: runtime_host_image
+  failed_when: false
 
-- name: Docker repository
-  ansible.builtin.deb822_repository:
-    name: docker
-    types: [deb]
-    uris: https://download.docker.com/linux/debian
-    suites: ["{{ ansible_facts['distribution_release'] }}"]
-    components: [stable]
-    architectures: ["{{ runtime_host_docker_arch }}"]
-    signed_by: https://download.docker.com/linux/debian/gpg
-  register: runtime_host_docker_repo
-
-- name: Docker Engine
-  ansible.builtin.apt:
-    name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-    state: present
-    update_cache: "{{ runtime_host_docker_repo is changed }}"
+- name: The VPS runs the runtime image of this playbook
+  ansible.builtin.assert:
+    that:
+      - runtime_host_image.content is defined
+      - (runtime_host_image.content | b64decode | trim) == runtime_host_image_version
+    fail_msg: >-
+      /etc/cellestial/runtime-image is not {{ runtime_host_image_version }}: RUNTIME_IMAGE_ID points to
+      another image; rebuild it with scripts/build-runtime-image.sh (RUNBOOK, runtime image).
 
 # --- IPv6 -------------------------------------------------------------------------------------------
 - name: Disable IPv6 on the host

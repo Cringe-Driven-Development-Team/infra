@@ -946,8 +946,8 @@ if (runtimeEnabled && backendPort) {
   // Ключ шифрования токенов агентов в БД (AES-256-GCM): base64 ровно 32 байт
   const secretsKey = new random.RandomBytes("runtime-secrets-key", { length: 32 });
 
-  // Debian 13 (штатный Python 3.13 нужен агенту) по фиксированному id: mostRecent уводил выход
-  // от runtime_image_id в vars.yml при обновлении образа Selectel (infra#130). Менять оба в одном PR.
+  // Собственный образ runtime-VPS (runtime-image/, infra#134) по фиксированному id; тот же —
+  // runtime_image_id в vars.yml (infra#130). Менять оба в одном PR.
   const runtimeImageId = cfg.require("runtimeImageId");
 
   runtime = {
