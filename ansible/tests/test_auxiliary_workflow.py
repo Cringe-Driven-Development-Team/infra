@@ -1,5 +1,6 @@
 """Queue, credential boundaries and shared helper contracts."""
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -8,6 +9,18 @@ import yaml
 ROOT=Path(__file__).resolve().parents[2]
 
 class WorkflowChecks(unittest.TestCase):
+    def test_docker_actionlint_args_preserve_narrow_ignore(self):
+        workflow=yaml.safe_load((ROOT/'.github/workflows/actionlint.yml').read_text())
+        step=workflow['jobs']['actionlint']['steps'][-1]
+        # Docker-action args are whitespace-split without shell quote processing.
+        args=step['with']['args'].split()
+        self.assertEqual(args[:2], ['-color', '-ignore'])
+        self.assertEqual(len(args), 3)
+        pattern=args[2]
+        self.assertIsNotNone(re.search(pattern, 'unexpected key "queue" for "concurrency" section. expected one of...'))
+        self.assertIsNone(re.search(pattern, 'unexpected key "queue" for "job" section.'))
+        self.assertIsNone(re.search(pattern, 'unexpected key "other" for "concurrency" section.'))
+
     def test_run_name_correlates_dispatch_request(self):
         workflow=yaml.safe_load((ROOT/'.github/workflows/auxiliary-deploy.yml').read_text())
         self.assertEqual(workflow.get('run-name'), 'VPS3 ${{ inputs.request_id || inputs.operation }}')
