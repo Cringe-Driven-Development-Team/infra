@@ -42,7 +42,7 @@ class HooksChecks(unittest.TestCase):
         self.variables.update(
             hooks_githubbot_image="ghcr.io/cringe-driven-development-team/githubbot@sha256:" + "a" * 64,
             hooks_githubbot_image_source_tag="ghcr.io/cringe-driven-development-team/githubbot:sha-" + "b" * 40,
-            vault_githubbot_env={"TELEGRAM_BOT_TOKEN": "fake-bot-token", "GITHUB_TOKEN": "fake-github-token",
+            vault_githubbot_env={"GITHUB_TOKEN": "fake-github-token",
                                  "GITHUBBOT_CONFIG_JSON": '{"chatId":"-1001"}'})
         self.variables["vault_hooks_proxy_config"] = {
             "inbounds": [{"listen": "0.0.0.0", "port": 2080, "protocol": "http", "settings": {}}],
@@ -57,6 +57,7 @@ class HooksChecks(unittest.TestCase):
             "routing": {"domainStrategy": "AsIs", "rules": [{"type": "field",
                 "domain": ["full:api.telegram.org"], "outboundTag": "telegram-vless"}]}}
         self.variables["vault_hooks_env"] = {
+            "TELEGRAM_BOT_TOKEN": "fake-bot-token",
             "GITHUB_WEBHOOK_SECRET": "fake-github-secret",
             "APIDOG_SIGNATURE_KEY": "fake-apidog-secret",
             "APIDOG_SIGNATURE_HEADER": "X-Test-Signature"}
@@ -192,6 +193,7 @@ class HooksChecks(unittest.TestCase):
         path = self.root / "proxy/config.json"
         path.parent.mkdir()
         tasks = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
+        tasks = next(task["block"] for task in tasks if "block" in task)
         render = next(task for task in tasks if task.get("ansible.builtin.template", {}).get("src") == "xray.json.j2")
         render = copy.deepcopy(render)
         render["ansible.builtin.template"]["src"] = str(ANSIBLE / "roles/hooks/templates/xray.json.j2")

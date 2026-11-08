@@ -109,3 +109,15 @@ self.assertEqual(service['healthcheck']['test'],
 - Покрытие: env/security/persistence/network/container → Task 1; settings/live reply/CI/recreate/runbook → Task 2. Review Focus имеет соответствующие проверки. Продуктовая логика и её unit tests не дублируются в infra.
 - Контракт env/CLI/image согласован с сервисным планом; IDs и secrets — runtime inputs, не неизвестные решения дизайна.
 - Self-review выполнен автором плана, без отдельного агента. Никаких live-команд, secret edits или deployment при написании плана не выполнялось.
+
+
+## Уточнение 2026-11-08: общий Telegram bot
+
+Владелец выбрал общего с GitHub Monitoring бота. Актуальный источник
+`TELEGRAM_BOT_TOKEN` — effective `hooks_env` из `vault_hooks_env`; значение
+применяется после `vault_githubbot_env`, который хранит только отдельный
+`GITHUB_TOKEN` и `GITHUBBOT_CONFIG_JSON`. Пустой общий токен проваливает
+обязательный preflight. Отдельный Telegram bot не требуется; long polling
+остаётся только у одного GitHubBot. Исторические шаги выше описывают прежний
+план, а не выполненные операции. Это уточнение не подтверждает подготовку
+реальных credentials, выкладку или live-проверки.
