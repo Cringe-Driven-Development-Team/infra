@@ -333,8 +333,8 @@ pulumi config set infra:runtime true
 # SL1.1-2048 и m1.small, поэтому имя; список — ./scripts/list-flavors.sh
 pulumi config set infra:runtimeFlavorName SL1.1-2048
 pulumi config set infra:runtimeVolumeType fast.ru-9a           # по умолчанию infra:volumeType
-# Debian 13 (Python 3.13 для агента), id фиксирован; тот же — runtime_image_id в ansible vars.yml
-pulumi config set infra:runtimeImageId 9e866919-868b-4da0-9f02-d9559ae7f7c3
+# Собственный образ runtime (RUNBOOK, «Образ runtime-VPS»); тот же id — runtime_image_id в ansible vars.yml
+pulumi config set infra:runtimeImageId 8f57fbe7-2b6e-4e0b-a8ac-edf936815411
 # pulumi config set infra:runtimeUserName cellestialRuntimeProvisioner    # по умолчанию; уникально в аккаунте
 ```
 

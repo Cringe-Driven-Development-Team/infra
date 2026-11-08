@@ -813,7 +813,7 @@ backend#42. Выполнить тот же `deploy-backend.yml`, заменив 
 ## Runtime-VPS сессий (infra#89)
 
 Go API на VPS2 сам создаёт VPS на пользовательскую сессию (backend#57): порт в подсети
-`192.168.199.0/24` с security group `runtime`, диск Debian 13, сервер с keypair `runtime-provisioner`, без
+`192.168.199.0/24` с security group `runtime`, диск из образа runtime («Образ runtime-VPS»), сервер с keypair `runtime-provisioner`, без
 floating IP (наружу — SNAT роутера). Настраивает её плейбуком `ansible/runtime` по SSH на приватный адрес
 и ходит к агенту по mTLS на `:8443`. Инфраструктура для этого — раздел «Runtime-VPS сессий» в
 `pulumi/README.md`; выключатель — `runtime_enabled` в `group_vars/all/vars.yml` (на проде `true`; при `false`
@@ -920,6 +920,39 @@ openstack server delete --wait runtime-check && openstack volume delete runtime-
 - **`RUNTIME_SECRETS_KEY`** — `--replace` у `runtime-secrets-key`: токены агентов в БД, зашифрованные
   старым ключом, перестают читаться — только без активных окружений.
 - **Утечка vault** — все пять пунктов выше.
+
+### Образ runtime-VPS (infra#134)
+
+Runtime-VPS создаются из приватного образа `cellestial-runtime-<IMAGE_VERSION>` на базе Selectel
+`Ubuntu 26.04 LTS 64-bit` (Python 3.14; агенту нужен ≥ 3.13). В образе — всё, что не зависит от сессии:
+apt-пакеты и Docker CE фиксированных версий; агент (wheel, `requirements.txt`, systemd unit) из `/app/agent`
+образа backend `BACKEND_IMAGE` с venv `/opt/cellestial-agent/venv`; слои образов kernel Python и R; не
+зависящие от сессии файлы ролей runtime; маркер `/etc/cellestial/runtime-image`. Состав — только в
+`runtime-image/versions.env`; пакеты Ubuntu ставятся из `snapshot.ubuntu.com` на `UBUNTU_SNAPSHOT`, поэтому
+повторная сборка даёт те же версии. Плейбук сессии проверяет маркер (`runtime_host_image_version`) и ставит
+wheel и requirements агента, только если backend прислал другие.
+
+**Пересборка** — при смене состава (новые версии пакетов, агент в новом релизе backend, образы kernel):
+
+1. Поправить `runtime-image/versions.env`, поднять `IMAGE_VERSION`. Агент — `BACKEND_IMAGE` на digest
+   выкаченного релиза backend (`BACKEND_IMAGE_REF` в `.env` VPS2), образы kernel — его
+   `RUNTIME_PYTHON_IMAGE`/`RUNTIME_R_IMAGE`. В том же PR —
+   `runtime_host_image_version` в `ansible/runtime/roles/runtime_host/defaults/main.yml` (тест
+   `test_runtime_image`).
+2. Собрать образ учёткой с правами на проект runtime (~10 мин):
+
+   ```bash
+   source pulumi/bootstrap/env.sh
+   OS_REGION_NAME=ru-9 OS_PROJECT_ID=$(cd pulumi && pulumi stack output runtimeProjectId) \
+     scripts/build-runtime-image.sh
+   ```
+
+   Скрипт создаёт временные том, сервер и keypair, ждёт выключения сервера после cloud-init, загружает
+   том в образ и проверяет пробным томом создание в `ru-9a`; временные ресурсы удаляет сам. Ошибка
+   сборки — строки `cellestial-image` из console log сервера.
+3. Id образа — в `infra:runtimeImageId` (`Pulumi.prod.yaml`) и `runtime_image_id` (`vars.yml`) одним PR.
+4. После мержа — выкатка Go (`deploy-backend.yml`): `RUNTIME_IMAGE_ID` и плейбук попадают на VPS2 только ею.
+   Новые сессии создаются из нового образа; старый образ удалить после проверки сессии.
 
 
 ## Переключение уведомлений frontend на webhook

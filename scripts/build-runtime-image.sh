@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Собирает приватный образ runtime-VPS (infra#134) в проекте runtime и печатает его id.
+#   source pulumi/bootstrap/env.sh
+#   OS_REGION_NAME=ru-9 OS_PROJECT_ID=<runtimeProjectId> scripts/build-runtime-image.sh
+# Временный сервер из базового образа ставит состав runtime-image/versions.env и не зависящие от
+# сессии настройки ролей runtime через cloud-init и
+# выключается; его том загружается в Glance, затем пробный том из образа проверяет зону.
+# Временные сервер, тома и keypair удаляются при любом исходе. Сеть, группа, флейвор, тип тома и
+# зона — из ansible vars.yml (runtime_*). Keypair — одноразовый: SSH к серверу сборки не нужен, а
+# keypair provisioner принадлежит пользователю runtime. Таймаут сборки — BUILD_TIMEOUT секунд (по умолчанию 1800).
+set -euo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+dir="$root/runtime-image"
+vars="$root/ansible/inventory/group_vars/all/vars.yml"
+# shellcheck source=../runtime-image/versions.env
+. "$dir/versions.env"
+
+var() { awk -v k="$1:" '$1 == k { gsub(/"/, "", $2); print $2; exit }' "$vars"; }
+net=$(var runtime_network_id)
+sg=$(var runtime_security_group_id)
+flavor=$(var runtime_flavor_id)
+vtype=$(var runtime_volume_type)
+zone=$(var runtime_availability_zone)
+for v in net sg flavor vtype zone; do
+  [ -n "${!v}" ] || { echo "build-runtime-image: нет runtime_* для $v в $vars" >&2; exit 1; }
+done
+: "${OS_PROJECT_ID:?OS_PROJECT_ID — проект runtime}" "${OS_REGION_NAME:?OS_REGION_NAME — регион runtime (ru-9)}"
+
+name="cellestial-runtime-$IMAGE_VERSION"
+tag="$name-build-$(date -u +%Y%m%dT%H%M%SZ)"
+timeout=${BUILD_TIMEOUT:-1800}
+work=$(mktemp -d)
+server='' volume='' probe='' key='' image=''
+
+cleanup() {
+  [ -n "$server" ] && openstack server delete --wait "$server" >/dev/null 2>&1 || true
+  [ -n "$key" ] && openstack keypair delete "$key" >/dev/null 2>&1 || true
+  for v in "$volume" "$probe"; do
+    [ -n "$v" ] && openstack volume delete "$v" >/dev/null 2>&1 || true
+  done
+  # непроверенный образ не остаётся: иначе повтор с тем же IMAGE_VERSION упрётся в его имя
+  [ -n "$image" ] && openstack image delete "$image" >/dev/null 2>&1 || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+since() { echo $(( $(date +%s) - $1 ))s; }
+wait_for() { # тип id ожидаемый_статус таймаут
+  local deadline=$(( $(date +%s) + $4 )) status
+  while :; do
+    # разовая ошибка API — не провал сборки: повтор до таймаута
+    status=$(openstack "$1" show "$2" -f value -c status 2>/dev/null) || status=unknown
+    [ "$status" = "$3" ] && return 0
+    case "$status" in error* | ERROR*) echo "build-runtime-image: $1 $2 — $status" >&2; return 1 ;; esac
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "build-runtime-image: $1 $2 — $status после $4 с" >&2; return 1; }
+    sleep 10
+  done
+}
+
+if openstack image show "$name" >/dev/null 2>&1; then
+  echo "build-runtime-image: образ $name уже есть — поднимите IMAGE_VERSION в versions.env" >&2
+  exit 1
+fi
+
+# Статические файлы ролей runtime (без переменных Jinja): в образе они те же, что пишет плейбук
+roles="$root/ansible/runtime/roles"
+static=(
+  "$roles/runtime_host/templates/sysctl.conf.j2:sysctl.conf"
+  "$roles/runtime_host/templates/cellestial-firewall.service.j2:cellestial-firewall.service"
+  "$roles/runtime_host/templates/nginx-network.conf.j2:nginx-network.conf"
+  "$roles/runtime_agent/templates/firewall-dropin.conf.j2:firewall-dropin.conf"
+)
+
+# user-data: shebang, состав, статические файлы и шаги сборки
+{
+  echo '#!/bin/bash'
+  grep -E '^[A-Z_]+=' "$dir/versions.env" | sed 's/^/export /'
+  echo 'mkdir -p /root/static'
+  for pair in "${static[@]}"; do
+    src=${pair%%:*}
+    if grep -q '{[{%]' "$src"; then echo "build-runtime-image: в $src есть Jinja" >&2; exit 1; fi
+    echo "base64 -d > /root/static/${pair##*:} <<'CELLESTIAL_FILE'"
+    base64 < "$src"
+    echo 'CELLESTIAL_FILE'
+  done
+  cat "$dir/build-on-vps.sh"
+} > "$work/user-data"
+
+start=$(date +%s)
+echo "Том сборки ${BUILD_VOLUME_GIB} ГиБ из $BASE_IMAGE_ID"
+volume=$(openstack volume create "$tag" --image "$BASE_IMAGE_ID" --size "$BUILD_VOLUME_GIB" \
+  --type "$vtype" --availability-zone "$zone" -f value -c id)
+wait_for volume "$volume" available 600
+
+echo "Сервер сборки ($(since "$start"))"
+ssh-keygen -q -t ed25519 -N '' -f "$work/key"
+key=${tag//./-}  # имя keypair — без точек
+openstack keypair create "$key" --public-key "$work/key.pub" >/dev/null
+server=$(openstack server create "$tag" --flavor "$flavor" --volume "$volume" \
+  --availability-zone "$zone" --network "$net" --security-group "$sg" --key-name "$key" \
+  --user-data "$work/user-data" -f value -c id)
+wait_for server "$server" ACTIVE 600
+echo "Установка состава $IMAGE_VERSION, до $timeout с ($(since "$start"))"
+if ! wait_for server "$server" SHUTOFF "$timeout"; then
+  openstack console log show "$server" | grep -E 'cellestial-image|Error|error' | tail -40 >&2 || true
+  exit 1
+fi
+openstack server delete --wait "$server"
+server=''
+
+echo "Загрузка тома в образ $name ($(since "$start"))"
+image=$(openstack image create "$name" --volume "$volume" --disk-format raw --container-format bare \
+  -f value -c image_id)
+wait_for image "$image" active 1800
+openstack volume delete "$volume"
+volume=''
+
+# Образ создаёт тома в зоне сессий (infra#130: образ без зоны ломает create volume)
+echo "Пробный том из образа ($(since "$start"))"
+t=$(date +%s)
+probe=$(openstack volume create "$name-probe" --image "$image" --size "$BUILD_VOLUME_GIB" \
+  --type "$vtype" --availability-zone "$zone" -f value -c id)
+wait_for volume "$probe" available 600
+echo "Том из образа создан за $(since "$t")"
+openstack volume delete "$probe"
+probe=''
+built=$image
+image=''  # проверен — cleanup его не удаляет
+
+echo "Готово за $(since "$start"). Образ: $built"
+echo "Дальше: infra:runtimeImageId в pulumi/Pulumi.prod.yaml и runtime_image_id в vars.yml = $built"

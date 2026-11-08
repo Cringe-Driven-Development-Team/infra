@@ -49,9 +49,6 @@
       changed_when: false
       failed_when: runtime_cloud_init.rc not in [0, 2]
 
-    - name: Gather facts
-      ansible.builtin.setup:
-
     # Повтор: работающий агент той же сессии не трогается, чужое назначение — ошибка
     - name: Check an earlier assignment of this VPS
       ansible.builtin.include_role:

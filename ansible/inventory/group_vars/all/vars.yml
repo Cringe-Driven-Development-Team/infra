@@ -80,8 +80,8 @@ runtime_availability_zone: ru-9a                                 # выход ru
 runtime_network_id: c173bf61-fb03-4988-bf5b-bd3c294b49ad         # выход runtimeNetworkId
 runtime_subnet_id: 01e6f4fc-d4b4-4d1d-8587-02e35bf1f932          # выход runtimeSubnetId
 runtime_security_group_id: 1094a1f0-02b3-4469-a515-41c345c94670  # выход runtimeSecurityGroupId
-# Debian 13, фиксирован: равен infra:runtimeImageId в Pulumi.prod.yaml (тест test_runtime_image)
-runtime_image_id: 9e866919-868b-4da0-9f02-d9559ae7f7c3           # выход runtimeImageId
+# Образ runtime (scripts/build-runtime-image.sh): равен infra:runtimeImageId в Pulumi.prod.yaml (тест test_runtime_image)
+runtime_image_id: 8f57fbe7-2b6e-4e0b-a8ac-edf936815411           # выход runtimeImageId
 runtime_flavor_id: "1012"                                        # выход runtimeFlavorId (SL1.1-2048)
 runtime_volume_type: fast.ru-9a                                  # выход runtimeVolumeType
 runtime_ssh_key_name: runtime-provisioner                        # выход runtimeKeypairName
