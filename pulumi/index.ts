@@ -946,13 +946,9 @@ if (runtimeEnabled && backendPort) {
   // Ключ шифрования токенов агентов в БД (AES-256-GCM): base64 ровно 32 байт
   const secretsKey = new random.RandomBytes("runtime-secrets-key", { length: 32 });
 
-  // Debian 13: штатный Python 3.13 нужен агенту. mostRecent — Selectel обновляет образ, id меняется:
-  // новый id доходит до backend через vault (RUNBOOK.md, «Runtime-VPS»).
-  const runtimeImage = openstack.images.getImageOutput({
-    name: cfg.get("runtimeImageName") ?? "Debian 13 (Trixie) 64-bit",
-    mostRecent: true,
-    visibility: "public",
-  }, withOs);
+  // Debian 13 (штатный Python 3.13 нужен агенту) по фиксированному id: mostRecent уводил выход
+  // от runtime_image_id в vars.yml при обновлении образа Selectel (infra#130). Менять оба в одном PR.
+  const runtimeImageId = cfg.require("runtimeImageId");
 
   runtime = {
     runtimeOsUsername: runtimeUser.name,
@@ -970,7 +966,7 @@ if (runtimeEnabled && backendPort) {
     runtimeCaKey: pulumi.secret(caKey.privateKeyPemPkcs8),
     runtimeClientCert: clientCert.certPem,
     runtimeClientKey: pulumi.secret(clientKey.privateKeyPemPkcs8),
-    runtimeImageId: runtimeImage.id,
+    runtimeImageId,
     runtimeFlavorId: flavorId("runtime"),
     runtimeVolumeType: cfg.get("runtimeVolumeType") ?? volumeType,
     // Публичные адреса своей инфраструктуры: kernel на runtime-VPS до них не достучится

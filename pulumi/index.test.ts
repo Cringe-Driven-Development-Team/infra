@@ -41,6 +41,7 @@ pulumi.runtime.setAllConfig({
   "infra:volumeType": "fast.ru-9a",
   "infra:gatewayFlavorName": "SL1.2-8192",
   "infra:imageName": "Ubuntu 24.04 LTS 64-bit",
+  "infra:runtimeImageId": "9e866919-868b-4da0-9f02-d9559ae7f7c3",
   "infra:sshPublicKey": "ssh-ed25519 AAAA test",
   "infra:s3Pool": "ru-7",
   "infra:s3Bucket": "releases",
@@ -160,7 +161,7 @@ describe("runtime-VPS", () => {
     expect(await value(stack.runtimeSubnetId)).toBe("private-id");
     expect(await value(stack.runtimeSecurityGroupId)).toBe("runtime-id");
     expect(await value(stack.runtimeKeypairName)).toBe("runtime-provisioner");
-    expect(await value(stack.runtimeImageId)).toBe("image:Debian 13 (Trixie) 64-bit");
+    expect(await value(stack.runtimeImageId)).toBe("9e866919-868b-4da0-9f02-d9559ae7f7c3");
     expect(await value(stack.runtimeFlavorId)).toBe("flavor:SL1.1-2048");
     expect(await value(stack.runtimeVolumeType)).toBe("basicssd.ru-9a");
     expect(await value(stack.runtimeCaCert)).toBe("ca-cert");
