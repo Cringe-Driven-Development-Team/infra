@@ -18,7 +18,7 @@
     body:
       login: "{{ app_probe_login }}"
       password: deploy-probe-invalid-password
-    status_code: 401
+    status_code: 400
     return_content: true
     validate_certs: true
     follow_redirects: none
@@ -28,8 +28,8 @@
   delegate_to: localhost
   become: false
   failed_when: >-
-    app_probe_login_result.status | default(0) != 401
-    or (app_probe_login_result.json.error.data.code | default('')) != 'UNAUTHORIZED'
+    app_probe_login_result.status | default(0) != 400
+    or (app_probe_login_result.json.error.data.code | default('')) != 'BAD_REQUEST'
     or (app_probe_login_result.json.error.data.appCode | default('')) != 'invalid_credentials'
   until: app_probe_login_result is succeeded
   retries: 5

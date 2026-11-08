@@ -17,7 +17,7 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1]
 RELEASE = 'b' * 40
-VALID_LOGIN = {'error': {'data': {'code': 'UNAUTHORIZED', 'appCode': 'invalid_credentials'}}}
+VALID_LOGIN = {'error': {'data': {'code': 'BAD_REQUEST', 'appCode': 'invalid_credentials'}}}
 
 
 class BackendProbes(unittest.TestCase):
@@ -31,7 +31,7 @@ class BackendProbes(unittest.TestCase):
                         '-addext', 'subjectAltName=DNS:localhost'], check=True, capture_output=True)
         cls.requests = []
         cls.health = (200, {'status': 'alive'})
-        cls.login = (401, VALID_LOGIN)
+        cls.login = (400, VALID_LOGIN)
         cls.hidden = (404, 'not found')
         cls.sequence = []
         cls.timeout_paths = set()
@@ -95,7 +95,7 @@ class BackendProbes(unittest.TestCase):
         type(self).requests, type(self).sequence = [], []
         type(self).timeout_paths = set()
         type(self).health = (200, {'status': 'alive'})
-        type(self).login = (401, VALID_LOGIN)
+        type(self).login = (400, VALID_LOGIN)
         type(self).hidden = (404, 'not found')
         self.environment = dict(os.environ, ANSIBLE_LOCAL_TEMP=str(self.root / 'tmp'),
                                 ANSIBLE_REMOTE_TEMP=str(self.root / 'remote-tmp'),
@@ -154,11 +154,12 @@ class BackendProbes(unittest.TestCase):
 
     def test_login_probe_requires_invalid_credentials(self):
         tasks = self.tasks('probe-bff.yml')
-        cases = [(401, VALID_LOGIN, True), (401, {'error': {'data': {'code': 'UNAUTHORIZED'}}}, False),
-                 (401, {'error': {'data': {'code': 'FORBIDDEN', 'appCode': 'invalid_credentials'}}}, False),
-                 (401, {'error': {'data': {'code': 'UNAUTHORIZED', 'appCode': 'invalid_bff_key'}}}, False),
+        cases = [(400, VALID_LOGIN, True), (401, VALID_LOGIN, False),
+                 (400, {'error': {'data': {'code': 'BAD_REQUEST'}}}, False),
+                 (400, {'error': {'data': {'code': 'UNAUTHORIZED', 'appCode': 'invalid_credentials'}}}, False),
+                 (400, {'error': {'data': {'code': 'BAD_REQUEST', 'appCode': 'invalid_bff_key'}}}, False),
                  (403, {'error': {'data': {'code': 'FORBIDDEN', 'appCode': 'csrf'}}}, False),
-                 (401, '<html>denied</html>', False), (401, '{bad-json', False),
+                 (400, '<html>denied</html>', False), (400, '{bad-json', False),
                  (500, {}, False), (200, VALID_LOGIN, False), (302, 'redirect', False)]
         previous_login = None
         for status, body, passes in cases:
@@ -267,7 +268,7 @@ class BackendProbes(unittest.TestCase):
             with self.subTest(scenario=scenario):
                 type(self).requests = []
                 type(self).health = (200, {'status': 'wrong' if scenario == 'internal-failure' else 'alive'})
-                type(self).login = (500, {}) if scenario == 'external-failure' else (401, VALID_LOGIN)
+                type(self).login = (500, {}) if scenario == 'external-failure' else (400, VALID_LOGIN)
                 selected_id = 'sha256:' + '2' * 64 if scenario == 'wrong-image' else image_id
                 self.environment['TEST_DOCKER_STATE'] = f'{selected_id} true healthy'
                 gateway_env.write_text(('' if scenario == 'missing-release' else f'BFF_RELEASE_SHA={RELEASE}\n')
