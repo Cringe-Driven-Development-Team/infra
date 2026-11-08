@@ -120,12 +120,33 @@ class GithubBotChecks(unittest.TestCase):
                     if isinstance(value, str) and len(value) > 3:
                         self.assertNotIn(value, output)
 
-    def test_valid_preflight_and_defaults(self):
-        variables = self.variables.copy()
-        variables["hooks_githubbot_env"] = yaml.safe_load((ANSIBLE / "roles/hooks/defaults/main.yml").read_text())["hooks_githubbot_env"]
-        variables["vault_githubbot_env"] = {k: ENV[k] for k in ["TELEGRAM_BOT_TOKEN", "GITHUB_TOKEN", "GITHUBBOT_CONFIG_JSON"]}
-        result = self.run_tasks("roles/hooks/tasks/validate.yml", variables)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def test_shared_token_preflight_and_defaults(self):
+        defaults = yaml.safe_load((ANSIBLE / "roles/hooks/defaults/main.yml").read_text())
+        for legacy in [None, "conflicting-old-token"]:
+            with self.subTest(legacy_token=legacy):
+                variables = self.variables | {"hooks_githubbot_env": defaults["hooks_githubbot_env"],
+                    "vault_githubbot_env": {k: ENV[k] for k in ["GITHUB_TOKEN", "GITHUBBOT_CONFIG_JSON"]}}
+                variables["hooks_env"] = self.variables["hooks_env"] | {"TELEGRAM_BOT_TOKEN": "shared-effective-token"}
+                if legacy:
+                    variables["vault_githubbot_env"]["TELEGRAM_BOT_TOKEN"] = legacy
+                tasks = [{"name": "Check shared token and fixed runtime paths", "ansible.builtin.assert": {"that": [
+                    "hooks_githubbot_env.TELEGRAM_BOT_TOKEN == hooks_env.TELEGRAM_BOT_TOKEN",
+                    "hooks_githubbot_env.DATABASE_PATH == '/data/githubbot.sqlite'",
+                    "hooks_githubbot_env.TELEGRAM_PROXY_URL == 'http://telegram-proxy:2080'"]}}]
+                result = self.play(tasks, variables)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                result = self.run_tasks("roles/hooks/tasks/validate.yml", variables)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for token in [None, ""]:
+                    with self.subTest(shared_token=token):
+                        env = variables["hooks_env"].copy()
+                        env.pop("TELEGRAM_BOT_TOKEN")
+                        if token is not None:
+                            env["TELEGRAM_BOT_TOKEN"] = token
+                        result = self.run_tasks("roles/hooks/tasks/validate.yml", variables | {"hooks_env": env})
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("GitHubBot", result.stdout + result.stderr)
+                        self.assertNotIn("conflicting-old-token", result.stdout + result.stderr)
 
     def test_secret_template_preserves_compose_environment_without_disclosure(self):
         tasks = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
