@@ -9,7 +9,7 @@ root = Path(os.environ["TEST_DOCKER_ROOT"])
 config_path = root / "docker-config.json"
 args = sys.argv[1:]
 command = next((value for value in args
-                if value in ["login", "logout", "compose", "version", "pull", "image", "inspect", "manifest"]), "")
+                if value in ["login", "logout", "compose", "version", "pull", "image", "inspect", "manifest", "network", "volume"]), "")
 
 if command == "version":
     print(json.dumps({"Client": {"Version": "28.0.0"}, "Server": {"ApiVersion": "1.48"}}))
@@ -47,12 +47,14 @@ else:
         if os.environ.get("TEST_DOCKER_FAILURE") == "pull":
             print("Error controlled-pull-failure", file=sys.stderr)
             sys.exit(1)
+    elif command == "compose" and "config" in args:
+        sys.exit(1 if os.environ.get("TEST_DOCKER_FAILURE") == "config" else 0)
     elif command == "compose" and "run" in args:
         if "--check-config" in args:
             # Echo a fake secret to prove no_log also hides a failing checker.
             print('test-$value-"x"')
             sys.exit(1 if os.environ.get("TEST_DOCKER_FAILURE") == "check" else 0)
-        if "--user" not in args or "root" not in args or "--entrypoint" not in args:
+        if "--user" not in args or "root" not in args or ("githubbot" in args and "--entrypoint" not in args):
             print("Unexpected preparation command", file=sys.stderr)
             sys.exit(1)
     elif command == "compose" and "up" in args:
@@ -69,6 +71,8 @@ else:
             print("Error response from daemon: denied", file=sys.stderr)
             sys.exit(1)
         print("Status: Downloaded newer image for " + args[-1])
+    elif command in ["network", "volume"] and "inspect" in args:
+        sys.exit(1 if os.environ.get("TEST_DOCKER_FAILURE") == command else 0)
     elif command == "image" and "inspect" in args:
         fmt = args[args.index("--format") + 1]
         if "revision" in fmt:
@@ -76,7 +80,17 @@ else:
         else:
             print(os.environ.get("TEST_DOCKER_IMAGE_ID", "sha256:" + "1" * 64))
     elif command == "compose" and "ps" in args:
-        print(os.environ.get("TEST_DOCKER_CONTAINER", ""))
+        print(os.environ.get("TEST_DOCKER_PROXY", "proxy-container") if "telegram-proxy" in args else
+              (args[-1] + "-container" if os.environ.get("TEST_DOCKER_DYNAMIC_INSPECT") else os.environ.get("TEST_DOCKER_CONTAINER", "")))
+    elif command == "inspect" and "--format" in args and ".State.Running" in args[args.index("--format") + 1]:
+        print("true")
+    elif command == "inspect" and os.environ.get("TEST_DOCKER_DYNAMIC_INSPECT"):
+        import yaml
+        service = args[-1].removesuffix("-container")
+        compose = yaml.safe_load((root / "compose.yml").read_text())
+        print(json.dumps([{"State": {"Running": True, "Health": {"Status": "healthy"}},
+                          "Config": {"Image": compose["services"][service]["image"]},
+                          "Image": "sha256:" + "1" * 64}]))
     elif command == "inspect":
         print(os.environ.get("TEST_DOCKER_STATE", os.environ.get("TEST_DOCKER_RUNNING", "")))
     else:

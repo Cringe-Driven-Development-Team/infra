@@ -6,8 +6,10 @@
     argv:
       - docker
       - compose
+      - --project-directory
+      - "{{ hooks_compose_dir }}"
       - -f
-      - "{{ hooks_compose_dir }}/compose.yml"
+      - "{{ hooks_candidate_compose | default(hooks_compose_dir ~ '/compose.yml') }}"
       - run
       - --rm
       - --no-deps

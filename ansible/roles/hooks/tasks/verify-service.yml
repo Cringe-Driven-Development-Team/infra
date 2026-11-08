@@ -1,0 +1,63 @@
+---
+- name: Найти все контейнеры сервиса включая stopped
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-directory
+      - "{{ hooks_compose_dir }}"
+      - -f
+      - "{{ hooks_compose_dir }}/compose.yml"
+      - ps
+      - --all
+      - --quiet
+      - "{{ 'githubbot' if hooks_verify_service == 'githubbot' else 'hooks' }}"
+  register: hooks_verify_containers
+  changed_when: false
+  check_mode: false
+
+- name: Потребовать ровно один контейнер
+  ansible.builtin.assert:
+    that:
+      - hooks_verify_containers.stdout_lines | length == 1
+
+- name: Прочитать фактическое состояние и образ
+  ansible.builtin.command:
+    argv: [docker, inspect, "{{ hooks_verify_containers.stdout | trim }}"]
+  register: hooks_verify_container
+  changed_when: false
+  check_mode: false
+  no_log: true
+  diff: false
+
+- name: Прочитать локальный ID выбранного digest
+  ansible.builtin.command:
+    argv: [docker, image, inspect, --format, "{{ '{{.Id}}' }}", "{{ hooks_release_state.services[hooks_verify_service].desired.image_ref }}"]
+  register: hooks_verify_image
+  changed_when: false
+  check_mode: false
+
+- name: Сверить running healthy image reference и image ID
+  ansible.builtin.assert:
+    that:
+      - hooks_verify_actual.State.Running == true
+      - hooks_verify_actual.State.Health.Status | default('') == 'healthy'
+      - hooks_verify_actual.Config.Image == hooks_release_state.services[hooks_verify_service].desired.image_ref
+      - hooks_verify_actual.Image == hooks_verify_image.stdout | trim
+  vars:
+    hooks_verify_actual: "{{ (hooks_verify_container.stdout | from_json)[0] }}"
+  no_log: true
+  diff: false
+
+- name: Проверить HTTPS webhook-alerts
+  ansible.builtin.uri:
+    url: "https://{{ hooks_domain }}/health"
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: hooks_verify_health
+  until: hooks_verify_health is succeeded
+  retries: 18
+  delay: 10
+  check_mode: false
+  when: hooks_verify_service == 'webhook-alerts'

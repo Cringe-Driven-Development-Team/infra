@@ -1,0 +1,26 @@
+---
+- name: Временный пустой Docker config для GitHubBot
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .githubbot-docker
+  register: hooks_githubbot_docker_config
+
+- name: Скачать закреплённый образ GitHubBot анонимно
+  block:
+    - name: Скачать GitHubBot по digest без credentials
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --config
+          - "{{ hooks_githubbot_docker_config.path }}"
+          - pull
+          - "{{ hooks_githubbot_image }}"
+      register: hooks_githubbot_pull
+      changed_when: "'Downloaded newer image' in hooks_githubbot_pull.stdout"
+      no_log: true
+      diff: false
+  always:
+    - name: Удалить временный Docker config GitHubBot
+      ansible.builtin.file:
+        path: "{{ hooks_githubbot_docker_config.path }}"
+        state: absent

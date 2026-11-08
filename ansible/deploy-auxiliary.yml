@@ -1,0 +1,10 @@
+---
+- name: Точечная выкладка вспомогательного сервиса
+  hosts: auxiliary
+  become: true
+  gather_facts: false
+  vars_files:
+    - roles/hooks/defaults/main.yml
+  tasks:
+    - name: Выкатить предварительно проверенный release
+      ansible.builtin.import_tasks: roles/hooks/tasks/deploy.yml

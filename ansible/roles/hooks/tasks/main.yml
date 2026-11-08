@@ -59,14 +59,21 @@
       diff: false
       notify: Restart telegram proxy
 
+    - name: Проверить candidate обоих приложений до записи Compose
+      ansible.builtin.import_tasks: validate-candidate.yml
+      vars:
+        hooks_candidate_content: "{{ lookup('ansible.builtin.template', 'compose.yml.j2') }}"
+        hooks_candidate_services: [githubbot, webhook-alerts]
+
+    - name: Сохранить начальный desired после проверки candidate
+      ansible.builtin.import_tasks: save-release.yml
+      when: hooks_release_state_needs_initialization
+
     - name: Файл compose.yml
       ansible.builtin.template:
         src: compose.yml.j2
         dest: "{{ hooks_compose_dir }}/compose.yml"
         mode: "0644"
-
-    - name: Скачать публичный образ без авторизации
-      ansible.builtin.import_tasks: pull-image.yml
 
     - name: Скачать недостающий публичный образ Caddy
       community.docker.docker_compose_v2_pull:
@@ -82,12 +89,6 @@
           - telegram-proxy
         policy: missing
 
-    - name: Подготовить данные перед запуском образа от bun
-      ansible.builtin.import_tasks: prepare-data.yml
-
-    - name: Подготовить GitHubBot перед общим запуском
-      ansible.builtin.import_tasks: prepare-githubbot.yml
-
     - name: Поднять проект
       community.docker.docker_compose_v2:
         project_src: "{{ hooks_compose_dir }}"
@@ -99,15 +100,8 @@
     - name: Применить Caddyfile
       ansible.builtin.meta: flush_handlers
 
-# С управляющей машины: изнутри VPS floating IP может не отвечать (NAT без hairpin)
-- name: Сервис отвечает по HTTPS
-  ansible.builtin.uri:
-    url: "https://{{ hooks_domain }}/health"
-    status_code: 200
-  delegate_to: localhost
-  become: false
-  register: hooks_health
-  until: hooks_health is succeeded
-  retries: 18
-  delay: 10
-  check_mode: false
+- name: Проверить и подтвердить оба приложения после общего apply
+  ansible.builtin.import_tasks: verify-release.yml
+  vars:
+    hooks_verify_services: [githubbot, webhook-alerts]
+  when: not ansible_check_mode

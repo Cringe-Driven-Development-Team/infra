@@ -1,0 +1,17 @@
+---
+- name: Проверить выбранные сервисы
+  ansible.builtin.include_tasks: verify-service.yml
+  loop: "{{ hooks_verify_services }}"
+  loop_control:
+    loop_var: hooks_verify_service
+
+- name: Подтвердить только проверенные релизы
+  when: hooks_verify_confirm | default(true) and not ansible_check_mode
+  block:
+    - name: Обновить confirmed в памяти
+      ansible.builtin.set_fact:
+        hooks_release_state: "{{ hooks_release_state | hooks_release_confirm(item) }}"
+      loop: "{{ hooks_verify_services }}"
+
+    - name: Записать подтверждённое состояние
+      ansible.builtin.import_tasks: save-release.yml

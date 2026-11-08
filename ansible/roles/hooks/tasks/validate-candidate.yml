@@ -1,0 +1,59 @@
+---
+- name: Временный каталог candidate
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .hooks-candidate
+  register: hooks_candidate
+
+- name: Проверить candidate до записи desired и Compose
+  block:
+    - name: Пустой Docker config для анонимного pull
+      ansible.builtin.file:
+        path: "{{ hooks_candidate.path }}/docker"
+        state: directory
+        mode: "0700"
+
+    - name: Скачать только выбранные образы без credentials
+      ansible.builtin.command:
+        argv: [docker, --config, "{{ hooks_candidate.path }}/docker", pull, "{{ hooks_release_state.services[item].desired.image_ref }}"]
+      loop: "{{ hooks_candidate_services }}"
+      register: hooks_candidate_pull
+      changed_when: "'Downloaded newer image' in hooks_candidate_pull.stdout"
+      no_log: true
+      diff: false
+
+    - name: Candidate с абсолютными путями env
+      ansible.builtin.copy:
+        content: >-
+          {{ hooks_candidate_content
+             | replace('env_file: .env', 'env_file: ' ~ hooks_compose_dir ~ '/.env')
+             | replace('env_file: githubbot.env', 'env_file: ' ~ hooks_compose_dir ~ '/githubbot.env') }}
+        dest: "{{ hooks_candidate.path }}/compose.yml"
+        mode: "0600"
+      no_log: true
+      diff: false
+
+    - name: Проверить разрешение конфигурации candidate
+      ansible.builtin.command:
+        argv: [docker, compose, --project-directory, "{{ hooks_compose_dir }}", -f, "{{ hooks_candidate.path }}/compose.yml", config, --quiet]
+      changed_when: false
+      no_log: true
+      diff: false
+
+    - name: Проверить GitHubBot и подготовить существующий SQLite volume
+      ansible.builtin.import_tasks: prepare-githubbot.yml
+      vars:
+        hooks_candidate_compose: "{{ hooks_candidate.path }}/compose.yml"
+        hooks_candidate_images_pulled: true
+      when: "'githubbot' in hooks_candidate_services"
+
+    - name: Подготовить существующий volume webhook-alerts
+      ansible.builtin.import_tasks: prepare-data.yml
+      vars:
+        hooks_candidate_compose: "{{ hooks_candidate.path }}/compose.yml"
+      when: "'webhook-alerts' in hooks_candidate_services"
+  always:
+    - name: Удалить candidate и временный Docker config
+      ansible.builtin.file:
+        path: "{{ hooks_candidate.path }}"
+        state: absent
