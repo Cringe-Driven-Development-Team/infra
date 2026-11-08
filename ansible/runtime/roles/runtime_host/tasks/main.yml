@@ -6,6 +6,8 @@
       - ca-certificates
       - nftables
       - nginx
+      # нужен модулю deb822_repository; в образе Debian 13 Selectel его нет (infra#132)
+      - python3-debian
       - python3-venv
     state: present
     update_cache: true
