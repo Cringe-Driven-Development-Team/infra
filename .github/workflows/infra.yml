@@ -53,6 +53,8 @@ jobs:
           echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
       # pulumi install генерирует sdks/selectel из terraform-провайдера и ставит зависимости bun
       - name: Pulumi — зависимости
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           (cd pulumi && pulumi install)
           (cd pulumi/bootstrap && pulumi install)
@@ -129,6 +131,8 @@ jobs:
       - &pulumi-install
         name: Pulumi — зависимости
         working-directory: pulumi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: pulumi install
       - name: pulumi preview
         working-directory: pulumi

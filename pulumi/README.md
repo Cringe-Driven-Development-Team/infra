@@ -380,6 +380,7 @@ pulumi config set infra:runtimeVolumeType fast.ru-9a           # по умолч
 | `invalid character '<' looking for beginning of value` | DNS API Selectel временно отвечает `500` HTML — подождать и повторить `pulumi up` |
 | Ошибка создания бакета провайдером aws | Проверить `infra:s3Pool`: endpoint `s3.<pool>.storage.selcloud.ru` должен существовать |
 | `pulumi install` создал `package-lock.json` | Не установлен bun или старый `Pulumi.yaml` без `packagemanager: bun` |
+| `pulumi install`: GitHub `releases/latest`, `rate limit exceeded`, HTTP 403 | Загрузчик Pulumi использует `GITHUB_TOKEN` для запросов к GitHub Releases. В Actions шаги установки получают временный `${{ github.token }}` с `contents: read`, включая bootstrap, preview и apply через общий YAML anchor. Отдельный PAT не требуется; токен не записывается в файлы и логи. Если ошибка повторилась, проверьте лимит авторизованных запросов; для повторного запуска учитывайте, что main workflow после проверок может выполнить production-выкладку. |
 
 Правка кода dynamic-ресурсов (`selectel-storage.ts`) попадает в стейт только через `pulumi up`:
 `refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess`, `CdnDomain` и `BucketDomain` показывают такую
