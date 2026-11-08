@@ -1,7 +1,7 @@
 # Managed by Ansible (role app). Preserve the existing cellestial Caddy volumes.
 name: cellestial
 
-# Сервисы этого хоста — app_services (tags.yml): всё на gateway или раздельно с VPS2 (infra#59)
+# Сервисы этого хоста — app_services (tags.yml): Caddy/BFF на gateway, API/Postgres/Redis на VPS2.
 services:
 {% if 'caddy' in app_services %}
   caddy:
@@ -20,7 +20,8 @@ services:
 {% endif %}
 {% if 'api' in app_services %}
   api:
-    image: {{ app_backend_image }}:${BACKEND_IMAGE_TAG:?backend tag is required}
+    image: ${BACKEND_IMAGE_REF:?backend image ref is required}
+    pull_policy: never
     restart: unless-stopped
     environment:
       HOST: ${HOST:-0.0.0.0}
@@ -73,12 +74,10 @@ services:
       - {{ app_runtime_playbook_dir }}:/app/deploy/runtime:ro
       - {{ app_runtime_work_dir }}:{{ app_runtime_work_dir }}
 {% endif %}
-{% if app_backend_split | bool %}
     # BFF на gateway ходит сюда по приватной сети: порт — только на приватном адресе VPS2, снаружи его
     # закрывают security group (только с gateway) и отсутствие публичного IP
     ports:
       - "{{ app_backend_address }}:8080:8080"
-{% endif %}
     networks:
       - app
 
@@ -98,11 +97,6 @@ services:
       BFF_KEY: ${BFF_API_KEY:?bff api key is required}
     # BFF дожидается текущих запросов до 10 с (frontend#2)
     stop_grace_period: 15s
-{% if 'api' in app_services %}
-    depends_on:
-      api:
-        condition: service_healthy
-{% endif %}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/health"]
       interval: 5s

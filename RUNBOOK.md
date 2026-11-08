@@ -735,68 +735,76 @@ ansible-lint auxiliary.yml roles/hooks roles/restic_backup tasks/verify-hooks-sn
 
 ## Go и Postgres на VPS2 (infra#59)
 
-Схема после переключения: браузер → Caddy → BFF на gateway (публичный IP) → по приватной сети Go API на
-VPS2 (`http://<backendPrivateIp>:8080`, Bearer и `X-BFF-Key`) → Postgres и Redis там же. У VPS2 нет
-публичного IP; её security group пускает SSH и 8080 только с приватного адреса gateway
-(`gatewayPrivateIp`), ufw на VPS2 — второй слой с тем же источником. На gateway API не публикуется:
-её floating IP — 1:1 DNAT, опубликованный на приватном адресе порт был бы открыт в интернет.
-Ansible ходит на VPS2 через gateway (`ProxyCommand` из `group_vars/backend`); sshd на gateway пускает
-пересылку только на `VPS2:22` (`AllowTcpForwarding local`, `PermitOpen`).
+Раскладка закреплена: Caddy и BFF работают на gateway, Go API, PostgreSQL и Redis —
+на приватной VPS2. BFF обращается к Go по `http://<backendPrivateIp>:8080/api/v1`.
+У VPS2 нет публичного IP; security group и ufw пускают SSH и 8080 только с приватного
+адреса gateway. На gateway Go API и базы не запускаются.
 
-**Данные PostgreSQL с gateway не переносятся.** На VPS2 — новые пустые тома Postgres и Redis, схему
-создают миграции Go при первом старте. Пользователи и блокноты, созданные на gateway, в новой базе не
-появляются; тома `cellestial_postgres_data` и `cellestial_redis_data` на gateway сохраняются для отката
-и не удаляются.
+Ansible подключается к VPS2 через gateway: `ProxyCommand` задан в `group_vars/backend`,
+sshd gateway разрешает пересылку только на `VPS2:22`. Ключи gateway и VPS2 должны быть
+проверены через консоль провайдера и добавлены в используемый `known_hosts`.
+Не отключайте проверку host key. CI не обращается к приватному HTTP напрямую.
 
-Предусловия: backend#41 (проверка `X-BFF-Key` в Go) выкачен; BFF выкачен (`BFF_IMAGE_REF` в `.env`
-gateway). Между шагами 5 и 6 сайт работает со старой базой на gateway, после шага 6 — с новой.
+### Подготовка и выкатка
 
-Переменную раскладки передавать JSON (`-e '{"app_backend_split": true}'`): так она — boolean. Роли и
-плейбуки и так приводят её через `| bool`, поэтому `-e app_backend_split=true` тоже работает.
+1. Убедиться, что VPS2 создана Pulumi, в CI inventory есть ровно один хост группы
+   `backend` и один `gateway`. `app_backend_address` берётся из `ansible_host` VPS2,
+   `app_gateway_address` — из `gatewayPrivateIp`. При отсутствии или неоднозначности
+   VPS2 playbook завершается на проверке inventory, без выкатки на gateway.
+2. После добавления VPS2 или смены её адреса сначала выполнить
+   `ansible-playbook -i inventory/ci.yml site.yml --limit gateway`: это обновляет
+   разрешённый SSH jump-путь и `PermitOpen` до нового `VPS2:22`.
+   Затем для новой VPS2 один раз выполнить `bootstrap.yml --limit backend` и
+   `site.yml --limit backend` для пользователей, SSH-hardening, ufw и Docker.
+   Полная команда выбора inventory и ключей — в [Ansible README](ansible/README.md).
+   Эти действия не нужны для обычной выкатки образа на уже настроенную VPS2.
+3. В рамках backend#42 перевести GHCR package backend в Public и подтвердить
+   анонимное скачивание выбранного опубликованного digest с пустым Docker config.
+   Для deploy/rollback не нужны GHCR username/token; CI-публикация сохраняет право записи.
+4. Из `ansible/` запустить выкатку с полным ref (заменить `REPLACE_WITH_64_HEX`):
 
-1. **VPS2.** `pulumi preview` показывает только создание: security group `backend` и её правила, порт,
-   диск и сервер `backend`, без замены и удаления существующих ресурсов. `pulumi up` (на мерже в main
-   это делает CI). `pulumi stack output backendPrivateIp gatewayPrivateIp`; `gatewayPrivateIp` совпадает
-   с `app_gateway_address` в `group_vars/all/vars.yml`.
-2. **Inventory.** Раскомментировать группу `backend` в `inventory/ci.yml` с `backendPrivateIp`
-   (dynamic inventory найдёт VPS2 по `metadata.role` сам).
-3. **Jump.** `ansible-playbook site.yml --limit gateway`: sshd на gateway разрешает пересылку на VPS2.
-   Затем host key VPS2 — в `~/.ssh/known_hosts`, сверенный с консолью сервера в панели:
-   `ssh -o ProxyCommand="ssh -W %h:%p deploy@cellestial.ru" root@<backendPrivateIp>` (первое подключение).
-4. **Базовая настройка VPS2.** `ansible-playbook bootstrap.yml --limit backend`, затем
-   `ansible-playbook site.yml --limit backend` (users, hardening, ufw, Docker). Проверка доступа снаружи:
-   с управляющей машины `nc -vz <backendPrivateIp> 22` не проходит (нет маршрута), публичного IP у
-   сервера в панели нет.
-5. **Go на VPS2.** `ansible-playbook deploy-backend.yml -e '{"app_backend_split": true}'
-   -e "backend_image_tag=$BACKEND_IMAGE_TAG"` с `GHCR_USERNAME`/`GHCR_TOKEN` (образ Go частный); тег — текущий
-   `BACKEND_IMAGE_TAG` из `.env` gateway или новый. Плейбук выкатывает Go, Postgres и Redis на VPS2 с
-   пустыми томами; gateway он не трогает (там Go продолжает работать со старой базой). Проверка с
-   gateway: `curl -fsS http://<backendPrivateIp>:8080/health` отвечает, а в базе VPS2 только схема:
-   `docker compose exec postgres psql -U postgres -d app_db -c '\dt'` на VPS2 — таблицы есть, в
-   `users` ноль строк.
-6. **Переключение BFF.** `ansible-playbook deploy-bff.yml -e '{"app_backend_split": true}'
-   -e "bff_image_ref=$BFF_IMAGE_REF" -e "bff_release_sha=$BFF_RELEASE_SHA"` (значения — `BFF_IMAGE_REF` и
-   `BFF_RELEASE_SHA` из `.env` gateway): на gateway остаются Caddy и BFF с `GO_API_URL` на VPS2,
-   контейнеры api, postgres и redis на gateway удаляются, их тома остаются.
-7. **Проверка.** `verify.yml -e '{"app_backend_split": true}'`: ufw и sshd обеих машин, Redis на VPS2,
-   с gateway Go отвечает с верным `X-BFF-Key` (401 без Bearer) и даёт `403 s2s_forbidden` без ключа и с
-   неверным. Руками на cellestial.ru — регистрация (база пустая), вход, создание, чтение и изменение
-   блокнота.
-8. **Закрепить.** PR: `app_backend_split: true` в `group_vars/all/vars.yml` и группа `backend` в
-   `inventory/ci.yml`. После него `deploy-backend.yml` (CD бэка) выкатывает Go на VPS2; CD бэка
-   передаёт `-e jump_known_hosts=<файл>` и держит в `SSH_KNOWN_HOSTS` ещё и host key VPS2.
+   ```bash
+   export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
+   BACKEND_IMAGE_REF='ghcr.io/cringe-driven-development-team/backend@sha256:REPLACE_WITH_64_HEX'
+   ansible-playbook -i inventory/ci.yml deploy-backend.yml \
+     -e "backend_image_ref=$BACKEND_IMAGE_REF" \
+     -e "deploy_key_path=$HOME/.ssh/selectel_release" \
+     -e "jump_known_hosts=$HOME/.ssh/known_hosts" \
+     --ssh-common-args="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+   ```
 
-Откат — на сохранённые тома gateway:
+   Backend workflow получает digest опубликованного образа и передаёт тот же ref.
+   Сначала playbook скачивает его анонимно, затем записывает `.env`/Compose и запускает
+   API, Postgres и Redis на VPS2 с ожиданием healthy. При отказе pull конфигурация и
+   контейнеры остаются прежними. Секреты из Vault не выводятся в лог.
+5. После запуска playbook сверяет локальный image ID контейнера `api` с `.Id` образа
+   по выбранному digest и состояние running/healthy; затем с gateway проверяет
+   `/health` VPS2 (`200`, `status: alive`) и с runner — отрицательный login через BFF
+   (`401`, `UNAUTHORIZED`, `invalid_credentials`). Проверки API/health снаружи требуют
+   `404` без HTML. Ошибка любого обязательного этапа означает неуспех выкатки.
+6. Если требуется обновить сам BFF, использовать отдельный `deploy-bff.yml` с его
+   `bff_image_ref` по digest и `bff_release_sha`. Для выкатки backend менять BFF не нужно.
+   Общая проверка стенда: `ansible-playbook -i inventory/ci.yml verify.yml` с теми же
+   ключами и доверенными host keys. Она включает ufw/sshd, Redis на VPS2 и S2S-доступ Go.
 
-- **До шага 6:** ничего делать не нужно — BFF ходит в Go на gateway. VPS2 можно очистить и повторить
-  шаг 5.
-- **После шага 6:** `ansible-playbook deploy-backend.yml -e '{"app_backend_split": false}'
-  -e "backend_image_tag=$BACKEND_IMAGE_TAG"` с GHCR credentials. Плейбук идёт на gateway и поднимает там
-  Go, Postgres и Redis на прежних томах, а BFF из `.env` gateway — с `GO_API_URL` на `api`; тег Go
-  передаётся явно, потому что в `.env` gateway раздельной раскладки его нет. `deploy-bff.yml` не нужен.
-  **Записи, созданные на VPS2 после переключения, в старую базу gateway автоматически не попадают**: на
-  gateway снова данные на момент шага 6.
-- Старые тома на gateway удалять только отдельным решением после стабильной работы на VPS2.
+Для первоначального создания данных миграции Go применяются к базе VPS2 при старте.
+Обычная выкатка и откат версии не переносят данные между машинами и не очищают volumes.
+Исторические тома на gateway не используются для возврата сервисов и этим сценарием
+не удаляются. Проверки не доказывают успешный пользовательский вход, Redis или runtime-VPS;
+пользовательские сценарии проверяются отдельно после готовности связанных задач.
+
+### Откат версии на VPS2
+
+Выбрать предыдущий успешный выпуск и его точный digest по GitHub Deployments в рамках
+backend#42. Выполнить тот же `deploy-backend.yml`, заменив `BACKEND_IMAGE_REF` на этот
+подтверждённый ref текущего package `ghcr.io/cringe-driven-development-team/backend`.
+Отдельное SSH-чтение Docker до выбора цели не требуется.
+
+Откат остаётся на VPS2 и проходит те же обязательные проверки после переключения.
+Он не переносит Go/PostgreSQL/Redis на gateway, не откатывает миграции и данные БД,
+не выполняет `goose Down` или `docker compose down -v`. Автоматического отката нет.
+Если после переключения проверки не прошли, текущее состояние нельзя объявлять
+подтверждённым: изучить этап ошибки и повторить выкатку проверенного рабочего digest.
 
 ## Runtime-VPS сессий (infra#89)
 
@@ -814,9 +822,9 @@ Go API получает только `RUNTIME_ENABLED=false`, ключей runti
 
 ### Включение
 
-Предусловие: Go на VPS2 (`app_backend_split: true`, «Go и Postgres на VPS2») — security group `runtime`
-пускает SSH и 8443 только с `backendPrivateIp`; при `runtime_enabled: true` без раскладки `validate.yml`
-падает.
+Предусловие: Go работает на приватной VPS2 («Go и Postgres на VPS2»); security group `runtime`
+пускает SSH и 8443 только с `backendPrivateIp`. При `runtime_enabled: true` нужны заполненные
+настройки и секреты runtime-VPS; `validate.yml` проверяет их до запуска приложения.
 
 1. **Pulumi.** `pulumi preview` по `prod`: только создание — пользователь `runtime` и его пароль, security
    group `runtime` и три правила, ключи `runtime-ssh`/`runtime-ca`/`runtime-client`, сертификаты, keypair

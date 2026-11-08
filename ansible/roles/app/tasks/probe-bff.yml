@@ -2,17 +2,53 @@
 # Проверка BFF снаружи, без аккаунта пользователя: deploy-bff.yml после выкатки и verify.yml.
 # Внутренний /health — healthcheck Compose; здесь — то, что видит браузер. bff_probe_release — полный
 # SHA релиза: он же в <meta name="release"> HTML. Гостю HTML отдаёт /login (защищённые страницы — 302).
+- name: Choose a fresh nonexistent login for the external probe
+  ansible.builtin.set_fact:
+    app_probe_login: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['0123456789abcdef']) }}"
+
+- name: Backend external BFF check
+  ansible.builtin.uri:
+    url: "https://{{ app_domain }}/api/trpc/auth.login"
+    method: POST
+    headers:
+      Origin: "https://{{ app_domain }}"
+      X-CSRF: "1"
+      Content-Type: application/json
+    body_format: json
+    body:
+      login: "{{ app_probe_login }}"
+      password: deploy-probe-invalid-password
+    status_code: 401
+    return_content: true
+    validate_certs: true
+    follow_redirects: none
+    use_proxy: false
+    timeout: 5
+  register: app_probe_login_result
+  delegate_to: localhost
+  become: false
+  failed_when: >-
+    app_probe_login_result.status | default(0) != 401
+    or (app_probe_login_result.json.error.data.code | default('')) != 'UNAUTHORIZED'
+    or (app_probe_login_result.json.error.data.appCode | default('')) != 'invalid_credentials'
+  until: app_probe_login_result is succeeded
+  retries: 5
+  delay: 5
+
 - name: Guest HTML comes from the BFF
   ansible.builtin.uri:
     url: "https://{{ app_domain }}/login"
     headers:
       Accept: text/html
     return_content: true
+    follow_redirects: none
+    use_proxy: false
+    timeout: 5
   register: app_probe_html
   delegate_to: localhost
   become: false
   until: app_probe_html is succeeded
-  retries: 6
+  retries: 5
   delay: 5
 
 - name: The HTML has one guest bootstrap, its release and no caching
@@ -39,6 +75,9 @@
       X-CSRF: "1"
     status_code: 401
     return_content: true
+    follow_redirects: none
+    use_proxy: false
+    timeout: 5
   register: app_probe_rpc
   delegate_to: localhost
   become: false
@@ -51,6 +90,9 @@
     url: "https://{{ app_domain }}{{ item }}"
     status_code: 404
     return_content: true
+    follow_redirects: none
+    use_proxy: false
+    timeout: 5
   register: app_probe_hidden
   delegate_to: localhost
   become: false

@@ -193,33 +193,38 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 |---|---|---|
 | users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive, с проверкой ключа запускающего), sudo NOPASSWD — в bootstrap и в каждом site.yml |
 | common | все | базовые пакеты |
-| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
-| firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
+| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей; gateway разрешает SSH jump только к приватной VPS2 (`PermitOpen`), на остальных хостах forwarding запрещён; Ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
+| firewall | все | ufw: deny incoming; публичный gateway — 22/80/443, приватная VPS2 — 22/8080 только с gateway |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: все пути, кроме закрытого `/health`, — BFF (до его первой выкатки — `503 BFF is not deployed`), раздел «Клиент и BFF»; сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
 | hooks | auxiliary | GitHubBot (long polling, `githubbot.env` 0600, отдельный том `hooks_githubbot_data`, без портов) и проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Публичный image `webhook-alerts` по registry digest; анонимный pull; worker по умолчанию выключен |
 | restic_backup | auxiliary | ночной CLI snapshot очереди перед `restic backup`; только snapshot, тома Caddy и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
-Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml`, `deploy-bff.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
-вспомогательная VPS (группа `auxiliary`, RUNBOOK, «Вспомогательная VPS»).
+Плейбуки: `site.yml` и `verify.yml` обслуживают gateway и приватную VPS2;
+`deploy-backend.yml` выкатывает Go API только на `backend`, `deploy-bff.yml` — BFF только
+на `gateway`. `auxiliary.yml` обслуживает вспомогательную VPS (группа `auxiliary`,
+RUNBOOK, «Вспомогательная VPS»).
 
 ## Проект Compose
 
-Всё приложение — один проект Compose в `/opt/cellestial` на VPS: Caddy (роль `caddy`), BFF, Go API,
-Postgres и Redis (роль `app`). Сервисы приложения — в сети `app` и **без** `ports:`: Caddy достаёт BFF
-по имени сервиса (`reverse_proxy bff:3000`), BFF — Go (`http://api:8080/api/v1`).
+На каждом хосте свой проект Compose в `/opt/cellestial` и своя сеть `app`:
+на gateway — Caddy и BFF, на VPS2 — Go API, Postgres и Redis. Caddy обращается к BFF
+по имени сервиса (`reverse_proxy bff:3000`), BFF — к приватному адресу VPS2
+(`http://<private-IP-VPS2>:8080/api/v1`). Базы и BFF не публикуют порты; Go публикует
+8080 только на приватном адресе VPS2 с доступом с gateway.
 Смена Caddyfile применяется `caddy reload` внутри контейнера, без рестарта.
 
-## Порты контейнеров и ufw (одна VPS)
+## Порты контейнеров и ufw
 
 Docker публикует порты контейнеров (`-p 8080:80`) своими iptables-правилами в цепочке
 `nat`/`DOCKER`, которые обрабатываются **до** ufw: опубликованный порт откроется наружу,
 даже при `deny incoming`. Правила на стенде:
 
-- **Postgres, Go API и BFF наружу не публикуются**: только внутренняя сеть Compose
-  (`expose`, без `-p`); при прямом доступе с хоста — bind на `127.0.0.1`
-  (`-p 127.0.0.1:8080:8000`), не `0.0.0.0`;
+- **Postgres, Redis и BFF не публикуют порты**. Go API публикует
+  `<private-IP-VPS2>:8080:8080`; security group и ufw разрешают доступ только с gateway.
+  Loopback хоста VPS2 не заменяет этот приватный адрес. Проверка loopback внутри контейнера
+  остаётся частью его healthcheck;
 - наружу смотрит **только Caddy** (80/443) и ssh (22); floating IP — 1:1 DNAT на адрес
   сервера, поэтому любой `-p 0.0.0.0:X` открыт в интернет мимо ufw;
 - если нужен фильтр-страховка — править цепочку `DOCKER-USER` (ufw её не трогает). Правило
@@ -380,7 +385,7 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
   выкатку здесь: `.env`, `compose.yml`, Caddy и контейнеры остаются прежними. Package `bff` в GHCR
   должен быть публичным (GitHub → Packages → bff → Package settings → Change visibility → Public).
 - В `.env` пишутся `BFF_IMAGE_REF` (ссылка по digest) и `BFF_RELEASE_SHA`; Compose запускает
-  `image: ${BFF_IMAGE_REF}` с `pull_policy: never` и `--wait`. Тег Go берётся из `.env` на VPS:
+  `image: ${BFF_IMAGE_REF}` с `pull_policy: never` и `--wait`. Полный digest-ref Go берётся из `.env` на VPS:
   выкатка BFF не трогает API, а `deploy-backend.yml` не меняет BFF (`bff_image_ref` он не принимает).
   Без выкаченного Go BFF не выкатывается (он ждёт `api` в состоянии healthy).
 - После запуска проверяется фактически запущенный контейнер: его образ — тот же `BFF_IMAGE_REF` и
@@ -400,7 +405,7 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
   retention фронта). Откат BFF не откатывает Go и БД.
 - `SESSION_KEY` — из Vault и одинаков у выпуска и отката: действительные cookie сессии остаются
   читаемыми. `GO_API_URL` — `app_bff_go_api_url` (`roles/app/defaults/main.yml`,
-  `http://api:8080/api/v1`); при переносе Go на VPS2 (infra#59) — её приватный адрес.
+  `http://<private-IP-VPS2>:8080/api/v1`); адрес берётся из inventory.
 - `site.yml` образ BFF не меняет: `compose.yml` и `.env` после первой выкатки ведёт только роль `app`.
 
 ## Приватная VPS2: Go API, Postgres, Redis (infra#59)
@@ -411,24 +416,28 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
 gateway пускает пересылку только на `VPS2:22` (`ssh_hardening_jump_targets`). `site.yml` настраивает VPS2 так же,
 как gateway, без Caddy; ufw на ней пускает 22 и 8080 только с `app_gateway_address`.
 
-Раскладка приложения — `app_backend_split` (`group_vars/all/vars.yml`): `false` — всё на gateway,
-`true` — на gateway Caddy и BFF (`GO_API_URL` — приватный адрес VPS2), на VPS2 Go, Postgres и Redis,
-порт API опубликован только на приватном адресе VPS2. В `.env` каждой машины — только секреты её
-сервисов; `BFF_API_KEY` — на обеих. `deploy-backend.yml` идёт по `gateway:backend` и выкатывает Go туда,
-где он живёт в текущей раскладке; `deploy-bff.yml` на раздельной раскладке требует, чтобы Go на VPS2
-отвечал с gateway. Данные Postgres с gateway не переносятся: на VPS2 новые пустые тома, схему создают
-миграции Go при старте; тома на gateway остаются для отката. Порядок переключения и отката —
-[RUNBOOK.md, «Go и Postgres на VPS2»](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
+Раскладка фиксирована: Caddy и BFF работают на gateway, Go API, Postgres и Redis — на
+приватной VPS2. Порт API опубликован только на приватном адресе VPS2. В `.env` каждой
+машины — только секреты её сервисов; `BFF_API_KEY` нужен обеим сторонам. `deploy-backend.yml`
+выкатывает приложение только на группу `backend`; отсутствие или несколько VPS2 приводят
+к ошибке предварительной проверки inventory. Gateway участвует в делегированных проверках.
+`deploy-bff.yml` работает только на gateway и перед запуском требует доступный Go на VPS2.
+Откат версии повторно выкатывает прежний digest на VPS2, без возврата сервисов на gateway.
+Порядок выкатки и отката — [RUNBOOK.md](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
 
 ## Go API: первая выкатка и откат
 
-В одном проекте `/opt/cellestial` роль `app` управляет API, PostgreSQL 18 и Redis 8, роль
-`caddy` — общим Caddyfile. API, Postgres и Redis доступны только в сети `app`. Данные
-Postgres сохраняются в `cellestial_postgres_data`, Redis — в `cellestial_redis_data` (AOF),
-сертификаты — в существующих `cellestial_caddy_data` и `cellestial_caddy_config`.
-Не выполнять `down -v`.
+На приватной VPS2 роль `app` управляет API, PostgreSQL 18 и Redis 8 в Compose-проекте
+`/opt/cellestial`. Порт Go 8080 опубликован только на приватном адресе VPS2 для gateway;
+Postgres и Redis доступны внутри сети `app`. На gateway находятся BFF и Caddy; роль `caddy`
+управляет общим Caddyfile. Данные Postgres сохраняются в `cellestial_postgres_data`, Redis —
+в `cellestial_redis_data` (AOF), сертификаты — в существующих `cellestial_caddy_data` и
+`cellestial_caddy_config`. Не выполнять `down -v`.
 
-Пакет GHCR остаётся приватным. Постоянный токен на VPS и в Vault не хранится.
+Backend скачивается из публичного GHCR package `ghcr.io/cringe-driven-development-team/backend`.
+Перевод package в Public и проверка реального анонимного pull выполняются вручную в рамках
+backend#42 до применения infra#69. Новый playbook не использует GHCR credentials на runner или
+сохранённую авторизацию Docker на VPS; публикация образов по-прежнему требует права записи.
 Денис создаёт
 отдельную пару CI-ключей без passphrase, добавляет **только** `ci.pub` в
 `files/authorized_keys/` через PR и запускает `site.yml` своим уже разрешённым
@@ -458,49 +467,69 @@ python3 -m venv /tmp/cdd-deploy-venv
 pip install -r deploy-requirements.txt
 ansible-galaxy collection install -r deploy-requirements.yml
 export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
-# gh должен быть авторизован аккаунтом с доступом к team/backend и его package.
-gh auth refresh -s read:packages
-export GHCR_USERNAME="$(gh api user --jq .login)"
-export GHCR_TOKEN="$(gh auth token)"
+# Вставьте точный digest опубликованного образа, выбранный backend workflow.
+BACKEND_IMAGE_REF='ghcr.io/cringe-driven-development-team/backend@sha256:REPLACE_WITH_64_HEX'
 ansible-playbook -i inventory/ci.yml deploy-backend.yml \
-  -e backend_image_tag=sha-1234567 \
+  -e "backend_image_ref=$BACKEND_IMAGE_REF" \
   -e deploy_key_path="$HOME/.ssh/selectel_release" \
-  --ssh-common-args='-o StrictHostKeyChecking=yes'
-unset GHCR_TOKEN GHCR_USERNAME
+  -e jump_known_hosts="$HOME/.ssh/known_hosts" \
+  --ssh-common-args="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
 ```
 
-Замените пример SHA на опубликованный тег. Без `backend_image_tag`, `GHCR_USERNAME`
-или `GHCR_TOKEN` playbook завершается до изменений VPS. Credentials читаются только
-из окружения управляющей машины, не из Vault и не через `-e`. Он пишет `.env` с
-правами `0600` и `no_log`, выполняет login через stdin с `no_log`, скачивает API и
-всегда делает logout, в том числе при ошибке login или pull. Ошибка не подавляется.
-Затем скачивает отсутствующие публичные образы Caddy/Postgres и запускает Compose
-с `--pull never --wait`, чтобы API не скачивался после logout. Go API наружу не
-публикуется (раздел «Клиент и BFF»): готовность — healthcheck Compose. BFF, если он
-выкачен, остаётся на своём теге из `.env` на VPS.
+Перед запуском замените `REPLACE_WITH_64_HEX` на 64 строчных hex-символа реального digest.
+Выкатка требует один gateway и ровно одну приватную VPS2 в группе `backend`.
+Go, PostgreSQL и Redis работают на VPS2, опубликованный порт 8080 привязан только к приватному
+адресу; Caddy и BFF работают на gateway. SSH к VPS2 идёт существующим jump-путём через gateway,
+проверка host key сохраняется. Адреса берутся из inventory.
 
-По умолчанию образ берётся из ghcr.io/cringe-driven-development-team/backend.
-Изменение default нельзя вливать до публикации нового package и остановки старого
-writer: старый CI читает infra@main. Порядок окна — в
-[runbook организации](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/docs/migrations/team-repositories-runbook.md).
-Проверить связь private package с team/backend и права его GITHUB_TOKEN.
+`backend_image_ref` принимает только полный ref указанного backend package. Тег, другой package,
+неправильный digest или неподходящая топология отклоняются до изменений. Старый
+`backend_image_tag` не поддерживается. Переменные `GHCR_USERNAME`/`GHCR_TOKEN` не требуются.
 
-Откат внутри нового registry — та же команда с прежним SHA-тегом.
-Для отката к образу до переноса дополнительно передать
-`-e app_backend_image=ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development`
-и его прежний `backend_image_tag=sha-<old>`. GHCR_TOKEN должен читать старый
-package: временный token нового repo не обязан иметь это право. Старые package,
-tag и рабочий read credential сохраняются до завершения периода отката.
-Перед deploy сверить compose image и убедиться, что новые writers выключены.
-Данные Postgres остаются в volume;
-goose Down не запускается, прежний API должен поддерживать применённую схему БД.
-После неудачного деплоя проверьте состояние контейнеров и повторите playbook с
-рабочим тегом: автоматического отката нет.
+До записи `.env` и `compose.yml` Ansible скачивает точный ref на VPS2 через временный пустой
+Docker config. Login/logout не выполняются; сохранённые credentials VPS не используются, временный
+каталог удаляется и при ошибке. Если образ недоступен, конфигурация и контейнеры остаются прежними.
+После успешного pull `.env` с правами `0600` и `no_log` хранит `BACKEND_IMAGE_REF`. Compose
+использует полный ref, `pull_policy: never`, запускается с `pull: never` и ожиданием healthcheck.
+Секреты приложения из Vault продолжают записываться на соответствующие VPS с прежними ограничениями;
+они не включаются в вывод проверок.
 
-`site.yml` проходит до первой выкатки без тега. После неё он сохраняет полный
-`compose.yml` и `.env`, управляет только сервисом Caddy и не меняет образ API.
-Он продолжает обновлять общий Caddyfile: маршрут на BFF — по тому, выкачен ли он.
-GHCR credentials для `site.yml` не нужны, API он не скачивает.
+После запуска и применения handlers обязательны последовательные проверки:
+
+1. `Backend image check`: ровно один работающий контейнер `api`, его локальный `.Image` совпадает
+   с `.Id` локального образа, найденного по `backend_image_ref`; контейнер running и healthy.
+   Registry digest и локальный image ID напрямую не сравниваются.
+2. `Backend internal HTTP check`: запрос с gateway к приватному адресу VPS2 `:8080/health`,
+   одновременно HTTP 200 и JSON `status: alive`. Runner не обращается к приватному HTTP напрямую.
+   Redirects и proxy запрещены; timeout 5 секунд, максимум шесть запросов с интервалом 5 секунд.
+3. `Backend external BFF check`: runner выполняет HTTPS POST `/api/trpc/auth.login`, отправляя
+   `Origin`, `X-CSRF: 1`, JSON с новым случайным login из 32 hex-символов и паролем
+   `deploy-probe-invalid-password`. Успех — одновременно 401, `UNAUTHORIZED` и
+   `invalid_credentials`. Login один на все повторы; максимум шесть запросов, timeout 5 секунд,
+   интервал 5 секунд. TLS проверяется, redirects запрещены; существующий S2S-ключ добавляет BFF,
+   для запроса runner ключ не получает.
+
+Сохраняются проверки `/login` и гостевого `users.me`. Затем `/api/v1/users/me`, `/api/unknown`
+и `/health` с runner должны вернуть 404 без HTML. Общие HTTP tasks используются также BFF playbook;
+backend-выкатка читает текущий BFF release на gateway, не меняя его образ. Отсутствие BFF release
+или ошибка любой обязательной проверки завершают playbook неуспехом. Уже пройденные задачи остаются
+видны в логе; общий успех нельзя выводить из одного успешного раннего этапа.
+
+`/health` подтверждает живой HTTP-процесс. Отрицательный login дополнительно подтверждает
+HTTPS → BFF → Go → чтение PostgreSQL. Эти проверки не доказывают успешный вход, создание сессии,
+работу Redis или runtime-VPS. Передача результатов в Actions Health Check/Summary — часть backend#42;
+интеграция проверяется после готовности обеих задач. Отдельного JSON-файла отчёта нет.
+
+Ручной повтор выкатки прежней версии использует ту же команду с прежним успешным digest этого
+backend package. Цель выбирает workflow backend#42 из GitHub Deployments; отдельное SSH-чтение
+Docker перед выбором цели не требуется. Ошибка после переключения не означает, что старый
+контейнер восстановлен. Автоматического отката нет: изучите результаты и повторите выкатку
+подтверждённого рабочего digest. Миграции и данные БД playbook не откатывает; `goose Down`
+не запускается.
+
+`site.yml` работает до первой выкатки и после неё сохраняет полный `compose.yml`/`.env`,
+управляет сервисом Caddy и обновляет маршрут BFF. API он не скачивает и его образ не меняет.
+GHCR credentials для `site.yml` не нужны.
 
 S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `AWS_ENDPOINT_URL_S3`, `S3_NOTEBOOKS_BUCKET`, `S3_AVATARS_BUCKET`,
@@ -541,12 +570,11 @@ ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 каталог `inventory` целиком, иначе Ansible объединит динамический и статический
 хосты. Для CI всегда передавайте `-i inventory/ci.yml`.
 
-В CI выкатки бэка только шаг с playbook получает `GHCR_USERNAME` из `github.actor` и `GHCR_TOKEN`
-из `secrets.GITHUB_TOKEN` с разрешением job `packages: read`. Отдельного GHCR secret
-нет. После успешной или упавшей на pull выкатки проверьте отсутствие `ghcr.io` в
-Docker config пользователя, под которым выполнялся login (`become: true` — root).
-Если logout сам завершился ошибкой, выкатка тоже неуспешна; удаление credentials
-нужно подтвердить перед повторным запуском.
+Выкатка и ручной откат backend не передают GHCR credentials. Новое подключение workflow,
+публичность package и реальный анонимный pull по digest проверяются в backend#42. Порядок:
+подготовить оба PR → вручную открыть package и проверить pull → применить infra#69 →
+применить backend#42 → проверить общую выкатку и Health Check/Summary. Локальная проверка
+контракта не требует пробного отката production.
 
 ### Откат из проверенного архива без registry
 
