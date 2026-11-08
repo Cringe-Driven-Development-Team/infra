@@ -780,7 +780,8 @@ sshd gateway разрешает пересылку только на `VPS2:22`. 
 5. После запуска playbook сверяет локальный image ID контейнера `api` с `.Id` образа
    по выбранному digest и состояние running/healthy; затем с gateway проверяет
    `/health` VPS2 (`200`, `status: alive`) и с runner — отрицательный login через BFF
-   (`401`, `UNAUTHORIZED`, `invalid_credentials`). Проверки API/health снаружи требуют
+   (`400`, `BAD_REQUEST`, `invalid_credentials`). Это контракт неверных логина/пароля;
+   `401` у login относится к неверному TOTP. Проверки API/health снаружи требуют
    `404` без HTML. Ошибка любого обязательного этапа означает неуспех выкатки.
 6. Если требуется обновить сам BFF, использовать отдельный `deploy-bff.yml` с его
    `bff_image_ref` по digest и `bff_release_sha`. Для выкатки backend менять BFF не нужно.
