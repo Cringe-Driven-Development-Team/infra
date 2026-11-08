@@ -25,3 +25,12 @@
 Нужен secret `DOCS_PAGES_TOKEN` с Actions: write только для репозитория docs;
 настройка и публичная wiki — в [README docs](https://github.com/Cringe-Driven-Development-Team/docs#readme).
 Локальная проверка dispatch без GitHub: `bun test scripts/openwiki-publish.test.ts`.
+
+## Ansible Vault
+
+Для правки секретов и локального запуска инфраструктурных playbook'ов нужен пароль
+Vault. Получи его лично у Дениса или менторов и сохрани вне репозитория в
+`~/.config/cdd-vault-pass` с правами `600`; путь к файлу задай через
+`ANSIBLE_VAULT_PASSWORD_FILE`. Правь секреты через `ansible-vault edit` — при
+сохранении файл шифруется обратно. Коммить только зашифрованный `vault.yml`.
+Подробный порядок и команды — [Секреты (ansible-vault)](ansible/README.md#секреты-ansible-vault).

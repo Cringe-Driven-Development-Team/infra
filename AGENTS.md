@@ -12,6 +12,16 @@
 и [Ansible README](ansible/README.md). Задачи и PR веди по
 [правилам команды](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/CONTRIBUTING.md).
 
+## Ansible Vault
+
+Перед работой с Vault проверь доступность файла из `ANSIBLE_VAULT_PASSWORD_FILE`;
+если переменная не задана, проверь `~/.config/cdd-vault-pass` и задай её на этот файл.
+Пароль хранится вне репозитория с правами `600`. Если он недоступен, сообщи
+пользователю, что его получают лично у Дениса или менторов; не проси прислать пароль
+в чат. Для правки используй `ansible-vault edit`, а не `decrypt` → правка → `encrypt`.
+Не выводи пароль и значения секретов в ответы и логи; коммить только зашифрованный
+`vault.yml`. Подробности — [Секреты (ansible-vault)](ansible/README.md#секреты-ansible-vault).
+
 ## Wiki и общее пространство
 
 Для поиска контекста об устройстве infra начни с `openwiki_search`, затем прочитай
