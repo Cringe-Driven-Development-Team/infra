@@ -518,7 +518,7 @@ Docker config. Login/logout не выполняются; сохранённые 
    Redirects и proxy запрещены; timeout 5 секунд, максимум шесть запросов с интервалом 5 секунд.
 3. `Backend external BFF check`: runner выполняет HTTPS POST `/api/trpc/auth.login`, отправляя
    `Origin`, `X-CSRF: 1`, JSON с новым случайным login из 32 hex-символов и паролем
-   `deploy-probe-invalid-password`. Успех — одновременно 401, `UNAUTHORIZED` и
+   `deploy-probe-invalid-password`. Успех — одновременно HTTP 400, `BAD_REQUEST` и
    `invalid_credentials`. Login один на все повторы; максимум шесть запросов, timeout 5 секунд,
    интервал 5 секунд. TLS проверяется, redirects запрещены; существующий S2S-ключ добавляет BFF,
    для запроса runner ключ не получает.
