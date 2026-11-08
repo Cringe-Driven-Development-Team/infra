@@ -1,4 +1,7 @@
 ---
+- name: Загрузить выбранные релизы
+  ansible.builtin.import_tasks: release-state.yml
+
 - name: Проверить параметры сервиса
   ansible.builtin.import_tasks: validate.yml
 

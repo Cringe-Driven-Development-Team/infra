@@ -14,6 +14,8 @@ from ansible.plugins.filter.core import to_json
 from jinja2 import Environment, StrictUndefined
 import yaml
 
+from test_hooks_release import state as release_state
+
 ANSIBLE = Path(__file__).resolve().parents[1]
 IMAGE = "ghcr.io/cringe-driven-development-team/githubbot@sha256:" + "a" * 64
 SOURCE = "ghcr.io/cringe-driven-development-team/githubbot:sha-" + "b" * 40
@@ -57,6 +59,9 @@ class GithubBotChecks(unittest.TestCase):
                     "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {
                         "fingerprint": "chrome", "serverName": "example.invalid", "password": "A" * 43, "shortId": ""}}}],
                 "routing": {"rules": [{"type": "field", "domain": ["full:api.telegram.org"], "outboundTag": "telegram-vless"}]}}}
+        self.variables['hooks_release_state'] = release_state()
+        self.variables['hooks_image'] = self.variables['hooks_release_state']['services']['webhook-alerts']['desired']['image_ref']
+        self.variables['hooks_image_source_tag'] = 'ghcr.io/cringe-driven-development-team/webhook-alerts:sha-' + 'b' * 40
         self.inventory = self.root / "inventory.yml"
         self.inventory.write_text(yaml.safe_dump({"all": {"hosts": {"local": {
             "ansible_connection": "local", "ansible_python_interpreter": sys.executable}}}}))
@@ -110,7 +115,7 @@ class GithubBotChecks(unittest.TestCase):
             cases.append({"hooks_githubbot_env": ENV | {key: value}})
         for case in cases:
             with self.subTest(case=list(case)):
-                result = self.run_tasks("roles/hooks/tasks/main.yml", self.variables | case)
+                result = self.run_tasks("roles/hooks/tasks/validate.yml", self.variables | case)
                 output = result.stdout + result.stderr
                 self.assertNotEqual(result.returncode, 0, output)
                 self.assertNotIn("TASK [Каталог проекта Compose]", output)
@@ -202,7 +207,7 @@ class GithubBotChecks(unittest.TestCase):
 
     def test_first_deployment_preview(self):
         main = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
-        self.assertEqual(main[0]["ansible.builtin.import_tasks"], "validate.yml")
+        self.assertEqual([t["ansible.builtin.import_tasks"] for t in main[:2]], ["release-state.yml", "validate.yml"])
         preview = next(t for t in main if t.get("ansible.builtin.import_tasks") == "preview.yml")
         self.assertEqual(preview["when"], "ansible_check_mode")
         apply = next(t for t in main if "block" in t)

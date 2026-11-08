@@ -5,6 +5,9 @@
   hosts: auxiliary
   become: true
   pre_tasks:
+    - name: Загрузить выбранные релизы до изменений VPS
+      ansible.builtin.import_tasks: roles/hooks/tasks/release-state.yml
+
     # До изменений пользователей, firewall и конфигов: webhook env должны быть готовы.
     - name: Проверить параметры сервиса до изменений VPS
       ansible.builtin.import_tasks: roles/hooks/tasks/validate.yml

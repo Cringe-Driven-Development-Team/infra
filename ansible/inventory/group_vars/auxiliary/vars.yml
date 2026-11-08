@@ -9,6 +9,3 @@ firewall_rules:
 hooks_domain: hooks.cellestial.ru
 # Общий с ролью caddy параметр, поэтому он задан в inventory, а не defaults hooks.
 caddy_image: caddy:2.11-alpine
-# GitHubBot: опубликованный manifest digest и полный source SHA (2026-11-08).
-hooks_githubbot_image: ghcr.io/cringe-driven-development-team/githubbot@sha256:b21fac0dd5eea6f20f5ec642254740fa2f3855d8dfec02649830bdd8fd862e43
-hooks_githubbot_image_source_tag: ghcr.io/cringe-driven-development-team/githubbot:sha-20e057b57f2d7a1ea2ceeff46bcca680adaf120d

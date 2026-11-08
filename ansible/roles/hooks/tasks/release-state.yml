@@ -1,0 +1,51 @@
+---
+- name: Проверить наличие состояния релизов
+  ansible.builtin.stat:
+    path: "{{ hooks_compose_dir }}/releases.json"
+  register: hooks_release_state_file
+
+- name: Прочитать сохранённое состояние релизов
+  ansible.builtin.slurp:
+    src: "{{ hooks_compose_dir }}/releases.json"
+  register: hooks_release_state_content
+  when: hooks_release_state_file.stat.exists
+
+- name: Проверить сохранённое состояние релизов
+  ansible.builtin.set_fact:
+    hooks_release_state: "{{ hooks_release_state_content.content | b64decode | from_json | hooks_release_validate }}"
+    hooks_release_state_needs_initialization: false
+  when: hooks_release_state_file.stat.exists
+
+- name: Подготовить явные релизы только для пустой VPS
+  when: not hooks_release_state_file.stat.exists
+  block:
+    - name: Проверить наличие существующего Compose
+      ansible.builtin.stat:
+        path: "{{ hooks_compose_dir }}/compose.yml"
+      register: hooks_release_existing_compose
+
+    - name: Потребовать явную инициализацию состояния
+      ansible.builtin.assert:
+        that:
+          - not hooks_release_existing_compose.stat.exists
+          - hooks_initial_releases is defined
+          - hooks_initial_releases is sequence
+          - hooks_initial_releases is not string
+          - hooks_initial_releases | length == 2
+        fail_msg: Для существующего Compose выполните отдельную initialize-операцию; для пустой VPS передайте два hooks_initial_releases.
+
+    - name: Построить начальное состояние без записи
+      ansible.builtin.set_fact:
+        hooks_release_state: >-
+          {{ {'version': 1, 'services': {
+            hooks_initial_releases[0].service: {'desired': hooks_initial_releases[0], 'confirmed': none},
+            hooks_initial_releases[1].service: {'desired': hooks_initial_releases[1], 'confirmed': none}
+          }} | hooks_release_validate }}
+        hooks_release_state_needs_initialization: true
+
+- name: Выбрать образы обоих сервисов из desired
+  ansible.builtin.set_fact:
+    hooks_image: "{{ hooks_release_state.services['webhook-alerts'].desired.image_ref }}"
+    hooks_image_source_tag: "{{ 'ghcr.io/cringe-driven-development-team/webhook-alerts:sha-' ~ hooks_release_state.services['webhook-alerts'].desired.source_sha }}"
+    hooks_githubbot_image: "{{ hooks_release_state.services.githubbot.desired.image_ref }}"
+    hooks_githubbot_image_source_tag: "{{ 'ghcr.io/cringe-driven-development-team/githubbot:sha-' ~ hooks_release_state.services.githubbot.desired.source_sha }}"

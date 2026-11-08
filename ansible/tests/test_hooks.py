@@ -19,6 +19,8 @@ from ansible.plugins.filter.core import to_json
 from jinja2 import Environment, StrictUndefined
 import yaml
 
+from test_hooks_release import state as release_state
+
 ANSIBLE = Path(__file__).resolve().parents[1]
 
 
@@ -44,6 +46,9 @@ class HooksChecks(unittest.TestCase):
             hooks_githubbot_image_source_tag="ghcr.io/cringe-driven-development-team/githubbot:sha-" + "b" * 40,
             vault_githubbot_env={"GITHUB_TOKEN": "fake-github-token",
                                  "GITHUBBOT_CONFIG_JSON": '{"chatId":"-1001"}'})
+        self.variables['hooks_release_state'] = release_state()
+        self.variables['hooks_image'] = self.variables['hooks_release_state']['services']['webhook-alerts']['desired']['image_ref']
+        self.variables['hooks_image_source_tag'] = 'ghcr.io/cringe-driven-development-team/webhook-alerts:sha-' + 'b' * 40
         self.variables["vault_hooks_proxy_config"] = {
             "inbounds": [{"listen": "0.0.0.0", "port": 2080, "protocol": "http", "settings": {}}],
             "outbounds": [{"tag": "blocked", "protocol": "blackhole"}, {
