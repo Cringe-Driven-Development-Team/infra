@@ -1,0 +1,87 @@
+---
+# Только временные файлы; project-directory сохраняет реальные пути bind mounts.
+- name: Временный каталог preview hooks
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .hooks-preview
+  register: hooks_preview
+  check_mode: false
+  changed_when: false
+
+- name: Проверить предполагаемый Compose проект
+  check_mode: false
+  block:
+    - name: Пустой Docker config preview
+      ansible.builtin.file:
+        path: "{{ hooks_preview.path }}/docker"
+        state: directory
+        mode: "0700"
+      changed_when: false
+
+    - name: Проверить доступность закреплённого GitHubBot анонимно
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --config
+          - "{{ hooks_preview.path }}/docker"
+          - manifest
+          - inspect
+          - "{{ hooks_githubbot_image }}"
+      changed_when: false
+      no_log: true
+      diff: false
+
+    - name: Временные переменные предполагаемого проекта
+      ansible.builtin.template:
+        src: "{{ role_path }}/templates/{{ item }}.j2"
+        dest: "{{ hooks_preview.path }}/{{ item }}"
+        mode: "0600"
+      loop:
+        - env
+        - githubbot.env
+      changed_when: false
+      no_log: true
+      diff: false
+
+    - name: Временный предполагаемый Compose
+      ansible.builtin.copy:
+        content: >-
+          {{ lookup('ansible.builtin.template', (role_path) ~ '/templates/compose.yml.j2')
+             | replace('env_file: .env', 'env_file: ' ~ hooks_preview.path ~ '/env')
+             | replace('env_file: githubbot.env', 'env_file: ' ~ hooks_preview.path ~ '/githubbot.env') }}
+        dest: "{{ hooks_preview.path }}/compose.yml"
+        mode: "0600"
+      changed_when: false
+      no_log: true
+      diff: false
+
+    - name: Предпросмотр запуска предполагаемого проекта hooks
+      ansible.builtin.command:
+        argv:
+          - docker
+          - --config
+          - "{{ hooks_preview.path }}/docker"
+          - compose
+          - --dry-run
+          - --project-directory
+          - "{{ hooks_compose_dir }}"
+          - --env-file
+          - "{{ hooks_preview.path }}/env"
+          - -f
+          - "{{ hooks_preview.path }}/compose.yml"
+          - up
+          - --detach
+          - --pull
+          - never
+          - --wait
+          - --wait-timeout
+          - "180"
+      changed_when: false
+      no_log: true
+      diff: false
+  always:
+    - name: Удалить временные файлы preview hooks
+      ansible.builtin.file:
+        path: "{{ hooks_preview.path }}"
+        state: absent
+      changed_when: false

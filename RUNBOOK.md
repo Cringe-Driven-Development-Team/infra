@@ -344,6 +344,12 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
    Vault хранить строками; не включать worker до приёмки Task 10. Его дополнительные
    переменные и переключение описаны в [runbook сервиса](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/services/webhook-alerts/README.md).
 
+   Для пингов GitHub-инициаторов добавьте в `vault_hooks_env.TELEGRAM_USER_MAP`
+   проверенную карту GitHub login → числовой Telegram ID из переменной организации
+   `TELEGRAM_USER_MAP`. GitHub Actions vars автоматически не попадают в контейнер.
+   После применения сверяйте карту в Vault, `/opt/hooks/.env` и окружении hooks
+   без вывода значений; неизвестный аккаунт отображается обычным ником.
+
    Для включённого sender также нужны `TELEGRAM_BOT_TOKEN`,
    `TELEGRAM_APIDOG_BOT_TOKEN` (отдельный бот Apidog), `TELEGRAM_CHAT_ID`,
    `TELEGRAM_APIDOG_TOPIC_ID`, `APIDOG_ACCESS_TOKEN`, `APIDOG_TELEGRAM_USER_MAP`
@@ -423,17 +429,19 @@ Telegram `list_topics`: брать `id` Backend/Frontend/UX, не IDs сообщ
 В owner-approved JSON вне Git собрать три repo с префиксами из Ansible README,
 три topic mapping и проверенных пользователей. JSON и реальные maps не публиковать.
 
-В BotFather завести **отдельного GitHubBot**, добавить в нужную группу,
-`/setprivacy` → Disable; владелец подтверждает `getMe.can_read_all_group_messages`
-и членство. Токен GitHub Monitoring занят уведомлениями и здесь не используется.
+Использовать общего с GitHub Monitoring Telegram-бота: токен уже хранится в
+`vault_hooks_env.TELEGRAM_BOT_TOKEN` и поступает через effective `hooks_env`.
+В BotFather для общего бота `/setprivacy` → Disable; владелец подтверждает
+`getMe.can_read_all_group_messages` и членство. Long polling выполняет только GitHubBot;
+отправщик уведомлений использует тот же токен для отправки. Отдельный Telegram bot не нужен.
 Получить сервисный PAT с Issues read/write для allowlist и organization Projects
 read/write; проверить нужные approval/SSO. Существующий Actions secret
 `ADD_TO_PROJECT_PAT` нельзя прочитать обратно из GitHub, его имя не даёт credentials.
 Токены передавать только через согласованный закрытый канал, не argv/URL/логи.
 
 В `ansible/` выполнить `ansible-vault edit inventory/group_vars/all/vault.yml`:
-добавить словарь `vault_githubbot_env` с тремя **строковыми** значениями
-`TELEGRAM_BOT_TOKEN`, `GITHUB_TOKEN`, `GITHUBBOT_CONFIG_JSON` (JSON в одну строку).
+добавить словарь `vault_githubbot_env` с двумя **строковыми** значениями
+`GITHUB_TOKEN`, `GITHUBBOT_CONFIG_JSON` (JSON в одну строку).
 Имена сверять парсером YAML без вывода значений. Не использовать `decrypt`.
 
 **Образ и локальный config gate.** Дождаться зелёных service checks и
@@ -471,7 +479,10 @@ with tempfile.TemporaryDirectory(prefix='githubbot-check-') as directory:
                            check=True, capture_output=True, text=True)
     env = {'DATABASE_PATH': '/data/githubbot.sqlite',
            'TELEGRAM_PROXY_URL': 'http://telegram-proxy:2080'}
-    env.update(yaml.safe_load(vault.stdout)['vault_githubbot_env'])
+    secrets = yaml.safe_load(vault.stdout)
+    env.update(secrets['vault_githubbot_env'])
+    env['TELEGRAM_BOT_TOKEN'] = secrets['vault_hooks_env'].get('TELEGRAM_BOT_TOKEN', '')
+    assert env['TELEGRAM_BOT_TOKEN'], 'Shared Telegram token is required'
     path = Path(directory, 'githubbot.env')
     with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
         for name, value in env.items():

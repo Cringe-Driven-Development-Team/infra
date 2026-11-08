@@ -166,7 +166,7 @@
       - hooks_githubbot_env[item] | default('') is string
       - hooks_githubbot_env[item] | default('') | trim | length > 0
     quiet: true
-    fail_msg: Добавьте обязательные переменные в vault_githubbot_env через ansible-vault edit.
+    fail_msg: Проверьте общий TELEGRAM_BOT_TOKEN в hooks_env и GITHUB_TOKEN/GITHUBBOT_CONFIG_JSON в vault_githubbot_env.
   loop:
     - TELEGRAM_BOT_TOKEN
     - GITHUB_TOKEN

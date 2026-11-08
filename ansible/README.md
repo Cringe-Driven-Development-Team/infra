@@ -699,7 +699,7 @@ SQLite и heartbeat находятся в отдельном named volume `hooks
 | --- | --- |
 | `hooks_githubbot_image` | `inventory/group_vars/auxiliary/vars.yml`: публичный GHCR **manifest digest** публикации `githubbot-image.yml`; не локальный image ID |
 | `hooks_githubbot_image_source_tag` | Там же: `ghcr.io/cringe-driven-development-team/githubbot:sha-` + полный исходный SHA; SHA и совпадающий registry manifest digest тега/образа сверить с summary доверенного успешного запуска штатного `githubbot-image.yml` |
-| `vault_githubbot_env.TELEGRAM_BOT_TOKEN` | Отдельный GitHubBot из BotFather, не токен GitHub Monitoring или Apidog |
+| `hooks_env.TELEGRAM_BOT_TOKEN` | Общий с GitHub Monitoring токен из `vault_hooks_env.TELEGRAM_BOT_TOKEN`; отдельный Telegram bot не нужен |
 | `vault_githubbot_env.GITHUB_TOKEN` | Сервисный PAT с Issues read/write разрешённых repo и organization Projects read/write |
 | `vault_githubbot_env.GITHUBBOT_CONFIG_JSON` | Однострочная JSON-строка с проверенными IDs, allowlists и username mappings |
 
@@ -710,7 +710,10 @@ OCI `org.opencontainers.image.source` должен указывать на
 
 Defaults добавляют `DATABASE_PATH=/data/githubbot.sqlite` и
 `TELEGRAM_PROXY_URL=http://telegram-proxy:2080`; менять эти пути нельзя.
-Отсутствующие реальные inputs останавливают preflight до изменений VPS.
+Telegram-токен берётся из effective `hooks_env` после объединения `vault_githubbot_env`;
+устаревшее значение в `vault_githubbot_env` его не перекрывает. В `vault_githubbot_env`
+хранятся только отдельный PAT `GITHUB_TOKEN` и `GITHUBBOT_CONFIG_JSON`.
+Отсутствующий или пустой общий токен останавливает обязательный preflight до изменений VPS.
 В inventory нет фиктивного digest или необязательного переключателя запуска.
 
 JSON содержит `chatId` (отрицательная decimal string), `notificationBotIds`
