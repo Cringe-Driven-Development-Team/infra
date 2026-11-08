@@ -8,6 +8,10 @@ import yaml
 ROOT=Path(__file__).resolve().parents[2]
 
 class WorkflowChecks(unittest.TestCase):
+    def test_run_name_correlates_dispatch_request(self):
+        workflow=yaml.safe_load((ROOT/'.github/workflows/auxiliary-deploy.yml').read_text())
+        self.assertEqual(workflow.get('run-name'), 'VPS3 ${{ inputs.request_id || inputs.operation }}')
+
     def test_queue_schema_and_secret_order(self):
         auxiliary=yaml.safe_load((ROOT/'.github/workflows/auxiliary-deploy.yml').read_text())
         infra=yaml.safe_load((ROOT/'.github/workflows/infra.yml').read_text())

@@ -1,4 +1,5 @@
 name: Auxiliary deploy
+run-name: VPS3 ${{ inputs.request_id || inputs.operation }}
 on:
   workflow_dispatch:
     inputs:
