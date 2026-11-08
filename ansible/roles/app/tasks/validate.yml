@@ -1,6 +1,13 @@
 ---
 # app_deploy_service — выкатываемый сервис (api или bff), задаёт playbook. Образ второго сервиса
 # необязателен: без него остаётся выкаченный на VPS.
+- name: Require one gateway and one backend VPS
+  ansible.builtin.assert:
+    that:
+      - groups.get('gateway', []) | length == 1
+      - groups.get('backend', []) | length == 1
+    fail_msg: An inventory with one gateway and one backend VPS is required.
+
 - name: Check the requested backend image digest
   ansible.builtin.assert:
     that:
@@ -106,14 +113,6 @@
       - app_cors_allowed_origins is match('^https://[^ ]+$')
       - "'http://' not in app_cors_allowed_origins"
     fail_msg: Set app_cors_allowed_origins in inventory/group_vars/all/vars.yml to HTTPS origins only.
-
-# Runtime-VPS (infra#89): security group runtime пускает SSH и 8443 только с VPS2 — Go на gateway до
-# runtime-VPS не достучится
-- name: Runtime VPS need the backend on VPS2
-  ansible.builtin.assert:
-    that:
-      - not (runtime_enabled | bool) or (app_backend_split | bool)
-    fail_msg: runtime_enabled requires app_backend_split=true (the runtime security group admits only VPS2).
 
 - name: Check the runtime VPS configuration
   ansible.builtin.assert:

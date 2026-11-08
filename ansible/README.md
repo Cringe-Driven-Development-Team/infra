@@ -193,33 +193,38 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 |---|---|---|
 | users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive, с проверкой ключа запускающего), sudo NOPASSWD — в bootstrap и в каждом site.yml |
 | common | все | базовые пакеты |
-| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей, форвардинг запрещён (jump-хост не нужен); ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
-| firewall | все | ufw: deny incoming; наружу только 22/80/443 (DoD) |
+| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей; gateway разрешает SSH jump только к приватной VPS2 (`PermitOpen`), на остальных хостах forwarding запрещён; Ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
+| firewall | все | ufw: deny incoming; публичный gateway — 22/80/443, приватная VPS2 — 22/8080 только с gateway |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: все пути, кроме закрытого `/health`, — BFF (до его первой выкатки — `503 BFF is not deployed`), раздел «Клиент и BFF»; сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
 | hooks | auxiliary | GitHubBot (long polling, `githubbot.env` 0600, отдельный том `hooks_githubbot_data`, без портов) и проект Compose `/opt/hooks`: Caddy (80/443, сертификат `hooks_domain`) и контейнер сервиса вебхуков во внутренней сети `hooks` — его порт не публикуется; том `hooks_data` (`hooks_data_path`), `.env` из `vault_hooks_env` (0600). Публичный image `webhook-alerts` по registry digest; анонимный pull; worker по умолчанию выключен |
 | restic_backup | auxiliary | ночной CLI snapshot очереди перед `restic backup`; только snapshot, тома Caddy и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
-Плейбуки: `site.yml`, `verify.yml`, `deploy-backend.yml`, `deploy-bff.yml` — прод-VPS (группа `gateway`); `auxiliary.yml` —
-вспомогательная VPS (группа `auxiliary`, RUNBOOK, «Вспомогательная VPS»).
+Плейбуки: `site.yml` и `verify.yml` обслуживают gateway и приватную VPS2;
+`deploy-backend.yml` выкатывает Go API только на `backend`, `deploy-bff.yml` — BFF только
+на `gateway`. `auxiliary.yml` обслуживает вспомогательную VPS (группа `auxiliary`,
+RUNBOOK, «Вспомогательная VPS»).
 
 ## Проект Compose
 
-Всё приложение — один проект Compose в `/opt/cellestial` на VPS: Caddy (роль `caddy`), BFF, Go API,
-Postgres и Redis (роль `app`). Сервисы приложения — в сети `app` и **без** `ports:`: Caddy достаёт BFF
-по имени сервиса (`reverse_proxy bff:3000`), BFF — Go (`http://api:8080/api/v1`).
+На каждом хосте свой проект Compose в `/opt/cellestial` и своя сеть `app`:
+на gateway — Caddy и BFF, на VPS2 — Go API, Postgres и Redis. Caddy обращается к BFF
+по имени сервиса (`reverse_proxy bff:3000`), BFF — к приватному адресу VPS2
+(`http://<private-IP-VPS2>:8080/api/v1`). Базы и BFF не публикуют порты; Go публикует
+8080 только на приватном адресе VPS2 с доступом с gateway.
 Смена Caddyfile применяется `caddy reload` внутри контейнера, без рестарта.
 
-## Порты контейнеров и ufw (одна VPS)
+## Порты контейнеров и ufw
 
 Docker публикует порты контейнеров (`-p 8080:80`) своими iptables-правилами в цепочке
 `nat`/`DOCKER`, которые обрабатываются **до** ufw: опубликованный порт откроется наружу,
 даже при `deny incoming`. Правила на стенде:
 
-- **Postgres, Go API и BFF наружу не публикуются**: только внутренняя сеть Compose
-  (`expose`, без `-p`); при прямом доступе с хоста — bind на `127.0.0.1`
-  (`-p 127.0.0.1:8080:8000`), не `0.0.0.0`;
+- **Postgres, Redis и BFF не публикуют порты**. Go API публикует
+  `<private-IP-VPS2>:8080:8080`; security group и ufw разрешают доступ только с gateway.
+  Loopback хоста VPS2 не заменяет этот приватный адрес. Проверка loopback внутри контейнера
+  остаётся частью его healthcheck;
 - наружу смотрит **только Caddy** (80/443) и ssh (22); floating IP — 1:1 DNAT на адрес
   сервера, поэтому любой `-p 0.0.0.0:X` открыт в интернет мимо ufw;
 - если нужен фильтр-страховка — править цепочку `DOCKER-USER` (ufw её не трогает). Правило
@@ -400,7 +405,7 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
   retention фронта). Откат BFF не откатывает Go и БД.
 - `SESSION_KEY` — из Vault и одинаков у выпуска и отката: действительные cookie сессии остаются
   читаемыми. `GO_API_URL` — `app_bff_go_api_url` (`roles/app/defaults/main.yml`,
-  `http://api:8080/api/v1`); при переносе Go на VPS2 (infra#59) — её приватный адрес.
+  `http://<private-IP-VPS2>:8080/api/v1`); адрес берётся из inventory.
 - `site.yml` образ BFF не меняет: `compose.yml` и `.env` после первой выкатки ведёт только роль `app`.
 
 ## Приватная VPS2: Go API, Postgres, Redis (infra#59)
@@ -411,14 +416,14 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
 gateway пускает пересылку только на `VPS2:22` (`ssh_hardening_jump_targets`). `site.yml` настраивает VPS2 так же,
 как gateway, без Caddy; ufw на ней пускает 22 и 8080 только с `app_gateway_address`.
 
-Раскладка приложения — `app_backend_split` (`group_vars/all/vars.yml`): `false` — всё на gateway,
-`true` — на gateway Caddy и BFF (`GO_API_URL` — приватный адрес VPS2), на VPS2 Go, Postgres и Redis,
-порт API опубликован только на приватном адресе VPS2. В `.env` каждой машины — только секреты её
-сервисов; `BFF_API_KEY` — на обеих. `deploy-backend.yml` идёт по `gateway:backend` и выкатывает Go туда,
-где он живёт в текущей раскладке; `deploy-bff.yml` на раздельной раскладке требует, чтобы Go на VPS2
-отвечал с gateway. Данные Postgres с gateway не переносятся: на VPS2 новые пустые тома, схему создают
-миграции Go при старте; тома на gateway остаются для отката. Порядок переключения и отката —
-[RUNBOOK.md, «Go и Postgres на VPS2»](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
+Раскладка фиксирована: Caddy и BFF работают на gateway, Go API, Postgres и Redis — на
+приватной VPS2. Порт API опубликован только на приватном адресе VPS2. В `.env` каждой
+машины — только секреты её сервисов; `BFF_API_KEY` нужен обеим сторонам. `deploy-backend.yml`
+выкатывает приложение только на группу `backend`; отсутствие или несколько VPS2 приводят
+к ошибке предварительной проверки inventory. Gateway участвует в делегированных проверках.
+`deploy-bff.yml` работает только на gateway и перед запуском требует доступный Go на VPS2.
+Откат версии повторно выкатывает прежний digest на VPS2, без возврата сервисов на gateway.
+Порядок выкатки и отката — [RUNBOOK.md](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
 
 ## Go API: первая выкатка и откат
 
@@ -472,7 +477,7 @@ ansible-playbook -i inventory/ci.yml deploy-backend.yml \
 ```
 
 Перед запуском замените `REPLACE_WITH_64_HEX` на 64 строчных hex-символа реального digest.
-Выкатка требует один gateway, одну приватную VPS2 в группе `backend` и `app_backend_split=true`.
+Выкатка требует один gateway и ровно одну приватную VPS2 в группе `backend`.
 Go, PostgreSQL и Redis работают на VPS2, опубликованный порт 8080 привязан только к приватному
 адресу; Caddy и BFF работают на gateway. SSH к VPS2 идёт существующим jump-путём через gateway,
 проверка host key сохраняется. Адреса берутся из inventory.

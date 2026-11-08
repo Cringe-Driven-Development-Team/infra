@@ -2,28 +2,28 @@
 # Go API приватный: после запуска проверяются образ, внутренний HTTP и путь через BFF.
 # Выкатка и ручной откат используют один digest-ref; BFF остаётся на своём образе.
 # Go — на приватной VPS2. Gateway участвует только в делегированных HTTP/SSH-проверках.
+- name: Validate backend deployment inventory
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Require one gateway and a private backend VPS
+      ansible.builtin.assert:
+        that:
+          - groups['gateway'] | length == 1
+          - groups.get('backend', []) | length == 1
+        fail_msg: >-
+          Supply backend_image_ref=<image>@sha256:<digest> and an inventory with one gateway and one backend VPS.
+      tags: validation
+
 - name: Deploy backend
-  hosts: gateway:backend
+  hosts: backend
   become: true
   gather_facts: false
   vars:
     app_deploy_service: api
   pre_tasks:
-    - name: Require one gateway and a private backend VPS
-      ansible.builtin.assert:
-        that:
-          - groups['gateway'] | length == 1
-          - app_backend_split | bool
-          - groups.get('backend', []) | length == 1
-        fail_msg: >-
-          Supply backend_image_ref=<image>@sha256:<digest> and an inventory with one gateway and one backend VPS.
-          The private backend VPS requires app_backend_split=true.
-      tags: validation
-
-    - name: Go runs on another host
-      ansible.builtin.meta: end_host
-      when: inventory_hostname not in groups.get('backend', [])
-
     - name: Validate before changing the server
       ansible.builtin.import_tasks: roles/app/tasks/validate.yml
       tags: validation
@@ -34,8 +34,6 @@
     - name: Gather server facts
       ansible.builtin.setup:
   roles:
-    - role: caddy
-      when: inventory_hostname in groups['gateway']
     - app
   post_tasks:
     - name: Check the selected backend container

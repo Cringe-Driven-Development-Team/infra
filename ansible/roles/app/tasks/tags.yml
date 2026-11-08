@@ -30,16 +30,13 @@
         {{ app_deployed_text | regex_findall('(?m)^BFF_RELEASE_SHA=([0-9a-f]{40})$')
         | first | default('') }}
 
-# Сервисы этого хоста (infra#59): всё на gateway или gateway — Caddy и BFF, VPS2 — Go, Postgres, Redis.
+# Сервисы закреплены: gateway — Caddy и BFF, VPS2 — Go, Postgres, Redis.
 # BFF — только после первой выкатки (есть образ).
 - name: Choose the services of this host
   ansible.builtin.set_fact:
     app_services: >-
-      {{ (['caddy', 'api', 'postgres', 'redis'] if not (app_backend_split | bool)
-          else ['caddy'] if inventory_hostname in groups['gateway']
-          else ['api', 'postgres', 'redis'])
-         + (['bff'] if app_bff_ref and (not (app_backend_split | bool) or inventory_hostname in groups['gateway'])
-            else []) }}
+      {{ (['caddy'] + (['bff'] if app_bff_ref else []))
+         if inventory_hostname in groups['gateway'] else ['api', 'postgres', 'redis'] }}
 
 # BFF ждёт healthy Go: без выкаченного бэка Compose его не поднимет
 - name: Require a deployed backend
@@ -54,4 +51,4 @@
   ansible.builtin.include_tasks: probe-backend.yml
   vars:
     backend_probe_address: "{{ app_backend_address }}"
-  when: (app_backend_split | bool) and 'api' not in app_services and app_deploy_service == 'bff'
+  when: app_deploy_service == 'bff'

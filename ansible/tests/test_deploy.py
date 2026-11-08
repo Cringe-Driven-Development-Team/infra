@@ -76,7 +76,7 @@ class DeploymentChecks(unittest.TestCase):
             'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
-            'app_backend_split: true\napp_backend_address: "127.0.0.1"\n'
+            'app_backend_address: "127.0.0.1"\n'
             'runtime_enabled: false\n'
         )
         password = b"test-vault-password-only"
@@ -196,10 +196,10 @@ class DeploymentChecks(unittest.TestCase):
     def test_deployment_keeps_the_other_deployed_image(self):
         playbook = self.root / "tags-test.yml"
         playbook.write_text(yaml.safe_dump([{
-            "name": "Exercise the real tag selection", "hosts": "gateway", "gather_facts": False,
+            "name": "Exercise the real tag selection", "hosts": "backend", "gather_facts": False,
             "vars": {"app_compose_dir": str(self.root),
                      "app_bff_image": "ghcr.io/cringe-driven-development-team/bff",
-                     "app_backend_split": False,
+                     "app_deploy_service": "api",
                      "ansible_python_interpreter": sys.executable},
             "tasks": [
                 {"name": "Choose tags",
@@ -358,7 +358,7 @@ class DeploymentChecks(unittest.TestCase):
 
     def test_backend_pull_failure_keeps_project_and_container(self):
         # Exercise the real pre_tasks ordering; replace deployment with a local write marker.
-        production = yaml.safe_load((ANSIBLE / 'deploy-backend.yml').read_text())[0]
+        production = next(play for play in yaml.safe_load((ANSIBLE / 'deploy-backend.yml').read_text()) if 'post_tasks' in play)
         production['become'] = False
         production['roles'] = []
         production['vars'].update(app_backend_image='ghcr.io/cringe-driven-development-team/backend',
@@ -443,154 +443,58 @@ class DeploymentChecks(unittest.TestCase):
                     self.assertIn("Expected a healthy BFF from " + BFF_REF, output)
 
     def test_compose_preserves_secrets_and_internal_ports(self):
-        compose = shlex.split(os.environ.get("COMPOSE_CLI", "docker compose"))
-        if not compose or shutil.which(compose[0]) is None:
-            self.skipTest(
-                "Set COMPOSE_CLI to a Compose binary (no Docker daemon needed)"
-            )
-        variables = yaml.safe_load(
-            (ANSIBLE / "roles/app/defaults/main.yml").read_text()
-        )
-        variables.update(
-            yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text())
-        )
-        variables.update(app_backend_split=False, app_backend_address="", runtime_enabled=False,
-                         app_bff_go_api_url="http://api:8080/api/v1",
-                         app_services=["caddy", "api", "postgres", "redis", "bff"])
-        variables.update(app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF, app_bff_release=BFF_SHA,
-                         app_domain="app.example.org", s3_region="ru-7",
-                         s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
-                         avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
-                         app_cors_allowed_origins="https://app.example.org")
-        templates = Environment(undefined=StrictUndefined)
-        templates.filters["to_json"] = to_json
-        templates.filters["bool"] = to_bool
-        compose_template = templates.from_string(
-            (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text()
-        )
-        env_template = templates.from_string(
-            (ANSIBLE / "roles/app/templates/env.j2").read_text()
-        )
-        (self.root / "compose.yml").write_text(compose_template.render(variables))
-        for secret in [
-            "base64/secret+value=",
-            "has$interpolation",
-            "single'quote",
-            "back\\slash",
-            "back\\'quote",
-            "space # value",
-            'double"quote',
-            "${ENV}$value",
-        ]:
+        for secret in ["base64/secret+value=", "has$interpolation", "single'quote", "back\\slash",
+                       "back\\'quote", "space # value", 'double"quote', "${ENV}$value"]:
             with self.subTest(secret=secret):
-                variables.update(postgres_password=secret, jwt_secret=secret, csrf_secret=secret,
-                                 redis_password=secret, session_key=secret, bff_api_key=secret,
-                                 notebooks_s3_access_key=secret, notebooks_s3_secret_key=secret)
-                (self.root / ".env").write_text(env_template.render(variables))
-                compose_environment = dict(os.environ)
-                for line in (self.root / ".env").read_text().splitlines():
-                    if "=" in line and not line.startswith("#"):
-                        compose_environment.pop(line.split("=", 1)[0], None)
-                result = subprocess.run(
-                    [
-                        *compose,
-                        "-f",
-                        str(self.root / "compose.yml"),
-                        "config",
-                        "--format",
-                        "json",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    check=True,
-                    env=compose_environment,
-                )
-                services = json.loads(result.stdout)["services"]
-                if secret == "base64/secret+value=":
-                    rollback_environment = dict(compose_environment,
-                        ROLLBACK_BACKEND_IMAGE="ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development:sha-7654321")
-                    recovery = subprocess.run(
-                        [*compose, "-f", str(self.root / "compose.yml"), "-f",
-                         str(ANSIBLE / "files/backend-rollback.override.yml"), "config", "--format", "json"],
-                        capture_output=True, text=True, timeout=30, check=True,
-                        env=rollback_environment)
-                    expected_recovery = json.loads(result.stdout)
-                    expected_recovery["services"]["api"].update(
-                        image=rollback_environment["ROLLBACK_BACKEND_IMAGE"], pull_policy="never")
-                    self.assertEqual(json.loads(recovery.stdout), expected_recovery)
-                    missing_image_environment = dict(compose_environment)
-                    missing_image_environment.pop("ROLLBACK_BACKEND_IMAGE", None)
-                    missing_image = subprocess.run(
-                        [*compose, "-f", str(self.root / "compose.yml"), "-f",
-                         str(ANSIBLE / "files/backend-rollback.override.yml"), "config", "--format", "json"],
-                        capture_output=True, text=True, timeout=30,
-                        env=missing_image_environment)
-                    self.assertNotEqual(missing_image.returncode, 0)
-                    self.assertIn("ROLLBACK_BACKEND_IMAGE", missing_image.stderr)
-                # Canonical Compose output escapes literal dollars for reuse as YAML.
-                for service in ["api", "postgres"]:
-                    self.assertEqual(
-                        services[service]["environment"]["POSTGRES_PASSWORD"].replace(
-                            "$$", "$"
-                        ),
-                        secret,
-                    )
-                    self.assertFalse(services[service].get("ports"))
-                # Redis: пароль доходит до API и до клиента healthcheck, порт не публикуется
-                self.assertEqual(
-                    services["api"]["environment"]["REDIS_PASSWORD"].replace("$$", "$"), secret
-                )
-                self.assertEqual(
-                    services["redis"]["environment"]["REDISCLI_AUTH"].replace("$$", "$"), secret
-                )
-                self.assertEqual(services["api"]["environment"]["REDIS_HOST"], "redis")
-                self.assertFalse(services["redis"].get("ports"))
-                # каталог, а не файл: замена redis.conf шаблоном видна в контейнере
-                self.assertIn("/usr/local/etc/redis",
-                              [volume["target"] for volume in services["redis"]["volumes"]])
-                self.assertEqual(
-                    services["api"]["depends_on"]["redis"]["condition"], "service_healthy"
-                )
-                for name in ["JWT_SECRET", "CSRF_SECRET"]:
-                    self.assertEqual(
-                        services["api"]["environment"][name].replace("$$", "$"), secret
-                    )
-                for name in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]:
-                    self.assertEqual(
-                        services["api"]["environment"][name].replace("$$", "$"), secret
-                    )
-                self.assertEqual(services["api"]["environment"]["S3_AVATARS_PUBLIC_URL"],
-                                 "https://avatars.example.org")
-                self.assertEqual(services["api"]["environment"]["CORS_ALLOWED_ORIGINS"],
-                                 "https://app.example.org")
-                # BFF: образ по digest без скачивания Compose, ключи из Vault, один S2S-ключ с Go,
-                # порт не публикуется
-                bff = services["bff"]
-                self.assertEqual(bff["image"], BFF_REF)
-                self.assertEqual(bff["pull_policy"], "never")
-                for name in ["SESSION_KEY", "BFF_KEY"]:
-                    self.assertEqual(bff["environment"][name].replace("$$", "$"), secret)
-                self.assertEqual(services["api"]["environment"]["BFF_API_KEY"].replace("$$", "$"),
-                                 secret)
-                self.assertEqual(bff["environment"]["APP_ORIGIN"], "https://app.example.org")
-                self.assertEqual(bff["environment"]["GO_API_URL"], "http://api:8080/api/v1")
-                self.assertNotIn("PORT", bff["environment"])
-                self.assertEqual(bff["depends_on"]["api"]["condition"], "service_healthy")
-                self.assertFalse(bff.get("ports"))
-        # до первой выкатки BFF сервиса нет, Compose поднимает остальное
-        self.assertIn(f"BFF_RELEASE_SHA={BFF_SHA}\n", (self.root / ".env").read_text())
-        variables.update(app_bff_ref="", app_bff_release="",
-                         app_services=["caddy", "api", "postgres", "redis"])
-        (self.root / "compose.yml").write_text(compose_template.render(variables))
-        (self.root / ".env").write_text(env_template.render(variables))
-        result = subprocess.run(
-            [*compose, "-f", str(self.root / "compose.yml"), "config", "--format", "json"],
-            capture_output=True, text=True, timeout=30, check=True, env=compose_environment)
-        self.assertNotIn("bff", json.loads(result.stdout)["services"])
-        self.assertNotIn("BFF_IMAGE_REF", (self.root / ".env").read_text())
+                values = {name: secret for name in ('postgres_password', 'jwt_secret', 'csrf_secret',
+                          'redis_password', 'session_key', 'bff_api_key', 'notebooks_s3_access_key',
+                          'notebooks_s3_secret_key')}
+                config, env = self.render_host(['api', 'postgres', 'redis'], secrets=values)
+                services = config['services']
+                self.assertEqual(set(services), {'api', 'postgres', 'redis'})
+                for service in ('api', 'postgres'):
+                    self.assertEqual(services[service]['environment']['POSTGRES_PASSWORD'].replace('$$', '$'), secret)
+                for name in ('REDIS_PASSWORD', 'JWT_SECRET', 'CSRF_SECRET', 'AWS_ACCESS_KEY_ID',
+                             'AWS_SECRET_ACCESS_KEY', 'BFF_API_KEY'):
+                    self.assertEqual(services['api']['environment'][name].replace('$$', '$'), secret)
+                self.assertEqual(services['redis']['environment']['REDISCLI_AUTH'].replace('$$', '$'), secret)
+                self.assertFalse(services['redis'].get('ports'))
+                self.assertFalse(services['postgres'].get('ports'))
+                self.assertEqual(services['api']['ports'][0]['host_ip'], '192.168.199.10')
+                self.assertEqual(services['api']['depends_on']['redis']['condition'], 'service_healthy')
+                self.assertIn('/usr/local/etc/redis', [v['target'] for v in services['redis']['volumes']])
+                self.assertEqual(services['api']['environment']['REDIS_HOST'], 'redis')
+                self.assertEqual(services['api']['environment']['CORS_ALLOWED_ORIGINS'], 'https://app.example.org')
+                self.assertEqual(services['api']['environment']['S3_AVATARS_PUBLIC_URL'], 'https://avatars.example.org')
+                config, env = self.render_host(['caddy', 'bff'], secrets=values)
+                self.assertEqual(set(config['services']), {'caddy', 'bff'})
+                bff = config['services']['bff']
+                self.assertEqual(bff['image'], BFF_REF)
+                self.assertEqual(bff['pull_policy'], 'never')
+                for name in ('SESSION_KEY', 'BFF_KEY'):
+                    self.assertEqual(bff['environment'][name].replace('$$', '$'), secret)
+                self.assertEqual(bff['environment']['GO_API_URL'], 'http://192.168.199.10:8080/api/v1')
+                self.assertEqual(bff['environment']['APP_ORIGIN'], 'https://app.example.org')
+                self.assertNotIn('depends_on', bff)
+                self.assertNotIn('PORT', bff['environment'])
+                self.assertFalse(bff.get('ports'))
 
-    def render_host(self, services, split, runtime=None):
+    def test_emergency_overlay_changes_only_selected_image(self):
+        config, _ = self.render_host(['api', 'postgres', 'redis'])
+        image = BACKEND_REF.replace('d' * 64, 'e' * 64)
+        compose = shlex.split(os.environ.get('COMPOSE_CLI', 'docker compose'))
+        command = [*compose, '-f', str(self.root / 'compose.yml'), '-f',
+                   str(ANSIBLE / 'files/backend-rollback.override.yml'), 'config', '--format', 'json']
+        clean = {k: v for k, v in os.environ.items() if not k.isupper() or k in ('PATH', 'HOME')}
+        recovery = subprocess.run(command, capture_output=True, text=True, check=True,
+                                  timeout=30, env=clean | {'ROLLBACK_BACKEND_IMAGE': image})
+        config['services']['api'].update(image=image, pull_policy='never')
+        self.assertEqual(json.loads(recovery.stdout), config)
+        missing = subprocess.run(command, capture_output=True, text=True, timeout=30, env=clean)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn('ROLLBACK_BACKEND_IMAGE', missing.stderr)
+
+    def render_host(self, services, runtime=None, secrets=None):
         """compose.yml и .env одного хоста по реальным шаблонам роли app; Compose проверяет результат."""
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
         variables.update(app_compose_dir="/opt/cellestial",
@@ -601,8 +505,8 @@ class DeploymentChecks(unittest.TestCase):
         variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
         address = "192.168.199.10"
         variables.update(
-            app_backend_split=split, app_backend_address=address if split else "",
-            app_bff_go_api_url=f"http://{address}:8080/api/v1" if split else "http://api:8080/api/v1",
+            app_backend_address=address,
+            app_bff_go_api_url=f"http://{address}:8080/api/v1",
             app_services=services, app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF,
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
             s3_endpoint="https://s3.example.org", notebooks_bucket="notebooks",
@@ -611,6 +515,7 @@ class DeploymentChecks(unittest.TestCase):
             jwt_secret="jwt-secret", csrf_secret="csrf-secret", redis_password="redis-secret",
             session_key="session-secret", bff_api_key="s2s-secret",
             notebooks_s3_access_key="s3-key", notebooks_s3_secret_key="s3-secret")
+        variables.update(secrets or {})
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
         templates.filters["bool"] = to_bool
@@ -628,8 +533,8 @@ class DeploymentChecks(unittest.TestCase):
                                 env=clean)
         return json.loads(result.stdout), env
 
-    def test_split_layout_gateway_runs_only_caddy_and_bff(self):
-        config, env = self.render_host(["caddy", "bff"], split=True)
+    def test_gateway_runs_only_caddy_and_bff(self):
+        config, env = self.render_host(["caddy", "bff"])
         self.assertEqual(config["name"], "cellestial")
         self.assertEqual(set(config["services"]), {"caddy", "bff"})
         self.assertEqual(set(config["volumes"]), {"caddy_data", "caddy_config"})
@@ -642,8 +547,8 @@ class DeploymentChecks(unittest.TestCase):
             self.assertNotIn(secret, env)
         self.assertNotIn("BACKEND_IMAGE_REF", env)
 
-    def test_split_layout_backend_publishes_the_api_only_on_the_private_address(self):
-        config, env = self.render_host(["api", "postgres", "redis"], split=True)
+    def test_backend_publishes_the_api_only_on_the_private_address(self):
+        config, env = self.render_host(["api", "postgres", "redis"])
         self.assertEqual(config["name"], "cellestial")
         self.assertEqual(set(config["services"]), {"api", "postgres", "redis"})
         self.assertEqual(set(config["volumes"]), {"postgres_data", "redis_data"})
@@ -658,45 +563,33 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotIn("BFF_IMAGE_REF", env)
 
     def test_services_of_each_host(self):
-        data = yaml.safe_load(self.inventory.read_text())
-        data["all"]["children"]["backend"] = {"hosts": {"test-backend": {
-            "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
-        self.inventory.write_text(yaml.safe_dump(data))
         playbook = self.root / "services-test.yml"
         playbook.write_text(yaml.safe_dump([{
-            "name": "Exercise the real service selection", "hosts": "gateway:backend",
-            "gather_facts": False,
+            "name": "Exercise fixed service placement", "hosts": "gateway:backend", "gather_facts": False,
+            "vars_files": [str(ANSIBLE / "roles/app/defaults/main.yml")],
             "vars": {"app_compose_dir": str(self.root / "{{ inventory_hostname }}"),
-                     "app_bff_image": "ghcr.io/cringe-driven-development-team/bff",
                      "app_deploy_service": "api", "backend_image_ref": BACKEND_REF,
                      "ansible_python_interpreter": sys.executable},
             "tasks": [
                 {"name": "Choose", "ansible.builtin.import_tasks": str(ANSIBLE / "roles/app/tasks/tags.yml")},
-                {"name": "Show", "ansible.builtin.debug": {
-                    "msg": "SERVICES {{ inventory_hostname }} {{ app_services | join(',') }}"}},
+                {"name": "Show", "ansible.builtin.debug": {"msg":
+                    "SERVICES {{ inventory_hostname }} {{ app_services | join(',') }} URL {{ app_bff_go_api_url }}"}},
             ],
         }]))
-        for host in ["test-vps", "test-backend"]:
-            (self.root / host).mkdir(exist_ok=True)
-            (self.root / host / ".env").write_text(f"BFF_IMAGE_REF={BFF_REF}\nBFF_RELEASE_SHA={BFF_SHA}\n")
-        cases = {
-            False: {"test-vps": "caddy,api,postgres,redis,bff", "test-backend": "caddy,api,postgres,redis,bff"},
-            True: {"test-vps": "caddy,bff", "test-backend": "api,postgres,redis"},
-        }
-        # и строкой, как из -e app_backend_split=false: непустая строка "false" не должна быть истиной
-        runs = [(split, json.dumps({"app_backend_split": split})) for split in cases]
-        runs += [(split, f"app_backend_split={str(split).lower()}") for split in cases]
-        for split, extra in runs:
-            expected = cases[split]
-            with self.subTest(extra=extra):
-                result = subprocess.run(
-                    [shutil.which("ansible-playbook") or "ansible-playbook", "-i", str(self.inventory),
-                     str(playbook), "-e", extra],
-                    cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=60)
+        for has_bff in (False, True):
+            with self.subTest(has_bff=has_bff):
+                for host in ("test-vps", "test-backend"):
+                    directory = self.root / host
+                    directory.mkdir(exist_ok=True)
+                    (directory / ".env").write_text(
+                        f"BFF_IMAGE_REF={BFF_REF}\nBFF_RELEASE_SHA={BFF_SHA}\n" if has_bff else "")
+                result = subprocess.run(["ansible-playbook", "-i", str(self.inventory), str(playbook)],
+                                        cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=60)
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode, 0, output)
-                for host, services in expected.items():
-                    self.assertIn(f"SERVICES {host} {services}", output)
+                gateway = "caddy,bff" if has_bff else "caddy"
+                self.assertIn(f"SERVICES test-vps {gateway} URL http://127.0.0.1:8080/api/v1", output)
+                self.assertIn("SERVICES test-backend api,postgres,redis URL http://127.0.0.1:8080/api/v1", output)
 
     def test_verify_accepts_the_backend_vps_in_the_inventory(self):
         def run(groups):
@@ -713,27 +606,39 @@ class DeploymentChecks(unittest.TestCase):
         allowed = {"gateway": ["gw"], "backend": ["vps2"], "auxiliary": ["aux"]}
         result = run(allowed)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for groups in [dict(allowed, backend=["vps2", "vps3"]), dict(allowed, other=["stray"])]:
+        for groups in [dict(allowed, backend=[]), dict(allowed, backend=["vps2", "vps3"]), dict(allowed, other=["stray"])]:
             with self.subTest(groups=groups):
                 result = run(groups)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("не больше одной VPS2", result.stdout + result.stderr)
+                self.assertIn("ровно одна VPS2", result.stdout + result.stderr)
 
-    def test_split_layout_needs_one_backend_host(self):
+    def test_deployment_needs_one_backend_host(self):
         data = yaml.safe_load(self.inventory.read_text())
         del data['all']['children']['backend']
         self.inventory.write_text(yaml.safe_dump(data))
-        result = self.validate(BACKEND_REF, extra={"app_backend_split": True})
+        result = self.validate(BACKEND_REF)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("one backend VPS", result.stdout + result.stderr)
 
-    def test_combined_layout_is_rejected_before_deployment(self):
-        result = self.validate(BACKEND_REF, extra={"app_backend_split": False})
-        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('private backend VPS', result.stdout + result.stderr)
+    def test_backend_deploy_selects_only_backend_hosts(self):
+        result = subprocess.run(["ansible-playbook", "-i", str(self.inventory),
+                                 str(ANSIBLE / "deploy-backend.yml"), "--list-hosts"],
+                                cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("test-vps", result.stdout)
+        self.assertIn("test-backend", result.stdout)
+
+    def test_multiple_backend_hosts_are_rejected(self):
+        data = yaml.safe_load(self.inventory.read_text())
+        data['all']['children']['backend']['hosts']['second-backend'] = {
+            'ansible_host': '127.0.0.3', 'ansible_connection': 'local'}
+        self.inventory.write_text(yaml.safe_dump(data))
+        result = self.validate(BACKEND_REF)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('one backend VPS', result.stdout + result.stderr)
 
     def test_backend_compose_preserves_digest(self):
-        config, env = self.render_host(["api", "postgres", "redis"], split=True)
+        config, env = self.render_host(["api", "postgres", "redis"])
         self.assertEqual(config["services"]["api"]["image"], BACKEND_REF)
         self.assertEqual(config["services"]["api"]["pull_policy"], "never")
         self.assertIn("BACKEND_IMAGE_REF=" + BACKEND_REF, env)
@@ -806,7 +711,7 @@ class DeploymentChecks(unittest.TestCase):
         return dict(RUNTIME_OPEN, **RUNTIME_SECRETS)
 
     def test_runtime_disabled_passes_only_the_flag(self):
-        config, env = self.render_host(["api", "postgres", "redis"], split=True)
+        config, env = self.render_host(["api", "postgres", "redis"])
         api = config["services"]["api"]
         self.assertEqual(api["environment"]["RUNTIME_ENABLED"], "false")
         self.assertEqual([k for k in api["environment"] if k.startswith("RUNTIME_")], ["RUNTIME_ENABLED"])
@@ -816,7 +721,7 @@ class DeploymentChecks(unittest.TestCase):
     def test_runtime_enabled_passes_env_and_mounts_secrets_read_only(self):
         values = dict(self.runtime_values(), runtime_enabled=True,
                       runtime_extra_env={"RUNTIME_MAX_ACTIVE": 3})
-        config, env = self.render_host(["api", "postgres", "redis"], split=True, runtime=values)
+        config, env = self.render_host(["api", "postgres", "redis"], runtime=values)
         api = config["services"]["api"]["environment"]
         expected = {
             "RUNTIME_ENABLED": "true", "RUNTIME_PROVIDER": "openstack",
@@ -853,7 +758,7 @@ class DeploymentChecks(unittest.TestCase):
             self.assertNotIn(secret, env)
 
     def test_runtime_validation(self):
-        open_values = dict(RUNTIME_OPEN, runtime_enabled=True, app_backend_split=True,
+        open_values = dict(RUNTIME_OPEN, runtime_enabled=True,
                            app_backend_address="192.168.199.10")
         vault = "".join(f"vault_{k}: {json.dumps(v)}\n"
                         for k, v in RUNTIME_SECRETS.items())
@@ -864,10 +769,6 @@ class DeploymentChecks(unittest.TestCase):
         self.inventory.write_text(yaml.safe_dump(data))
         result = self.validate(BACKEND_REF, extra=open_values)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        # Go на gateway: runtime-VPS его не пустят
-        result = self.validate(BACKEND_REF, extra=dict(open_values, app_backend_split=False))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("app_backend_split", result.stdout + result.stderr)
         # id security group ещё не заполнен после pulumi up
         result = self.validate(BACKEND_REF, extra=dict(open_values, runtime_security_group_id=""))
         self.assertNotEqual(result.returncode, 0)

@@ -98,7 +98,8 @@ class BackendProbes(unittest.TestCase):
         type(self).login = (401, VALID_LOGIN)
         type(self).hidden = (404, 'not found')
         self.environment = dict(os.environ, ANSIBLE_LOCAL_TEMP=str(self.root / 'tmp'),
-                                ANSIBLE_REMOTE_TEMP=str(self.root / 'remote-tmp'))
+                                ANSIBLE_REMOTE_TEMP=str(self.root / 'remote-tmp'),
+                                ANSIBLE_FORCE_COLOR='0')
         for name in ('ANSIBLE_VAULT_PASSWORD_FILE', 'ANSIBLE_VAULT_PASSWORD'):
             self.environment.pop(name, None)
 
@@ -232,7 +233,8 @@ class BackendProbes(unittest.TestCase):
     def test_real_backend_post_tasks_read_gateway_release_and_keep_stage_results(self):
         # Keep the actual production post_tasks and imported task arguments. Only map external
         # dependencies to local TLS/HTTP fixtures and the existing Docker CLI substitute.
-        production = yaml.safe_load((ANSIBLE / 'deploy-backend.yml').read_text())[0]
+        production = next(play for play in yaml.safe_load((ANSIBLE / 'deploy-backend.yml').read_text())
+                          if 'post_tasks' in play)
         tasks = copy.deepcopy(production['post_tasks'])
         for task in tasks:
             imported = task.pop('ansible.builtin.import_tasks', None)

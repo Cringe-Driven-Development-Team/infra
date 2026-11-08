@@ -6,18 +6,18 @@
     public_ip: "{{ hostvars[groups['gateway'][0]]['ansible_host'] }}"
   tasks:
     # Inventory строится из серверов проекта (openstack.yml): прод-VPS (gateway) ровно одна, кроме
-    # неё допускаются приватная VPS2 (группа backend, не больше одной, infra#59) и вспомогательная VPS
+    # неё нужны ровно одна приватная VPS2 (группа backend) и, при наличии, вспомогательная VPS
     # (группа auxiliary, auxiliary.yml).
     - name: В проекте ровно одна прод-VPS
       ansible.builtin.assert:
         that:
           - groups['gateway'] | length == 1
-          - groups['backend'] | default([]) | length <= 1
+          - groups['backend'] | default([]) | length == 1
           - >-
             groups['all'] | difference(groups['gateway']) | difference(groups['backend'] | default([]))
             | difference(groups['auxiliary'] | default([])) | length == 0
         fail_msg: >-
-          Ожидались одна прод-VPS, не больше одной VPS2 (backend) и вспомогательные (auxiliary),
+          Ожидались одна прод-VPS, ровно одна VPS2 (backend) и вспомогательные (auxiliary),
           в inventory: {{ groups['all'] }}
       tags: inventory
 
@@ -132,10 +132,10 @@
       register: verify_redis_ping
       changed_when: false
       failed_when: verify_redis_ping.rc != 0 or verify_redis_ping.stdout | trim != 'PONG'
-      # Redis — там же, где Go: на gateway или, после переноса (infra#59), на VPS2
+      # Redis работает только на VPS2 вместе с Go.
       when: >-
         verify_redis_conf.stat.exists
-        and (inventory_hostname in groups.get('backend', [])) == (app_backend_split | bool)
+        and inventory_hostname in groups.get('backend', [])
 
     - name: Правила ufw
       ansible.builtin.command: ufw status verbose
@@ -335,7 +335,7 @@
         fail_msg: "GitHubBot должен быть running и healthy по Docker inspect"
 
 # Go на приватной VPS2 (infra#59): с gateway он отвечает только с верным S2S-ключом (backend#41).
-# Проверка — после переноса (app_backend_split), в Go к тому моменту выкачен backend#41.
+# Требуется выкаченный Go с проверкой S2S-ключа (backend#41).
 - name: "Go на VPS2 и S2S-ключ"
   hosts: gateway
   gather_facts: false
@@ -345,7 +345,6 @@
         that:
           - app_backend_address is match('^192[.]168[.]199[.][0-9]+$')
         fail_msg: "Адрес VPS2 {{ app_backend_address }} не из приватной подсети 192.168.199.0/24"
-      when: app_backend_split | bool
 
     - name: Неверный и отсутствующий S2S-ключ — 403 s2s_forbidden
       ansible.builtin.uri:
@@ -360,7 +359,6 @@
       loop: ["wrong-s2s-key-from-verify", ""]
       loop_control:
         label: "{{ 'неверный' if item else 'без ключа' }}"
-      when: app_backend_split | bool
 
     # с верным ключом S2S-проверка пройдена, дальше Go требует Bearer: 401, а не 403
     - name: Верный S2S-ключ пропускает к Go
@@ -370,4 +368,3 @@
           X-BFF-Key: "{{ bff_api_key }}"
         status_code: 401
       no_log: true
-      when: app_backend_split | bool
