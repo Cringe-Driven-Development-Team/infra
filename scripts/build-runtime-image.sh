@@ -47,7 +47,8 @@ since() { echo $(( $(date +%s) - $1 ))s; }
 wait_for() { # тип id ожидаемый_статус таймаут
   local deadline=$(( $(date +%s) + $4 )) status
   while :; do
-    status=$(openstack "$1" show "$2" -f value -c status)
+    # разовая ошибка API — не провал сборки: повтор до таймаута
+    status=$(openstack "$1" show "$2" -f value -c status 2>/dev/null) || status=unknown
     [ "$status" = "$3" ] && return 0
     case "$status" in error* | ERROR*) echo "build-runtime-image: $1 $2 — $status" >&2; return 1 ;; esac
     [ "$(date +%s)" -lt "$deadline" ] || { echo "build-runtime-image: $1 $2 — $status после $4 с" >&2; return 1; }
