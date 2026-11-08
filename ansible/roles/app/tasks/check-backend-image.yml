@@ -1,0 +1,44 @@
+---
+- name: Find the running backend container
+  ansible.builtin.command:
+    argv: [docker, compose, ps, --quiet, api]
+    chdir: "{{ app_compose_dir }}"
+  register: app_backend_container
+  changed_when: false
+
+- name: Require exactly one backend container
+  ansible.builtin.assert:
+    that:
+      - app_backend_container.stdout.split() | length == 1
+    fail_msg: Expected exactly one running api container.
+
+- name: Read the backend container image and health
+  ansible.builtin.command:
+    argv:
+      - docker
+      - inspect
+      - --format
+      - >-
+        {{ '{{' }} .Image {{ '}}' }} {{ '{{' }} .State.Running {{ '}}' }}
+        {{ '{{' }} if .State.Health {{ '}}' }}{{ '{{' }} .State.Health.Status {{ '}}' }}{{ '{{' }} else {{ '}}' }}none{{ '{{' }} end {{ '}}' }}
+      - "{{ app_backend_container.stdout | trim }}"
+  register: app_backend_running
+  changed_when: false
+
+- name: Read the local ID of the selected backend digest
+  ansible.builtin.command:
+    argv: [docker, image, inspect, --format, "{{ '{{' }} .Id {{ '}}' }}", "{{ backend_check_ref }}"]
+  register: app_backend_image_id
+  changed_when: false
+
+- name: Backend image check
+  ansible.builtin.assert:
+    that:
+      - app_backend_image_id.stdout | trim | length > 0
+      - app_backend_running.stdout.split() | length == 3
+      - app_backend_running.stdout.split()[0] == app_backend_image_id.stdout | trim
+      - app_backend_running.stdout.split()[1] == 'true'
+      - app_backend_running.stdout.split()[2] == 'healthy'
+    fail_msg: >-
+      Expected a running healthy api from {{ backend_check_ref }}
+      ({{ app_backend_image_id.stdout | trim }}), got {{ app_backend_running.stdout | trim }}.

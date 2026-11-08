@@ -1,33 +1,35 @@
 ---
-# Частный образ Go (deploy-backend.yml) с временными GHCR credentials; публичный BFF скачивает
-# pull-bff.yml анонимно.
-- name: Pull the private image with temporary GHCR credentials
+# До записи .env/Compose: публичный backend скачивается без сохранённой авторизации VPS.
+- name: Empty Docker config for an anonymous backend pull
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .docker-anonymous
+  register: app_backend_docker_config
+
+- name: Pull the backend anonymously
   block:
-    - name: Log in to GHCR using the controller environment
+    - name: Pull the backend image by digest without registry credentials
       ansible.builtin.command:
         argv:
           - docker
-          - login
-          - ghcr.io
-          - --username
-          - "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') }}"
-          - --password-stdin
-        stdin: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') }}"
-      no_log: true
-      changed_when: true
+          - --config
+          - "{{ app_backend_docker_config.path }}"
+          - pull
+          - "{{ backend_image_ref }}"
+      register: app_backend_pull
+      changed_when: "'Downloaded newer image' in app_backend_pull.stdout"
 
-    - name: Pull the requested private image
-      community.docker.docker_compose_v2_pull:
-        project_src: "{{ app_compose_dir }}"
-        services:
-          - "{{ app_deploy_service }}"
-        policy: always
+  rescue:
+    - name: Stop before changing backend configuration
+      ansible.builtin.fail:
+        msg: >-
+          {{ backend_image_ref }} cannot be pulled anonymously:
+          {{ app_backend_pull.stderr | default('') | trim }}.
+          The backend package must be public and the digest published.
+          The application configuration and containers have not been changed.
 
   always:
-    - name: Remove GHCR credentials even when login or pull fails
-      ansible.builtin.command:
-        argv:
-          - docker
-          - logout
-          - ghcr.io
-      changed_when: true
+    - name: Remove the empty backend Docker config
+      ansible.builtin.file:
+        path: "{{ app_backend_docker_config.path }}"
+        state: absent

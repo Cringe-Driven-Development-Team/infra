@@ -120,15 +120,37 @@ class GithubBotChecks(unittest.TestCase):
                     if isinstance(value, str) and len(value) > 3:
                         self.assertNotIn(value, output)
 
-    def test_valid_preflight_and_defaults(self):
-        variables = self.variables.copy()
-        variables["hooks_githubbot_env"] = yaml.safe_load((ANSIBLE / "roles/hooks/defaults/main.yml").read_text())["hooks_githubbot_env"]
-        variables["vault_githubbot_env"] = {k: ENV[k] for k in ["TELEGRAM_BOT_TOKEN", "GITHUB_TOKEN", "GITHUBBOT_CONFIG_JSON"]}
-        result = self.run_tasks("roles/hooks/tasks/validate.yml", variables)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def test_shared_token_preflight_and_defaults(self):
+        defaults = yaml.safe_load((ANSIBLE / "roles/hooks/defaults/main.yml").read_text())
+        for legacy in [None, "conflicting-old-token"]:
+            with self.subTest(legacy_token=legacy):
+                variables = self.variables | {"hooks_githubbot_env": defaults["hooks_githubbot_env"],
+                    "vault_githubbot_env": {k: ENV[k] for k in ["GITHUB_TOKEN", "GITHUBBOT_CONFIG_JSON"]}}
+                variables["hooks_env"] = self.variables["hooks_env"] | {"TELEGRAM_BOT_TOKEN": "shared-effective-token"}
+                if legacy:
+                    variables["vault_githubbot_env"]["TELEGRAM_BOT_TOKEN"] = legacy
+                tasks = [{"name": "Check shared token and fixed runtime paths", "ansible.builtin.assert": {"that": [
+                    "hooks_githubbot_env.TELEGRAM_BOT_TOKEN == hooks_env.TELEGRAM_BOT_TOKEN",
+                    "hooks_githubbot_env.DATABASE_PATH == '/data/githubbot.sqlite'",
+                    "hooks_githubbot_env.TELEGRAM_PROXY_URL == 'http://telegram-proxy:2080'"]}}]
+                result = self.play(tasks, variables)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                result = self.run_tasks("roles/hooks/tasks/validate.yml", variables)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for token in [None, ""]:
+                    with self.subTest(shared_token=token):
+                        env = variables["hooks_env"].copy()
+                        env.pop("TELEGRAM_BOT_TOKEN")
+                        if token is not None:
+                            env["TELEGRAM_BOT_TOKEN"] = token
+                        result = self.run_tasks("roles/hooks/tasks/validate.yml", variables | {"hooks_env": env})
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("GitHubBot", result.stdout + result.stderr)
+                        self.assertNotIn("conflicting-old-token", result.stdout + result.stderr)
 
     def test_secret_template_preserves_compose_environment_without_disclosure(self):
         tasks = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
+        tasks = next(t["block"] for t in tasks if "block" in t)
         task = copy.deepcopy(next(t for t in tasks if t.get("ansible.builtin.template", {}).get("src") == "githubbot.env.j2"))
         self.assertTrue(task["no_log"])
         self.assertFalse(task["diff"])
@@ -153,6 +175,7 @@ class GithubBotChecks(unittest.TestCase):
     def test_pull_or_checker_failure_prevents_up(self):
         self.fake_docker()
         main = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
+        main = next(t["block"] for t in main if "block" in t)
         prepare_index = next(i for i, t in enumerate(main) if t.get("ansible.builtin.import_tasks") == "prepare-githubbot.yml")
         up_index = next(i for i, t in enumerate(main) if "community.docker.docker_compose_v2" in t)
         self.assertLess(prepare_index, up_index)
@@ -168,11 +191,56 @@ class GithubBotChecks(unittest.TestCase):
                 self.assertEqual(sum("up" in e for e in events), int(not failure))
                 self.assertEqual(sum("--check-config" in e for e in events), int(failure != "pull"))
                 pull = next(e for e in events if "pull" in e)
-                self.assertIn("githubbot", pull)
+                self.assertEqual(pull[-1], IMAGE)
+                self.assertIn("--config", pull)
+                self.assertFalse(Path(pull[pull.index("--config") + 1]).exists())
                 self.assertNotIn("hooks", pull)
                 for event in events:
                     self.assertNotIn("down", event)
                 for value in ["test-$value", ENV["TELEGRAM_BOT_TOKEN"], "Alice"]:
+                    self.assertNotIn(value, result.stdout + result.stderr)
+
+    def test_first_deployment_preview(self):
+        main = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/main.yml").read_text())
+        self.assertEqual(main[0]["ansible.builtin.import_tasks"], "validate.yml")
+        preview = next(t for t in main if t.get("ansible.builtin.import_tasks") == "preview.yml")
+        self.assertEqual(preview["when"], "ansible_check_mode")
+        apply = next(t for t in main if "block" in t)
+        self.assertEqual(apply["when"], "not ansible_check_mode")
+        self.assertTrue(any("ansible.builtin.uri" in t for t in main))
+        self.fake_docker()
+        old = "name: hooks\nservices:\n  hooks:\n    image: old:deployed\n"
+        (self.root / "compose.yml").write_text(old)
+        for failure in ["manifest", "render", "preview", ""]:
+            with self.subTest(failure=failure):
+                events_path = self.root / "docker-events.jsonl"
+                events_path.unlink(missing_ok=True)
+                self.environment["TEST_DOCKER_FAILURE"] = failure
+                variables = self.variables | {"hooks_compose_dir": str(self.root), "role_path": str(ANSIBLE / "roles/hooks")}
+                if failure == "render":
+                    variables["hooks_githubbot_env"] = []
+                result = self.play([{"name": "Preview role", "ansible.builtin.import_tasks": str(ANSIBLE / "roles/hooks/tasks/preview.yml")}],
+                                   variables, check=True)
+                self.assertEqual(result.returncode == 0, not failure, result.stdout + result.stderr)
+                events = [json.loads(line) for line in events_path.read_text().splitlines()]
+                manifest = next(e["args"] for e in events if "manifest" in e["args"])
+                self.assertEqual(manifest[-1], IMAGE)
+                self.assertFalse(Path(manifest[manifest.index("--config") + 1]).exists())
+                ups = [e for e in events if "up" in e["args"]]
+                self.assertEqual(len(ups), int(failure not in ["manifest", "render"]))
+                if ups:
+                    args = ups[0]["args"]
+                    self.assertIn("--dry-run", args)
+                    self.assertEqual(args[args.index("--project-directory") + 1], str(self.root))
+                    self.assertEqual(ups[0]["compose"]["name"], "hooks")
+                    self.assertEqual(ups[0]["compose"]["services"]["githubbot"]["image"], IMAGE)
+                    self.assertEqual(ups[0]["compose"]["services"]["caddy"]["volumes"][0],
+                                     "./Caddyfile:/etc/caddy/Caddyfile:ro")
+                    self.assertFalse(Path(args[args.index("-f") + 1]).exists())
+                self.assertFalse(any(e["command"] == "pull" or "run" in e["args"] for e in events))
+                self.assertEqual((self.root / "compose.yml").read_text(), old)
+                self.assertFalse((self.root / "githubbot.env").exists())
+                for value in [ENV["GITHUB_TOKEN"], ENV["TELEGRAM_BOT_TOKEN"], "Alice"]:
                     self.assertNotIn(value, result.stdout + result.stderr)
 
     def test_verify_requires_exactly_one_running_healthy_container(self):

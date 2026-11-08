@@ -28,17 +28,12 @@ caddy_csp_report_only: false
 docker_users:
   - "{{ deploy_user }}"
 
-# Раскладка приложения (infra#59). false — всё на gateway (Caddy, BFF, Go API, Postgres, Redis в одном
-# проекте Compose). true — на gateway Caddy и BFF, на приватной VPS2 (группа backend) Go API, Postgres и
-# Redis; BFF ходит в Go по приватному адресу. Данные не переносятся: на VPS2 новая пустая база.
-# Переключение и откат — RUNBOOK.md, «Go и Postgres на VPS2».
-app_backend_split: true
+# Приложение закреплено: Caddy/BFF на gateway, Go API/Postgres/Redis на приватной VPS2.
 # Приватный адрес VPS2 (выход Pulumi backendPrivateIp): из inventory, где он ansible_host группы backend
 app_backend_address: "{{ hostvars[groups['backend'][0]]['ansible_host'] if groups.get('backend') else '' }}"
 # Приватный адрес gateway (выход Pulumi gatewayPrivateIp): только с него VPS2 пускает SSH и Go API
 app_gateway_address: 192.168.199.225
-# Проект Docker Compose на VPS (схема MVP: Caddy, Go API, Postgres в одном проекте).
-# Общий для роли caddy и будущей роли приложения — сервисы лягут в один compose.yml.
+# Одинаковый путь проекта Docker Compose на gateway и VPS2; на каждом хосте только его сервисы.
 app_compose_dir: /opt/cellestial
 
 # Секреты выкатки: значения — в vault.yml рядом (ansible-vault, префикс vault_).
@@ -72,8 +67,8 @@ avatars_public_domain: avatars.cellestial.ru
 # Runtime-VPS пользовательских сессий (infra#89, backend#57): Go API на VPS2 сам создаёт, настраивает
 # (ansible/runtime) и удаляет VPS на сессию. Значения — выходы Pulumi runtime* (RUNBOOK.md, «Runtime-VPS»).
 # false — Go API получает только RUNTIME_ENABLED=false: остальных RUNTIME_*, файлов ключей и каталога
-# заданий на VPS2 нет. true — только при app_backend_split: true (security group runtime пускает SSH и
-# 8443 лишь с VPS2) и с заполненными vault_runtime_*.
+# заданий на VPS2 нет. true — с заполненными vault_runtime_*; security group runtime пускает SSH
+# и 8443 лишь с VPS2.
 runtime_enabled: true
 runtime_provider: openstack
 runtime_os_auth_url: https://cloud.api.selcloud.ru/identity/v3

@@ -19,4 +19,5 @@ hooks_env: >-
 # Образ и source tag задаются inventory после публичной публикации; секреты — только Vault.
 hooks_githubbot_env: >-
   {{ {'DATABASE_PATH': '/data/githubbot.sqlite', 'TELEGRAM_PROXY_URL': 'http://telegram-proxy:2080'}
-     | combine(vault_githubbot_env | default({})) }}
+     | combine(vault_githubbot_env | default({}))
+     | combine({'TELEGRAM_BOT_TOKEN': hooks_env.TELEGRAM_BOT_TOKEN | default('')}) }}

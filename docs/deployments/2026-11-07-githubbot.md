@@ -1,9 +1,49 @@
 # GitHubBot: журнал подготовки и приёмки 2026-11-07
 
-**Статус: выполнена локальная подготовка; публикация, выкладка и живая приёмка не выполнены.**
+**Статус на 2026-11-08: образ опубликован, runtime inputs сохранены в Vault и проверены локально; выкладка и живая приёмка не выполнены.**
 Задачи: [infra#111](https://github.com/Cringe-Driven-Development-Team/infra/issues/111),
 [.github#60](https://github.com/Cringe-Driven-Development-Team/.github/issues/60).
 Ни закрытие задачи, ни готовность production этим журналом не подтверждаются.
+
+## Обновление 2026-11-08: реальные runtime inputs
+
+- В inventory закреплён опубликованный manifest digest
+  `sha256:ab42909443bfecd4e516fc168558dd97735bcf8431ddb601e4d21d9766ad75fd`
+  и source tag `sha-1c32d896059fd93a83c0b6f4622e2089d627cac0` репозитория
+  `ghcr.io/cringe-driven-development-team/githubbot`.
+  [Publisher](https://github.com/Cringe-Driven-Development-Team/.github/actions/runs/42481594919)
+  и [checks](https://github.com/Cringe-Driven-Development-Team/.github/actions/runs/42481594916)
+  успешны для этого source SHA по проверке контроллера.
+- Контроллер проверил anonymous registry manifest/digest, anonymous pull с пустым
+  Docker config и OCI source. Здесь локально повторно подтверждены RepoDigest
+  и OCI source `https://github.com/Cringe-Driven-Development-Team/.github`.
+- В encrypted Vault добавлен `vault_githubbot_env` ровно с `GITHUB_TOKEN`
+  и однострочным `GITHUBBOT_CONFIG_JSON`. Все прежние parsed fields сохранены
+  без изменений (сравнение в памяти до/после и повторное decrypt чтение).
+  Credentials и карта пользователей не выводились и не включены в журнал.
+- По явному выбору владельца используется существующий notification bot:
+  defaults берут Telegram token из effective `hooks_env`. Устаревший Telegram
+  token из локального input не использован, отдельная копия в Vault не создана.
+- Реальный закреплённый image прошёл `--check-config` с настоящими runtime inputs,
+  `--network none`, без polling. Временный env-файл имел mode 0600 и удалён.
+  Localhost Ansible assertions с `no_log: true` подтвердили разрешение обязательных
+  inputs, структуру JSON и равенство Telegram token между сервисами.
+  Captured output проверен на отсутствие runtime tokens/config перед отчётом.
+- Контроллер ранее выполнил read-only API проверки: bot privacy disabled,
+  пустой webhook, administrator в целевой группе; PAT действителен,
+  Projects viewerCanUpdate, Sprint и assignee permissions подтверждены.
+  Это не подтверждает единственный poller или состояние контейнера на VPS.
+
+Остаются infra PR/CI, merge, отдельная выкладка и host/live acceptance ниже.
+В этой задаче не было deploy, Telegram sends, GitHub mutations, push или merge.
+Mandatory GitHubBot CI validation сохранена без изменений.
+
+## Историческая подготовка 2026-11-07
+
+Следующие таблицы фиксируют состояние на 2026-11-07. Строки о недостающих
+image/credentials/Vault/privacy заменены результатами обновления выше;
+невыполненные deploy/host/live шаги остаются открытыми. Dedicated bot больше
+не является prerequisite: владелец выбрал общий notification bot.
 
 ## Артефакты и доступные inputs
 

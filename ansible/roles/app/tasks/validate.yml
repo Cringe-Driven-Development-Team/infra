@@ -1,14 +1,33 @@
 ---
 # app_deploy_service — выкатываемый сервис (api или bff), задаёт playbook. Образ второго сервиса
 # необязателен: без него остаётся выкаченный на VPS.
-- name: Check the requested backend image tag
+- name: Require one gateway and one backend VPS
   ansible.builtin.assert:
     that:
-      - backend_image_tag is defined
-      - backend_image_tag is string
-      - backend_image_tag is match('^sha-[0-9a-f]{7,40}$')
-    fail_msg: "An explicit backend_image_tag=sha-<commit> is required, including for rollback."
-  when: app_deploy_service == 'api' or backend_image_tag is defined
+      - groups.get('gateway', []) | length == 1
+      - groups.get('backend', []) | length == 1
+    fail_msg: An inventory with one gateway and one backend VPS is required.
+
+- name: Check the requested backend image digest
+  ansible.builtin.assert:
+    that:
+      - app_backend_image == 'ghcr.io/cringe-driven-development-team/backend'
+      - backend_image_ref is defined
+      - backend_image_ref is string
+      - backend_image_ref is match('^ghcr[.]io/cringe-driven-development-team/backend@sha256:[0-9a-f]{64}\Z')
+      - backend_image_tag is not defined
+    fail_msg: >-
+      An explicit backend_image_ref=ghcr.io/cringe-driven-development-team/backend@sha256:<64 hex>
+      is required, including for rollback; backend_image_tag is not supported.
+  when: app_deploy_service == 'api'
+
+- name: Change the backend only with deploy-backend.yml
+  ansible.builtin.assert:
+    that:
+      - backend_image_ref is not defined
+      - backend_image_tag is not defined
+    fail_msg: backend_image_ref is accepted only by deploy-backend.yml; backend_image_tag is not supported.
+  when: app_deploy_service != 'api'
 
 # BFF (infra#74): только неизменяемый образ по digest из своего package и полный SHA релиза —
 # по нему сверяются метка образа и <meta name="release"> в HTML. Тег не принимается. Package зашит
@@ -36,25 +55,6 @@
       - bff_release_sha is not defined
     fail_msg: bff_image_ref and bff_release_sha are accepted only by deploy-bff.yml.
   when: app_deploy_service != 'bff'
-
-# GHCR credentials нужны только частному образу Go; публичный BFF скачивается анонимно
-- name: Check whether controller GHCR credentials are present
-  ansible.builtin.set_fact:
-    app_ghcr_credentials_present:
-      GHCR_USERNAME: "{{ lookup('ansible.builtin.env', 'GHCR_USERNAME') | trim | length > 0 }}"
-      GHCR_TOKEN: "{{ lookup('ansible.builtin.env', 'GHCR_TOKEN') | trim | length > 0 }}"
-  no_log: true
-
-- name: Require controller GHCR credentials
-  ansible.builtin.assert:
-    that:
-      - app_ghcr_credentials_present[item]
-    fail_msg: "Set {{ item }} in the environment of the machine running Ansible."
-    quiet: true
-  loop:
-    - GHCR_USERNAME
-    - GHCR_TOKEN
-  when: app_deploy_service == 'api'
 
 - name: Check application secrets
   ansible.builtin.assert:
@@ -124,14 +124,6 @@
       - app_cors_allowed_origins is match('^https://[^ ]+$')
       - "'http://' not in app_cors_allowed_origins"
     fail_msg: Set app_cors_allowed_origins in inventory/group_vars/all/vars.yml to HTTPS origins only.
-
-# Runtime-VPS (infra#89): security group runtime пускает SSH и 8443 только с VPS2 — Go на gateway до
-# runtime-VPS не достучится
-- name: Runtime VPS need the backend on VPS2
-  ansible.builtin.assert:
-    that:
-      - not (runtime_enabled | bool) or (app_backend_split | bool)
-    fail_msg: runtime_enabled requires app_backend_split=true (the runtime security group admits only VPS2).
 
 - name: Check the runtime VPS configuration
   ansible.builtin.assert:
