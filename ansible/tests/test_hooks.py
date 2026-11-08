@@ -39,6 +39,11 @@ class HooksChecks(unittest.TestCase):
         self.defaults = yaml.safe_load((ANSIBLE / "roles/hooks/defaults/main.yml").read_text())
         self.group_vars = yaml.safe_load((ANSIBLE / "inventory/group_vars/auxiliary/vars.yml").read_text())
         self.variables = self.defaults | self.group_vars
+        self.variables.update(
+            hooks_githubbot_image="ghcr.io/cringe-driven-development-team/githubbot@sha256:" + "a" * 64,
+            hooks_githubbot_image_source_tag="ghcr.io/cringe-driven-development-team/githubbot:sha-" + "b" * 40,
+            vault_githubbot_env={"TELEGRAM_BOT_TOKEN": "fake-bot-token", "GITHUB_TOKEN": "fake-github-token",
+                                 "GITHUBBOT_CONFIG_JSON": '{"chatId":"-1001"}'})
         self.variables["vault_hooks_proxy_config"] = {
             "inbounds": [{"listen": "0.0.0.0", "port": 2080, "protocol": "http", "settings": {}}],
             "outbounds": [{"tag": "blocked", "protocol": "blackhole"}, {
@@ -240,6 +245,7 @@ class HooksChecks(unittest.TestCase):
         variables = self.variables | {"hooks_env": {"TELEGRAM_PROXY_URL": "http://telegram-proxy:2080", "GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash"}}
         (self.root / "compose.yml").write_text(templates.from_string(
             (ANSIBLE / "roles/hooks/templates/compose.yml.j2").read_text()).render(variables))
+        (self.root / "githubbot.env").write_text("GITHUB_TOKEN=fake-github-token\n")
         (self.root / ".env").write_text(templates.from_string(
             (ANSIBLE / "roles/hooks/templates/env.j2").read_text()).render(variables))
         result = subprocess.run([*shlex.split(os.environ.get("COMPOSE_CLI", "docker compose")),

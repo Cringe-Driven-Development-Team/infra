@@ -143,3 +143,55 @@
     quiet: true
     fail_msg: Проверьте vault_hooks_proxy_config через ansible-vault edit; разрешён только Telegram через VLESS Reality.
   no_log: true
+
+- name: Проверить закреплённый образ GitHubBot
+  ansible.builtin.assert:
+    that:
+      - hooks_githubbot_image | default('') is match('^ghcr[.]io/cringe-driven-development-team/githubbot@sha256:[0-9a-f]{64}$')
+      - hooks_githubbot_image_source_tag | default('') is match('^ghcr[.]io/cringe-driven-development-team/githubbot:sha-[0-9a-f]{40}$')
+    fail_msg: Укажите опубликованный registry digest GitHubBot и полный SHA source tag в inventory.
+
+- name: Проверить структуру переменных GitHubBot
+  ansible.builtin.assert:
+    that:
+      - hooks_githubbot_env is mapping
+    quiet: true
+    fail_msg: Добавьте отдельный словарь vault_githubbot_env через ansible-vault edit.
+  no_log: true
+  diff: false
+
+- name: Проверить обязательные переменные GitHubBot
+  ansible.builtin.assert:
+    that:
+      - hooks_githubbot_env[item] | default('') is string
+      - hooks_githubbot_env[item] | default('') | trim | length > 0
+    quiet: true
+    fail_msg: Добавьте обязательные переменные в vault_githubbot_env через ansible-vault edit.
+  loop:
+    - TELEGRAM_BOT_TOKEN
+    - GITHUB_TOKEN
+    - GITHUBBOT_CONFIG_JSON
+  no_log: true
+  diff: false
+
+- name: Проверить имена и однострочные значения GitHubBot env
+  ansible.builtin.assert:
+    that:
+      - item.key is match('^[A-Z_][A-Z0-9_]*$')
+      - item.value is string
+      - item.value.splitlines() == [item.value]
+    quiet: true
+  loop: "{{ hooks_githubbot_env | dict2items }}"
+  no_log: true
+  diff: false
+
+- name: Проверить JSON и постоянные пути GitHubBot
+  ansible.builtin.assert:
+    that:
+      - hooks_githubbot_env.GITHUBBOT_CONFIG_JSON | from_json is mapping
+      - hooks_githubbot_env.DATABASE_PATH == '/data/githubbot.sqlite'
+      - hooks_githubbot_env.TELEGRAM_PROXY_URL == 'http://telegram-proxy:2080'
+    quiet: true
+    fail_msg: Проверьте JSON, DATABASE_PATH и TELEGRAM_PROXY_URL в vault_githubbot_env.
+  no_log: true
+  diff: false
