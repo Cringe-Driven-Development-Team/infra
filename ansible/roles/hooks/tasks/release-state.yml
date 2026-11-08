@@ -75,6 +75,10 @@
 - name: Выбрать образы обоих сервисов из desired
   ansible.builtin.set_fact:
     hooks_image: "{{ hooks_release_state.services['webhook-alerts'].desired.image_ref }}"
-    hooks_image_source_tag: "{{ 'ghcr.io/cringe-driven-development-team/webhook-alerts:sha-' ~ hooks_release_state.services['webhook-alerts'].desired.source_sha }}"
+    hooks_image_source_tag: >-
+      {{ 'ghcr.io/cringe-driven-development-team/webhook-alerts:sha-' ~
+         hooks_release_state.services['webhook-alerts'].desired.source_sha }}
     hooks_githubbot_image: "{{ hooks_release_state.services.githubbot.desired.image_ref }}"
-    hooks_githubbot_image_source_tag: "{{ 'ghcr.io/cringe-driven-development-team/githubbot:sha-' ~ hooks_release_state.services.githubbot.desired.source_sha }}"
+    hooks_githubbot_image_source_tag: >-
+      {{ 'ghcr.io/cringe-driven-development-team/githubbot:sha-' ~
+         hooks_release_state.services.githubbot.desired.source_sha }}
