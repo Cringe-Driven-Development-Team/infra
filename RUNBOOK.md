@@ -1091,8 +1091,10 @@ docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" reset_restore_
 # Пустая БД с прежним владельцем; схему создаст API миграциями goose при старте
 docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
 # Сессии, версии сессий и счётчики попыток входа: старые токены и cookie перестают действовать
-# Пароль redis-cli берёт из REDISCLI_AUTH контейнера; API использует базу REDIS_DB=0
-docker compose exec -T redis redis-cli -n 0 FLUSHDB
+# Пароль redis-cli берёт из REDISCLI_AUTH контейнера; API использует базу REDIS_DB=0.
+# -e: ошибка Redis (WRONGPASS, NOAUTH) даёт ненулевой код и останавливает процедуру до запуска API
+docker compose exec -T redis redis-cli -e -n 0 FLUSHDB
+test "$(docker compose exec -T redis redis-cli -e -n 0 DBSIZE)" = 0
 ```
 
 API остаётся остановленным до CD. Миграции Down не выполнять, старый API не запускать.
