@@ -1155,6 +1155,10 @@ Release содержит `service`, `image_ref` (полный GHCR repository + 
 executor; до включения этой части bootstrap не считается завершённым.
 
 Если Compose уже существует, а состояния нет, обычный apply останавливается.
+Для read-only migration preview разрешён `--check` с двумя явными
+`hooks_initial_releases`: оба image_ref должны точно совпасть с образами сервисов
+`githubbot` и `hooks` из текущего `docker compose config`. Несовпадение останавливает
+preview; Compose и state не записываются.
 Используйте отдельную `operation=initialize` штатного executor с двумя проверенными
 Release; не удаляйте Compose для обхода проверки и не импортируйте версии неявно.
 При повреждении состояния восстановите проверенный файл/выполните initialize через

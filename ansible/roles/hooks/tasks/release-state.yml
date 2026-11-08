@@ -16,7 +16,7 @@
     hooks_release_state_needs_initialization: false
   when: hooks_release_state_file.stat.exists
 
-- name: Подготовить явные релизы только для пустой VPS
+- name: Подготовить явные релизы для первой установки или migration preview
   when: not hooks_release_state_file.stat.exists
   block:
     - name: Проверить наличие существующего Compose
@@ -27,7 +27,7 @@
     - name: Потребовать явную инициализацию состояния
       ansible.builtin.assert:
         that:
-          - not hooks_release_existing_compose.stat.exists
+          - not hooks_release_existing_compose.stat.exists or ansible_check_mode
           - hooks_initial_releases is defined
           - hooks_initial_releases is sequence
           - hooks_initial_releases is not string
@@ -42,6 +42,35 @@
             hooks_initial_releases[1].service: {'desired': hooks_initial_releases[1], 'confirmed': none}
           }} | hooks_release_validate }}
         hooks_release_state_needs_initialization: true
+
+    - name: Прочитать фактические образы Compose для migration preview
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-directory
+          - "{{ hooks_compose_dir }}"
+          - -f
+          - "{{ hooks_compose_dir }}/compose.yml"
+          - config
+          - --format
+          - json
+      register: hooks_release_migration_compose
+      check_mode: false
+      changed_when: false
+      no_log: true
+      diff: false
+      when: hooks_release_existing_compose.stat.exists
+
+    - name: Сверить явные релизы с существующим Compose без записи
+      ansible.builtin.assert:
+        that:
+          - (hooks_release_migration_compose.stdout | from_json).services.githubbot.image == hooks_release_state.services.githubbot.desired.image_ref
+          - (hooks_release_migration_compose.stdout | from_json).services.hooks.image == hooks_release_state.services['webhook-alerts'].desired.image_ref
+        fail_msg: Migration preview требует точного совпадения обоих image_ref с существующим Compose.
+      no_log: true
+      diff: false
+      when: hooks_release_existing_compose.stat.exists
 
 - name: Выбрать образы обоих сервисов из desired
   ansible.builtin.set_fact:

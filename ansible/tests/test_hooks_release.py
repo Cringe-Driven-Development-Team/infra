@@ -122,3 +122,33 @@ class LoaderChecks(unittest.TestCase):
         (self.root / 'releases.json').write_text('{"version": 2}')
         result = self.fixture.play(self.tasks, self.variables)
         self.assertNotEqual(result.returncode, 0)
+
+
+    def test_migration_preview_requires_matching_compose_images_and_never_writes(self):
+        import yaml
+        initial = [release('githubbot'), release('webhook-alerts')]
+        variables = self.variables | {'hooks_initial_releases': initial}
+        path = self.root / 'compose.yml'
+        env = self.root / '.env'
+        env.write_text('UNCHANGED=fixture-value\n')
+        for mismatch in [None, 'githubbot', 'hooks']:
+            with self.subTest(mismatch=mismatch):
+                services = {'githubbot': {'image': initial[0]['image_ref']},
+                            'hooks': {'image': initial[1]['image_ref']}}
+                if mismatch:
+                    services[mismatch]['image'] = services[mismatch]['image'].replace('a'*64, 'c'*64)
+                path.write_text(yaml.safe_dump({'name': 'migration-preview', 'services': services}))
+                before = {file: file.read_bytes() for file in [path, env]}
+                result = self.fixture.play(self.tasks, variables, check=True)
+                self.assertEqual(result.returncode == 0, mismatch is None, result.stdout + result.stderr)
+                for file, contents in before.items():
+                    self.assertEqual(file.read_bytes(), contents)
+                self.assertFalse((self.root / 'releases.json').exists())
+        # Matching inputs still cannot initialize an existing installation by regular apply.
+        path.write_text(yaml.safe_dump({'services': {'githubbot': {'image': initial[0]['image_ref']},
+                                                    'hooks': {'image': initial[1]['image_ref']}}}))
+        before = path.read_bytes()
+        result = self.fixture.play(self.tasks, variables)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse((self.root / 'releases.json').exists())
