@@ -1,0 +1,119 @@
+name: Auxiliary deploy
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [deploy, initialize]
+        required: true
+      service:
+        type: string
+      image_ref:
+        type: string
+      source_sha:
+        type: string
+      request_id:
+        type: string
+      initial_releases_json:
+        type: string
+permissions:
+  contents: read
+env:
+  ANSIBLE_HOST_KEY_CHECKING: "True"
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - &validate
+        name: Validate trusted publisher and public image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+          fields = ['operation', 'service', 'image_ref', 'source_sha', 'request_id', 'initial_releases_json']
+          Path(os.environ['RUNNER_TEMP'], 'request.json').write_text(json.dumps({key: event['inputs'].get(key, '') for key in fields}))
+          PY
+          python scripts/auxiliary_release.py validate --request "$RUNNER_TEMP/request.json" --output "$RUNNER_TEMP/release.json"
+  production:
+    if: github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    concurrency:
+      group: infra-production
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - *validate
+      - name: Install Ansible
+        working-directory: ansible
+        run: |
+          python -m pip install -r deploy-requirements.txt
+          ansible-galaxy collection install -r requirements.yml
+      - name: SSH and Vault files
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.INFRA_DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: bash scripts/ansible-ci-secrets.sh hooks.cellestial.ru
+      - name: Check order and apply selected operation
+        working-directory: ansible
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          common=(-i inventory/ci.yml -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS")
+          operation=$(python -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/request.json"))["operation"])')
+          if [[ "$operation" == deploy ]]; then
+            ansible auxiliary "${common[@]}" --become -m ansible.builtin.fetch -a "src=/opt/hooks/releases.json dest=$RUNNER_TEMP/state.json flat=true fail_on_missing=true"
+            python ../scripts/auxiliary_release.py check-order --state "$RUNNER_TEMP/state.json" --release "$RUNNER_TEMP/release.json"
+            python -c 'import json,os; p=os.environ["RUNNER_TEMP"]; json.dump({"auxiliary_release":json.load(open(p+"/release.json"))},open(p+"/vars.json","w"))'
+            ansible-playbook "${common[@]}" deploy-auxiliary.yml -e "@$RUNNER_TEMP/vars.json"
+          else
+            python -c 'import json,os; p=os.environ["RUNNER_TEMP"]; json.dump({"auxiliary_initial_releases":json.load(open(p+"/release.json"))},open(p+"/vars.json","w"))'
+            ansible-playbook "${common[@]}" initialize-auxiliary-releases.yml -e "@$RUNNER_TEMP/vars.json"
+          fi
+      - name: Read resulting desired and confirmed state
+        if: always() && env.INFRA_DEPLOY_KEY != ''
+        working-directory: ansible
+        continue-on-error: true
+        run: |
+          ansible auxiliary -i inventory/ci.yml --become -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" \
+            -m ansible.builtin.fetch -a "src=/opt/hooks/releases.json dest=$RUNNER_TEMP/result.json flat=true fail_on_missing=true"
+      - name: Release summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              for name in ['release.json', 'result.json']:
+                  path = root / name
+                  out.write('### ' + name + '\n')
+                  if path.exists():
+                      value = json.loads(path.read_text())
+                      out.write('```json\n' + json.dumps(value, indent=2) + '\n```\n')
+                  else:
+                      out.write('Unavailable; inspect failed step.\n')
+              path = root / 'release.json'
+              if path.exists():
+                  releases = json.loads(path.read_text())
+                  for release in releases if isinstance(releases, list) else [releases]:
+                      out.write('Publisher: https://github.com/Cringe-Driven-Development-Team/.github/actions/runs/' + str(release['publisher_run_id']) + '/attempts/' + str(release['publisher_run_attempt']) + '\n')
+          PY
+      - name: Remove secret files
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/infra"

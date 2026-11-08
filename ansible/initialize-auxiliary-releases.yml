@@ -1,0 +1,10 @@
+---
+- name: Initialize verified existing auxiliary releases
+  hosts: auxiliary
+  become: true
+  gather_facts: false
+  vars_files:
+    - roles/hooks/defaults/main.yml
+  tasks:
+    - name: Initialize existing project without provisioning
+      ansible.builtin.import_tasks: roles/hooks/tasks/initialize-releases.yml

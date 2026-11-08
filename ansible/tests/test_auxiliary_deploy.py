@@ -74,6 +74,36 @@ class AuxiliaryDeployChecks(unittest.TestCase):
     def events(self):
         return [json.loads(line)['args'] for line in (self.root / 'docker-events.jsonl').read_text().splitlines()]
 
+    def test_initialize_existing_project_and_exact_idempotency(self):
+        self.https_health()
+        self.fixture.environment['TEST_DOCKER_DYNAMIC_INSPECT'] = '1'
+        self.path.unlink()
+        releases = [entry['desired'] for entry in self.old['services'].values()]
+        def initialize(selected=releases):
+            result = self.fixture.play([{'name': 'Initialize existing project', 'ansible.builtin.import_tasks':
+                str(ANSIBLE / 'roles/hooks/tasks/initialize-releases.yml')}],
+                self.variables | {'auxiliary_initial_releases': selected})
+            if self.path.exists() and self.path.stat().st_uid == 0:
+                self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+                subprocess.run(['sudo', '-n', 'chown', str(os.getuid()), str(self.path)], check=True)
+            return result
+        result = initialize()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(self.path.read_text()), self.old)
+        result = initialize()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        changed = copy.deepcopy(self.old)
+        changed['services']['githubbot']['confirmed'] = None
+        self.path.write_text(json.dumps(changed))
+        result = initialize()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(json.loads(self.path.read_text()), changed)
+        self.path.unlink()
+        (self.root / 'compose.yml').unlink()
+        result = initialize()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.path.exists())
+
     def test_target_selection_preserves_neighbor_and_confirms(self):
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

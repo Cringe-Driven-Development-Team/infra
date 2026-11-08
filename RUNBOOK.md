@@ -1167,3 +1167,35 @@ Release; не удаляйте Compose для обхода проверки и �
 проверенным; повторный apply использует desired, автоматического rollback нет.
 Все записи выполняются через очередь executor `infra-production`; параллельный
 локальный Ansible вне очереди не поддерживается.
+
+## VPS3 releases
+
+Use Actions → **Auxiliary deploy** on `main` for administrative operations; run no local
+Ansible writer alongside the queue. `operation=deploy` takes `service`, immutable
+`image_ref`, full `source_sha` and `request_id` in the form
+`service:publisher_run_id:publisher_run_attempt:caller_run_id:caller_run_attempt`.
+Keep `initial_releases_json` empty. Only successful push/main attempts of the allowlisted
+publisher workflows and their public GHCR digest/source labels are accepted. Metadata
+and registry failures stop the operation. Older or diverging source commits are rejected.
+
+For an existing VPS3 with Compose and healthy running containers but no release state,
+run `operation=initialize` with `initial_releases_json` containing exactly two explicit
+Release objects (`service`, `image_ref`, `source_sha`, `publisher_run_id`,
+`publisher_run_attempt`), one per service. Leave all deploy fields empty. Find the actual
+image digests and successful publisher attempts first; no latest tag or guessed run is
+accepted. The operation verifies Compose, container Config.Image, local ImageID, health
+and HTTPS before writing desired=confirmed, root:root 0600. Existing state must match
+completely. A new VPS without Compose uses explicit bootstrap via `hooks_initial_releases`
+instead; initialize does not provision it.
+
+For migration preview only, an administrator may set repository variable
+`AUXILIARY_INITIAL_RELEASES` to the same explicit pair. The PR auxiliary `--check` step
+validates publisher metadata/public registry and supplies it as `hooks_initial_releases`.
+Remove this temporary variable after real initialization. Production never consumes it;
+ordinary apply without saved state remains an error.
+
+A failed deploy can leave desired ahead of confirmed. Inspect the workflow summary and
+failed step, repair the cause, then dispatch the same release again through the executor.
+No rollback occurs automatically. Caller cancellation does not cancel the dispatched
+executor; inspect its own run before retrying. Shared networks, SQLite volumes and the
+other service remain in place during a targeted deploy.

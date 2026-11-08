@@ -1,0 +1,60 @@
+---
+- name: Require explicit real initialization
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - auxiliary_initial_releases | length == 2
+      - auxiliary_initial_releases | map(attribute='service') | sort == ['githubbot', 'webhook-alerts']
+
+- name: Build explicit state
+  ansible.builtin.set_fact:
+    hooks_release_state:
+      version: 1
+      services: {}
+
+- name: Select both verified releases
+  ansible.builtin.set_fact:
+    hooks_release_state: "{{ hooks_release_state | combine({'services': {item.service: {'desired': item, 'confirmed': item}}}, recursive=true) }}"
+  loop: "{{ auxiliary_initial_releases }}"
+
+- name: Validate initial state
+  ansible.builtin.set_fact:
+    hooks_release_state: "{{ hooks_release_state | hooks_release_validate }}"
+
+- name: Read existing Compose
+  ansible.builtin.slurp:
+    src: "{{ hooks_compose_dir }}/compose.yml"
+  register: hooks_initial_compose
+  no_log: true
+
+- name: Require both exact Compose image references
+  ansible.builtin.assert:
+    that:
+      - (hooks_initial_compose.content | b64decode | from_yaml).services.githubbot.image == hooks_release_state.services.githubbot.desired.image_ref
+      - (hooks_initial_compose.content | b64decode | from_yaml).services.hooks.image == hooks_release_state.services['webhook-alerts'].desired.image_ref
+  no_log: true
+
+- name: Inspect existing state
+  ansible.builtin.stat:
+    path: "{{ hooks_compose_dir }}/releases.json"
+  register: hooks_initial_existing
+
+- name: Reject different existing state
+  when: hooks_initial_existing.stat.exists
+  block:
+    - name: Read existing state
+      ansible.builtin.slurp:
+        src: "{{ hooks_compose_dir }}/releases.json"
+      register: hooks_initial_saved
+    - name: Require complete identity for idempotent initialization
+      ansible.builtin.assert:
+        that: hooks_initial_saved.content | b64decode | from_json | hooks_release_validate == hooks_release_state
+
+- name: Verify actual running images and health without writing
+  ansible.builtin.import_tasks: verify-release.yml
+  vars:
+    hooks_verify_services: [githubbot, webhook-alerts]
+    hooks_verify_confirm: false
+
+- name: Save verified initial state
+  ansible.builtin.import_tasks: save-release.yml
