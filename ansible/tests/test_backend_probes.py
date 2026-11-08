@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import ssl
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -113,15 +114,20 @@ class BackendProbes(unittest.TestCase):
             uri['url'] = uri.get('url', '').replace(':8080/health', f':{self.http.server_port}/health')
         return tasks
 
-    def run_tasks(self, tasks):
+    def run_tasks(self, tasks, variables=None, host_variables=None):
         inventory = self.root / 'inventory.yml'
-        inventory.write_text(yaml.safe_dump({'all': {'children': {
+        data = {'all': {'children': {
             'gateway': {'hosts': {'gateway-test': {'ansible_connection': 'local', 'ansible_host': '127.0.0.2'}}},
-            'backend': {'hosts': {'backend-test': {'ansible_connection': 'local', 'ansible_host': '127.0.0.1'}}}}}}))
+            'backend': {'hosts': {'backend-test': {'ansible_connection': 'local', 'ansible_host': '127.0.0.1'}}}}}}
+        for group, values in (host_variables or {}).items():
+            host = next(iter(data['all']['children'][group]['hosts'].values()))
+            host.update(values)
+        inventory.write_text(yaml.safe_dump(data))
         play = self.root / 'test.yml'
         play.write_text(yaml.safe_dump([{'name': 'Exercise real probes', 'hosts': 'backend', 'gather_facts': False,
             'vars': {'ansible_python_interpreter': sys.executable, 'backend_probe_address': '127.0.0.1',
-                     'app_domain': f'localhost:{self.https.server_port}', 'bff_probe_release': RELEASE},
+                     'app_domain': f'localhost:{self.https.server_port}', 'bff_probe_release': RELEASE,
+                     **(variables or {})},
             'module_defaults': {'ansible.builtin.uri': {'ca_path': str(self.cert)}}, 'tasks': tasks}]))
         return subprocess.run(['ansible-playbook', '-i', str(inventory), str(play)], env=self.environment,
                               cwd=ANSIBLE, capture_output=True, text=True, timeout=90)
@@ -222,3 +228,65 @@ class BackendProbes(unittest.TestCase):
         self.assertIn('Backend internal HTTP check', result.stdout)
         self.assertIn('ok: [backend-test -> gateway-test', result.stdout)
         self.assertTrue(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+
+    def test_real_backend_post_tasks_read_gateway_release_and_keep_stage_results(self):
+        # Keep the actual production post_tasks and imported task arguments. Only map external
+        # dependencies to local TLS/HTTP fixtures and the existing Docker CLI substitute.
+        production = yaml.safe_load((ANSIBLE / 'deploy-backend.yml').read_text())[0]
+        tasks = copy.deepcopy(production['post_tasks'])
+        for task in tasks:
+            imported = task.pop('ansible.builtin.import_tasks', None)
+            if imported:
+                task['block'] = self.tasks(Path(imported).name)
+        gateway = self.root / 'gateway'
+        backend = self.root / 'backend'
+        for directory in (gateway, backend):
+            directory.mkdir(exist_ok=True)
+        gateway_env = gateway / '.env'
+        gateway_env.write_text(f'BFF_RELEASE_SHA={RELEASE}\nBFF_API_KEY=private-fixture-key\n')
+        (backend / '.env').write_text('BFF_RELEASE_SHA=' + 'c' * 40 + '\n')
+        binary = self.root / 'bin'
+        binary.mkdir(exist_ok=True)
+        shutil.copyfile(ANSIBLE / 'tests/docker_stub.py', binary / 'docker')
+        (binary / 'docker').chmod(0o700)
+        image_id = 'sha256:' + '1' * 64
+        self.environment.update(PATH=str(binary) + os.pathsep + os.environ['PATH'],
+                                TEST_DOCKER_ROOT=str(self.root), TEST_DOCKER_CONTAINER='cid',
+                                TEST_DOCKER_IMAGE_ID=image_id)
+        hosts = {'gateway': {'app_compose_dir': str(gateway)},
+                 'backend': {'app_compose_dir': str(backend)}}
+        variables = {'backend_image_ref': 'ghcr.io/cringe-driven-development-team/backend@sha256:' + 'd' * 64,
+                     'app_backend_address': '{{ ansible_host }}',
+                     # Force the real set_fact and slurp to supply these values.
+                     'bff_probe_release': None}
+        # Extra variables here are play vars, so set_fact must replace the stale address.
+        variables['backend_probe_address'] = '127.0.0.99'
+        for scenario in ('success', 'wrong-image', 'internal-failure', 'external-failure', 'missing-release'):
+            with self.subTest(scenario=scenario):
+                type(self).requests = []
+                type(self).health = (200, {'status': 'wrong' if scenario == 'internal-failure' else 'alive'})
+                type(self).login = (500, {}) if scenario == 'external-failure' else (401, VALID_LOGIN)
+                selected_id = 'sha256:' + '2' * 64 if scenario == 'wrong-image' else image_id
+                self.environment['TEST_DOCKER_STATE'] = f'{selected_id} true healthy'
+                gateway_env.write_text(('' if scenario == 'missing-release' else f'BFF_RELEASE_SHA={RELEASE}\n')
+                                       + 'BFF_API_KEY=private-fixture-key\n')
+                result = self.run_tasks(tasks, variables, hosts)
+                output = result.stdout + result.stderr
+                self.assertEqual(result.returncode == 0, scenario == 'success', output)
+                self.assertNotIn('private-fixture-key', output)
+                if scenario == 'wrong-image':
+                    self.assertFalse(self.requests)
+                    continue
+                self.assertIn('TASK [Backend image check]', output)
+                self.assertRegex(output, r'TASK \[Backend image check\][^\n]*\nok: \[backend-test\]')
+                internal = [r for r in self.requests if r[0] == '/health'
+                            and r[2].get('Host') == f'127.0.0.1:{self.http.server_port}']
+                self.assertEqual(len(internal), 6 if scenario == 'internal-failure' else 1)
+                if scenario == 'internal-failure':
+                    self.assertFalse(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+                else:
+                    self.assertRegex(output, r'TASK \[Backend internal HTTP check\][^\n]*\nok: \[backend-test -> gateway-test')
+                    if scenario == 'missing-release':
+                        self.assertFalse(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+                    else:
+                        self.assertTrue(any(r[0] == '/api/trpc/auth.login' for r in self.requests))

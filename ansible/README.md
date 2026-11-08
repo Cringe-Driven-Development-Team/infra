@@ -380,7 +380,7 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
   выкатку здесь: `.env`, `compose.yml`, Caddy и контейнеры остаются прежними. Package `bff` в GHCR
   должен быть публичным (GitHub → Packages → bff → Package settings → Change visibility → Public).
 - В `.env` пишутся `BFF_IMAGE_REF` (ссылка по digest) и `BFF_RELEASE_SHA`; Compose запускает
-  `image: ${BFF_IMAGE_REF}` с `pull_policy: never` и `--wait`. Тег Go берётся из `.env` на VPS:
+  `image: ${BFF_IMAGE_REF}` с `pull_policy: never` и `--wait`. Полный digest-ref Go берётся из `.env` на VPS:
   выкатка BFF не трогает API, а `deploy-backend.yml` не меняет BFF (`bff_image_ref` он не принимает).
   Без выкаченного Go BFF не выкатывается (он ждёт `api` в состоянии healthy).
 - После запуска проверяется фактически запущенный контейнер: его образ — тот же `BFF_IMAGE_REF` и
@@ -422,13 +422,17 @@ gateway пускает пересылку только на `VPS2:22` (`ssh_hard
 
 ## Go API: первая выкатка и откат
 
-В одном проекте `/opt/cellestial` роль `app` управляет API, PostgreSQL 18 и Redis 8, роль
-`caddy` — общим Caddyfile. API, Postgres и Redis доступны только в сети `app`. Данные
-Postgres сохраняются в `cellestial_postgres_data`, Redis — в `cellestial_redis_data` (AOF),
-сертификаты — в существующих `cellestial_caddy_data` и `cellestial_caddy_config`.
-Не выполнять `down -v`.
+На приватной VPS2 роль `app` управляет API, PostgreSQL 18 и Redis 8 в Compose-проекте
+`/opt/cellestial`. Порт Go 8080 опубликован только на приватном адресе VPS2 для gateway;
+Postgres и Redis доступны внутри сети `app`. На gateway находятся BFF и Caddy; роль `caddy`
+управляет общим Caddyfile. Данные Postgres сохраняются в `cellestial_postgres_data`, Redis —
+в `cellestial_redis_data` (AOF), сертификаты — в существующих `cellestial_caddy_data` и
+`cellestial_caddy_config`. Не выполнять `down -v`.
 
-Пакет GHCR остаётся приватным. Постоянный токен на VPS и в Vault не хранится.
+Backend скачивается из публичного GHCR package `ghcr.io/cringe-driven-development-team/backend`.
+Перевод package в Public и проверка реального анонимного pull выполняются вручную в рамках
+backend#42 до применения infra#69. Новый playbook не использует GHCR credentials на runner или
+сохранённую авторизацию Docker на VPS; публикация образов по-прежнему требует права записи.
 Денис создаёт
 отдельную пару CI-ключей без passphrase, добавляет **только** `ci.pub` в
 `files/authorized_keys/` через PR и запускает `site.yml` своим уже разрешённым
@@ -458,49 +462,69 @@ python3 -m venv /tmp/cdd-deploy-venv
 pip install -r deploy-requirements.txt
 ansible-galaxy collection install -r deploy-requirements.yml
 export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
-# gh должен быть авторизован аккаунтом с доступом к team/backend и его package.
-gh auth refresh -s read:packages
-export GHCR_USERNAME="$(gh api user --jq .login)"
-export GHCR_TOKEN="$(gh auth token)"
+# Вставьте точный digest опубликованного образа, выбранный backend workflow.
+BACKEND_IMAGE_REF='ghcr.io/cringe-driven-development-team/backend@sha256:REPLACE_WITH_64_HEX'
 ansible-playbook -i inventory/ci.yml deploy-backend.yml \
-  -e backend_image_tag=sha-1234567 \
+  -e "backend_image_ref=$BACKEND_IMAGE_REF" \
   -e deploy_key_path="$HOME/.ssh/selectel_release" \
-  --ssh-common-args='-o StrictHostKeyChecking=yes'
-unset GHCR_TOKEN GHCR_USERNAME
+  -e jump_known_hosts="$HOME/.ssh/known_hosts" \
+  --ssh-common-args="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
 ```
 
-Замените пример SHA на опубликованный тег. Без `backend_image_tag`, `GHCR_USERNAME`
-или `GHCR_TOKEN` playbook завершается до изменений VPS. Credentials читаются только
-из окружения управляющей машины, не из Vault и не через `-e`. Он пишет `.env` с
-правами `0600` и `no_log`, выполняет login через stdin с `no_log`, скачивает API и
-всегда делает logout, в том числе при ошибке login или pull. Ошибка не подавляется.
-Затем скачивает отсутствующие публичные образы Caddy/Postgres и запускает Compose
-с `--pull never --wait`, чтобы API не скачивался после logout. Go API наружу не
-публикуется (раздел «Клиент и BFF»): готовность — healthcheck Compose. BFF, если он
-выкачен, остаётся на своём теге из `.env` на VPS.
+Перед запуском замените `REPLACE_WITH_64_HEX` на 64 строчных hex-символа реального digest.
+Выкатка требует один gateway, одну приватную VPS2 в группе `backend` и `app_backend_split=true`.
+Go, PostgreSQL и Redis работают на VPS2, опубликованный порт 8080 привязан только к приватному
+адресу; Caddy и BFF работают на gateway. SSH к VPS2 идёт существующим jump-путём через gateway,
+проверка host key сохраняется. Адреса берутся из inventory.
 
-По умолчанию образ берётся из ghcr.io/cringe-driven-development-team/backend.
-Изменение default нельзя вливать до публикации нового package и остановки старого
-writer: старый CI читает infra@main. Порядок окна — в
-[runbook организации](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/docs/migrations/team-repositories-runbook.md).
-Проверить связь private package с team/backend и права его GITHUB_TOKEN.
+`backend_image_ref` принимает только полный ref указанного backend package. Тег, другой package,
+неправильный digest или неподходящая топология отклоняются до изменений. Старый
+`backend_image_tag` не поддерживается. Переменные `GHCR_USERNAME`/`GHCR_TOKEN` не требуются.
 
-Откат внутри нового registry — та же команда с прежним SHA-тегом.
-Для отката к образу до переноса дополнительно передать
-`-e app_backend_image=ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development`
-и его прежний `backend_image_tag=sha-<old>`. GHCR_TOKEN должен читать старый
-package: временный token нового repo не обязан иметь это право. Старые package,
-tag и рабочий read credential сохраняются до завершения периода отката.
-Перед deploy сверить compose image и убедиться, что новые writers выключены.
-Данные Postgres остаются в volume;
-goose Down не запускается, прежний API должен поддерживать применённую схему БД.
-После неудачного деплоя проверьте состояние контейнеров и повторите playbook с
-рабочим тегом: автоматического отката нет.
+До записи `.env` и `compose.yml` Ansible скачивает точный ref на VPS2 через временный пустой
+Docker config. Login/logout не выполняются; сохранённые credentials VPS не используются, временный
+каталог удаляется и при ошибке. Если образ недоступен, конфигурация и контейнеры остаются прежними.
+После успешного pull `.env` с правами `0600` и `no_log` хранит `BACKEND_IMAGE_REF`. Compose
+использует полный ref, `pull_policy: never`, запускается с `pull: never` и ожиданием healthcheck.
+Секреты приложения из Vault продолжают записываться на соответствующие VPS с прежними ограничениями;
+они не включаются в вывод проверок.
 
-`site.yml` проходит до первой выкатки без тега. После неё он сохраняет полный
-`compose.yml` и `.env`, управляет только сервисом Caddy и не меняет образ API.
-Он продолжает обновлять общий Caddyfile: маршрут на BFF — по тому, выкачен ли он.
-GHCR credentials для `site.yml` не нужны, API он не скачивает.
+После запуска и применения handlers обязательны последовательные проверки:
+
+1. `Backend image check`: ровно один работающий контейнер `api`, его локальный `.Image` совпадает
+   с `.Id` локального образа, найденного по `backend_image_ref`; контейнер running и healthy.
+   Registry digest и локальный image ID напрямую не сравниваются.
+2. `Backend internal HTTP check`: запрос с gateway к приватному адресу VPS2 `:8080/health`,
+   одновременно HTTP 200 и JSON `status: alive`. Runner не обращается к приватному HTTP напрямую.
+   Redirects и proxy запрещены; timeout 5 секунд, максимум шесть запросов с интервалом 5 секунд.
+3. `Backend external BFF check`: runner выполняет HTTPS POST `/api/trpc/auth.login`, отправляя
+   `Origin`, `X-CSRF: 1`, JSON с новым случайным login из 32 hex-символов и паролем
+   `deploy-probe-invalid-password`. Успех — одновременно 401, `UNAUTHORIZED` и
+   `invalid_credentials`. Login один на все повторы; максимум шесть запросов, timeout 5 секунд,
+   интервал 5 секунд. TLS проверяется, redirects запрещены; существующий S2S-ключ добавляет BFF,
+   для запроса runner ключ не получает.
+
+Сохраняются проверки `/login` и гостевого `users.me`. Затем `/api/v1/users/me`, `/api/unknown`
+и `/health` с runner должны вернуть 404 без HTML. Общие HTTP tasks используются также BFF playbook;
+backend-выкатка читает текущий BFF release на gateway, не меняя его образ. Отсутствие BFF release
+или ошибка любой обязательной проверки завершают playbook неуспехом. Уже пройденные задачи остаются
+видны в логе; общий успех нельзя выводить из одного успешного раннего этапа.
+
+`/health` подтверждает живой HTTP-процесс. Отрицательный login дополнительно подтверждает
+HTTPS → BFF → Go → чтение PostgreSQL. Эти проверки не доказывают успешный вход, создание сессии,
+работу Redis или runtime-VPS. Передача результатов в Actions Health Check/Summary — часть backend#42;
+интеграция проверяется после готовности обеих задач. Отдельного JSON-файла отчёта нет.
+
+Ручной повтор выкатки прежней версии использует ту же команду с прежним успешным digest этого
+backend package. Цель выбирает workflow backend#42 из GitHub Deployments; отдельное SSH-чтение
+Docker перед выбором цели не требуется. Ошибка после переключения не означает, что старый
+контейнер восстановлен. Автоматического отката нет: изучите результаты и повторите выкатку
+подтверждённого рабочего digest. Миграции и данные БД playbook не откатывает; `goose Down`
+не запускается.
+
+`site.yml` работает до первой выкатки и после неё сохраняет полный `compose.yml`/`.env`,
+управляет сервисом Caddy и обновляет маршрут BFF. API он не скачивает и его образ не меняет.
+GHCR credentials для `site.yml` не нужны.
 
 S3 передаётся API через `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `AWS_ENDPOINT_URL_S3`, `S3_NOTEBOOKS_BUCKET`, `S3_AVATARS_BUCKET`,
@@ -541,12 +565,11 @@ ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 каталог `inventory` целиком, иначе Ansible объединит динамический и статический
 хосты. Для CI всегда передавайте `-i inventory/ci.yml`.
 
-В CI выкатки бэка только шаг с playbook получает `GHCR_USERNAME` из `github.actor` и `GHCR_TOKEN`
-из `secrets.GITHUB_TOKEN` с разрешением job `packages: read`. Отдельного GHCR secret
-нет. После успешной или упавшей на pull выкатки проверьте отсутствие `ghcr.io` в
-Docker config пользователя, под которым выполнялся login (`become: true` — root).
-Если logout сам завершился ошибкой, выкатка тоже неуспешна; удаление credentials
-нужно подтвердить перед повторным запуском.
+Выкатка и ручной откат backend не передают GHCR credentials. Новое подключение workflow,
+публичность package и реальный анонимный pull по digest проверяются в backend#42. Порядок:
+подготовить оба PR → вручную открыть package и проверить pull → применить infra#69 →
+применить backend#42 → проверить общую выкатку и Health Check/Summary. Локальная проверка
+контракта не требует пробного отката production.
 
 ### Откат из проверенного архива без registry
 
