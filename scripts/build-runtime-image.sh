@@ -2,7 +2,8 @@
 # Собирает приватный образ runtime-VPS (infra#134) в проекте runtime и печатает его id.
 #   source pulumi/bootstrap/env.sh
 #   OS_REGION_NAME=ru-9 OS_PROJECT_ID=<runtimeProjectId> scripts/build-runtime-image.sh
-# Временный сервер из базового образа ставит состав runtime-image/versions.env через cloud-init и
+# Временный сервер из базового образа ставит состав runtime-image/versions.env и не зависящие от
+# сессии настройки ролей runtime через cloud-init и
 # выключается; его том загружается в Glance, затем пробный том из образа проверяет зону.
 # Временные сервер, тома и keypair удаляются при любом исходе. Сеть, группа, флейвор, тип тома и
 # зона — из ansible vars.yml (runtime_*). Keypair — одноразовый: SSH к серверу сборки не нужен, а
@@ -59,13 +60,27 @@ if openstack image show "$name" >/dev/null 2>&1; then
   exit 1
 fi
 
-# user-data: shebang, состав, файл requirements и шаги сборки
+# Статические файлы ролей runtime (без переменных Jinja): в образе они те же, что пишет плейбук
+roles="$root/ansible/runtime/roles"
+static=(
+  "$roles/runtime_host/templates/sysctl.conf.j2:sysctl.conf"
+  "$roles/runtime_host/templates/cellestial-firewall.service.j2:cellestial-firewall.service"
+  "$roles/runtime_host/templates/nginx-network.conf.j2:nginx-network.conf"
+  "$roles/runtime_agent/templates/firewall-dropin.conf.j2:firewall-dropin.conf"
+)
+
+# user-data: shebang, состав, статические файлы и шаги сборки
 {
   echo '#!/bin/bash'
   grep -E '^[A-Z_]+=' "$dir/versions.env" | sed 's/^/export /'
-  echo "cat > /root/agent-requirements.txt <<'CELLESTIAL_REQUIREMENTS'"
-  cat "$dir/agent-requirements.txt"
-  echo 'CELLESTIAL_REQUIREMENTS'
+  echo 'mkdir -p /root/static'
+  for pair in "${static[@]}"; do
+    src=${pair%%:*}
+    if grep -q '{[{%]' "$src"; then echo "build-runtime-image: в $src есть Jinja" >&2; exit 1; fi
+    echo "base64 -d > /root/static/${pair##*:} <<'CELLESTIAL_FILE'"
+    base64 < "$src"
+    echo 'CELLESTIAL_FILE'
+  done
   cat "$dir/build-on-vps.sh"
 } > "$work/user-data"
 

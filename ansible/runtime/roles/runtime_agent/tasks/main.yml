@@ -21,6 +21,7 @@
     - "{{ runtime_agent_home }}"
     - "{{ runtime_agent_config_dir }}"
 
+# Образ runtime содержит wheel и venv своего релиза backend: при том же wheel установка не нужна
 - name: Copy the agent wheel
   ansible.builtin.copy:
     src: "{{ agent_wheel }}"
@@ -28,6 +29,7 @@
     owner: root
     group: root
     mode: "0644"
+  register: runtime_agent_wheel_copy
 
 - name: Read the checksum of the copied wheel
   ansible.builtin.stat:
@@ -41,7 +43,7 @@
       - runtime_agent_wheel.stat.checksum == agent_wheel_sha256
     fail_msg: "{{ agent_wheel | basename }} does not match agent_wheel_sha256; refusing to install it."
 
-# Образ уже содержит venv с этим файлом: ставим зависимости, только если backend прислал другие
+# Образ уже содержит venv с этим файлом: зависимости — только если backend прислал другие
 - name: Copy the pinned agent requirements
   ansible.builtin.copy:
     src: "{{ agent_requirements }}"
@@ -59,8 +61,9 @@
     virtualenv: "{{ runtime_agent_home }}/venv"
     virtualenv_command: /usr/bin/python3 -m venv
 
-# Зависимости — только закреплённые в requirements.txt
-- name: Install the agent wheel
+# Зависимости — только закреплённые в requirements.txt; заново — и после новых зависимостей
+- name: Install the agent wheel  # noqa: no-handler
+  when: runtime_agent_wheel_copy is changed or runtime_agent_requirements is changed
   ansible.builtin.pip:
     name: "{{ runtime_agent_home }}/{{ agent_wheel | basename }}"
     virtualenv: "{{ runtime_agent_home }}/venv"

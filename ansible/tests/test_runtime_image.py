@@ -21,13 +21,8 @@ class RuntimeImageTest(unittest.TestCase):
         self.assertRegex(env['UBUNTU_SNAPSHOT'], r'^[0-9]{8}T[0-9]{6}Z$')
         for package in (env['APT_PACKAGES'] + ' ' + env['DOCKER_PACKAGES']).split():
             self.assertRegex(package, r'^[a-z0-9.+-]+=[^=\s]+$', package)
-        for ref in ('PYTHON_KERNEL_IMAGE', 'R_KERNEL_IMAGE'):
+        for ref in ('PYTHON_KERNEL_IMAGE', 'R_KERNEL_IMAGE', 'BACKEND_IMAGE'):
             self.assertRegex(env[ref], r'@sha256:[0-9a-f]{64}$')
-        requirements = (ROOT / 'runtime-image/agent-requirements.txt').read_text().splitlines()
-        pins = [line for line in requirements if line and not line.startswith((' ', '#'))]
-        self.assertTrue(pins)
-        for line in pins:
-            self.assertRegex(line, r'^[A-Za-z0-9_.\[\]-]+==[^=\s]+$', line)
 
 
 if __name__ == '__main__':
