@@ -61,13 +61,14 @@
     virtualenv: "{{ runtime_agent_home }}/venv"
     virtualenv_command: /usr/bin/python3 -m venv
 
-# Зависимости — только закреплённые в requirements.txt; заново — и после новых зависимостей
+# Зависимости — только закреплённые в requirements.txt; заново — и после новых зависимостей.
+# --force-reinstall: wheel с прежними именем и версией, но другими байтами pip иначе пропустит
 - name: Install the agent wheel  # noqa: no-handler
   when: runtime_agent_wheel_copy is changed or runtime_agent_requirements is changed
   ansible.builtin.pip:
     name: "{{ runtime_agent_home }}/{{ agent_wheel | basename }}"
     virtualenv: "{{ runtime_agent_home }}/venv"
-    extra_args: --no-deps
+    extra_args: --no-deps --force-reinstall
 
 - name: Write the assignment and the token
   ansible.builtin.template:

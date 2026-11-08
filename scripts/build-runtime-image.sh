@@ -31,7 +31,7 @@ name="cellestial-runtime-$IMAGE_VERSION"
 tag="$name-build-$(date -u +%Y%m%dT%H%M%SZ)"
 timeout=${BUILD_TIMEOUT:-1800}
 work=$(mktemp -d)
-server='' volume='' probe='' key=''
+server='' volume='' probe='' key='' image=''
 
 cleanup() {
   [ -n "$server" ] && openstack server delete --wait "$server" >/dev/null 2>&1 || true
@@ -39,6 +39,8 @@ cleanup() {
   for v in "$volume" "$probe"; do
     [ -n "$v" ] && openstack volume delete "$v" >/dev/null 2>&1 || true
   done
+  # непроверенный образ не остаётся: иначе повтор с тем же IMAGE_VERSION упрётся в его имя
+  [ -n "$image" ] && openstack image delete "$image" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -121,6 +123,10 @@ probe=$(openstack volume create "$name-probe" --image "$image" --size "$BUILD_VO
   --type "$vtype" --availability-zone "$zone" -f value -c id)
 wait_for volume "$probe" available 600
 echo "Том из образа создан за $(since "$t")"
+openstack volume delete "$probe"
+probe=''
+built=$image
+image=''  # проверен — cleanup его не удаляет
 
-echo "Готово за $(since "$start"). Образ: $image"
-echo "Дальше: infra:runtimeImageId в pulumi/Pulumi.prod.yaml и runtime_image_id в vars.yml = $image"
+echo "Готово за $(since "$start"). Образ: $built"
+echo "Дальше: infra:runtimeImageId в pulumi/Pulumi.prod.yaml и runtime_image_id в vars.yml = $built"

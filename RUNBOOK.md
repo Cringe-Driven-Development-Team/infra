@@ -925,17 +925,18 @@ openstack server delete --wait runtime-check && openstack volume delete runtime-
 
 Runtime-VPS создаются из приватного образа `cellestial-runtime-<IMAGE_VERSION>` на базе Selectel
 `Ubuntu 26.04 LTS 64-bit` (Python 3.14; агенту нужен ≥ 3.13). В образе — всё, что не зависит от сессии:
-apt-пакеты и Docker CE фиксированных версий, venv агента `/opt/cellestial-agent/venv` с
-`runtime-image/agent-requirements.txt`, слои образов kernel Python и R, маркер
-`/etc/cellestial/runtime-image`. Состав — только в `runtime-image/versions.env`; пакеты Ubuntu ставятся из
-`snapshot.ubuntu.com` на `UBUNTU_SNAPSHOT`, поэтому повторная сборка даёт те же версии. Плейбук сессии
-проверяет маркер (`runtime_host_image_version`) и ставит requirements агента, только если backend
-прислал другие.
+apt-пакеты и Docker CE фиксированных версий; агент (wheel, `requirements.txt`, systemd unit) из `/app/agent`
+образа backend `BACKEND_IMAGE` с venv `/opt/cellestial-agent/venv`; слои образов kernel Python и R; не
+зависящие от сессии файлы ролей runtime; маркер `/etc/cellestial/runtime-image`. Состав — только в
+`runtime-image/versions.env`; пакеты Ubuntu ставятся из `snapshot.ubuntu.com` на `UBUNTU_SNAPSHOT`, поэтому
+повторная сборка даёт те же версии. Плейбук сессии проверяет маркер (`runtime_host_image_version`) и ставит
+wheel и requirements агента, только если backend прислал другие.
 
-**Пересборка** — при смене состава (новые версии, requirements агента в backend, образы kernel):
+**Пересборка** — при смене состава (новые версии пакетов, агент в новом релизе backend, образы kernel):
 
-1. Поправить `runtime-image/versions.env`, поднять `IMAGE_VERSION`; requirements —
-   `cp ../backend/runtime-agent/requirements.txt runtime-image/agent-requirements.txt`. В том же PR —
+1. Поправить `runtime-image/versions.env`, поднять `IMAGE_VERSION`. Агент — `BACKEND_IMAGE` на digest
+   выкаченного релиза backend (`BACKEND_IMAGE_REF` в `.env` VPS2), образы kernel — его
+   `RUNTIME_PYTHON_IMAGE`/`RUNTIME_R_IMAGE`. В том же PR —
    `runtime_host_image_version` в `ansible/runtime/roles/runtime_host/defaults/main.yml` (тест
    `test_runtime_image`).
 2. Собрать образ учёткой с правами на проект runtime (~10 мин):
