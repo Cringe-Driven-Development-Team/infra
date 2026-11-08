@@ -231,6 +231,9 @@ class GithubBotChecks(unittest.TestCase):
                 if ups:
                     args = ups[0]["args"]
                     self.assertIn("--dry-run", args)
+                    self.assertIn("--renew-anon-volumes", args)
+                    self.assertIn("--wait", args)
+                    self.assertEqual(args[args.index("--wait-timeout") + 1], "180")
                     self.assertEqual(args[args.index("--project-directory") + 1], str(self.root))
                     self.assertEqual(ups[0]["compose"]["name"], "hooks")
                     self.assertEqual(ups[0]["compose"]["services"]["githubbot"]["image"], IMAGE)
@@ -242,6 +245,67 @@ class GithubBotChecks(unittest.TestCase):
                 self.assertFalse((self.root / "githubbot.env").exists())
                 for value in [ENV["GITHUB_TOKEN"], ENV["TELEGRAM_BOT_TOKEN"], "Alice"]:
                     self.assertNotIn(value, result.stdout + result.stderr)
+
+    def test_native_preview_recreates_mounted_service_with_uncached_image_without_changes(self):
+        if os.environ.get("COMPOSE_CLI") != "docker compose":
+            self.skipTest("Set COMPOSE_CLI='docker compose' for the offline native Docker regression")
+        project = "githubbot-preview-" + self.root.name.removeprefix("cdd-githubbot-test-").replace("_", "a")
+        image = project + ":old"
+        missing = "localhost:9/preview/missing@sha256:" + "f" * 64
+
+        def docker(*args, check=True):
+            return subprocess.run(["docker", *args], capture_output=True, text=True, check=check, timeout=45)
+
+        compose = ["compose", "--project-directory", str(self.root), "-f", str(self.root / "compose.yml")]
+        (self.root / "marker").write_text("fixture-owned data\n")
+        (self.root / "Dockerfile").write_text('FROM scratch\nCOPY marker /marker\nCMD ["/never-executed"]\n')
+        docker("build", "--network=none", "--pull=false", "-t", image, str(self.root))
+        self.addCleanup(lambda: docker("image", "rm", image, check=False))
+        config = {"name": project, "services": {"githubbot": {
+            "image": image, "network_mode": "none", "volumes": ["data:/data", "./marker:/bind-marker:ro"]}},
+            "volumes": {"data": {}}}
+        path = self.root / "compose.yml"
+        path.write_text(yaml.safe_dump(config))
+        self.addCleanup(lambda: docker(*compose, "down", "--volumes", check=False))
+        docker(*compose, "create", "--pull", "never")
+        container = docker(*compose, "ps", "--all", "--quiet", "githubbot").stdout.strip()
+        self.assertTrue(container)
+        docker("cp", str(self.root / "marker"), container + ":/data/marker")
+        volume = project + "_data"
+        self.assertNotEqual(docker("image", "inspect", missing, check=False).returncode, 0)
+        config["services"]["githubbot"]["image"] = missing
+        path.write_text(yaml.safe_dump(config))
+        (self.root / "env").write_text("")
+        (self.root / "docker").mkdir()
+        tasks = yaml.safe_load((ANSIBLE / "roles/hooks/tasks/preview.yml").read_text())
+        task = next(t for t in tasks[1]["block"] if "--dry-run" in t.get("ansible.builtin.command", {}).get("argv", []))
+        template = Environment(undefined=StrictUndefined)
+        argv = [template.from_string(arg).render(hooks_preview={"path": str(self.root)},
+                                                hooks_compose_dir=str(self.root))
+                for arg in task["ansible.builtin.command"]["argv"]]
+
+        def snapshot():
+            inspected = json.loads(docker("inspect", container).stdout)
+            inspected[0]["Mounts"].sort(key=lambda mount: mount["Destination"])
+            return (inspected,
+                    sorted(docker("image", "ls", "--all", "--no-trunc", "--digests", "--format", "{{.ID}} {{.Repository}} {{.Tag}} {{.Digest}}").stdout.splitlines()),
+                    json.loads(docker("volume", "inspect", volume).stdout),
+                    subprocess.run(["docker", "cp", container + ":/data/marker", "-"],
+                                   capture_output=True, check=True, timeout=45).stdout,
+                    path.read_bytes(), (self.root / "marker").read_bytes())
+
+        # Created-only scratch containers cannot satisfy --wait; retain the task's recreation argv.
+        self.assertIn("--wait", argv)
+        wait_timeout = argv.index("--wait-timeout")
+        del argv[wait_timeout:wait_timeout + 2]
+        argv.remove("--wait")
+        before = snapshot()
+        self.assertEqual(before[0][0]["State"]["Status"], "created")
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=45)
+        self.assertEqual(snapshot(), before, "dry-run mutated fixture resources")
+        self.assertNotEqual(docker("image", "inspect", missing, check=False).returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Recreate", result.stdout + result.stderr)
 
     def test_verify_requires_exactly_one_running_healthy_container(self):
         self.fake_docker()

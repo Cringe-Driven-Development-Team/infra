@@ -71,6 +71,8 @@
           - "{{ hooks_preview.path }}/compose.yml"
           - up
           - --detach
+          # Не наследуем anonymous volumes: Compose иначе inspect-ит отсутствующий новый image.
+          - --renew-anon-volumes
           - --pull
           - never
           - --wait
