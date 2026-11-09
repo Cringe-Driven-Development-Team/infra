@@ -125,8 +125,9 @@
     runtime_host_network_config: "{{ (runtime_host_network_state.stdout | from_json)[0] }}"
 
 # --- Образ kernel ------------------------------------------------------------------------------------
-- name: Pull the kernel image of the session language
-  ansible.builtin.command: docker pull {{ python_image if language == 'python' else r_image }}
+# Агент поднимает kernel Python до назначения сессии; R не поддерживается (backend#89)
+- name: Pull the Python kernel image
+  ansible.builtin.command: docker pull {{ python_image }}
   register: runtime_host_pull
   changed_when: "'Downloaded newer image' in runtime_host_pull.stdout"
   retries: 3
