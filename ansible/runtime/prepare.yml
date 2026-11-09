@@ -1,41 +1,39 @@
 ---
-# Настройка runtime-VPS одной сессии (backend#57). Запускает Go API на VPS2:
-#   ansible-playbook site.yml -i <операция>/inventory.json -e @<операция>/vars.json
-# inventory — группа runtime, root по приватному IP ключом provisioner; vars — session_id, language
-# (python|r), private_ip, token, server_cert_pem, server_key_pem, ca_cert_pem, python_image, r_image,
-# kernel_dns, blocked_public_ips, agent_wheel, agent_wheel_sha256, agent_requirements, agent_service.
+# Подготовка runtime-VPS без сессии (backend#89, infra#138). Запускает Go API на VPS2 для VPS пула
+# и для новой VPS сессии:
+#   ansible-playbook prepare.yml -i <операция>/inventory.json -e @<операция>/vars.json
+# inventory — группа runtime, root по приватному IP ключом provisioner; vars — private_ip,
+# server_cert_pem, server_key_pem, ca_cert_pem, python_image, kernel_dns, blocked_public_ips,
+# agent_wheel, agent_wheel_sha256, agent_requirements, agent_service. Данных сессии здесь нет:
+# агент стартует в режиме ожидания, сессию назначает Go API запросом POST /assign.
 # Сеть kernel — по контракту backend docs/runtime-agent-network.md (роль runtime_host).
-- name: Prepare the runtime VPS of a session
+- name: Prepare a runtime VPS without a session
   hosts: runtime
   become: true
   gather_facts: false
 
   pre_tasks:
-    - name: Check the assignment
+    - name: Check the preparation vars
       ansible.builtin.assert:
         that:
-          - session_id is match('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
-          - language in ['python', 'r']
           - private_ip is match('^[0-9]{1,3}([.][0-9]{1,3}){3}$')
           - kernel_dns is match('^[0-9]{1,3}([.][0-9]{1,3}){3}$')
           - blocked_public_ips is sequence and blocked_public_ips is not string
           - blocked_public_ips | reject('match', '^[0-9]{1,3}([.][0-9]{1,3}){3}$') | list | length == 0
           - python_image is match('^[^ ]+$')
-          - r_image is match('^[^ ]+$')
           - agent_wheel is match('^/.+[.]whl$')
           - agent_wheel_sha256 is match('^[0-9a-f]{64}$')
           - agent_requirements is match('^/')
           - agent_service is match('^/')
-        fail_msg: The runtime assignment from the backend is incomplete or malformed.
+        fail_msg: The runtime preparation vars from the backend are incomplete or malformed.
 
-    - name: Check the assignment secrets
+    - name: Check the TLS material
       ansible.builtin.assert:
         that:
-          - token is match('^[!-~]{32,}$')
           - "'-----BEGIN CERTIFICATE-----' in server_cert_pem"
           - "'PRIVATE KEY-----' in server_key_pem"
           - "'-----BEGIN CERTIFICATE-----' in ca_cert_pem"
-        fail_msg: The runtime token or TLS material from the backend is malformed.
+        fail_msg: The TLS material from the backend is malformed.
       no_log: true
 
     - name: Wait for SSH and the target Python
@@ -48,12 +46,6 @@
       register: runtime_cloud_init
       changed_when: false
       failed_when: runtime_cloud_init.rc not in [0, 2]
-
-    # Повтор: работающий агент той же сессии не трогается, чужое назначение — ошибка
-    - name: Check an earlier assignment of this VPS
-      ansible.builtin.include_role:
-        name: runtime_agent
-        tasks_from: assignment.yml
 
   roles:
     - runtime_host

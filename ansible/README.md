@@ -770,7 +770,8 @@ missing-health/one-healthy; real-image тест проверяет env, offline 
 ## Плейбук runtime-VPS (infra#89)
 
 `runtime/` — отдельный проект Ansible (свой `ansible.cfg`, роли `runtime_host` и `runtime_agent`):
-настройка VPS пользовательской сессии. Запускает его Go API на VPS2 (backend#57) с `inventory.json` и
+`prepare.yml` готовит runtime-VPS без сессии и запускает агента в режиме ожидания (infra#138); сессию
+назначает Go API запросом `POST /assign` к агенту, без SSH и Ansible (пул VPS, backend#89). Запускает его Go API на VPS2 (backend#57) с `inventory.json` и
 `vars.json` операции; роль `app` копирует каталог на VPS2 и монтирует в контейнер API в
 `/app/deploy/runtime` (при `runtime_enabled`). Сеть kernel — по контракту backend
 `docs/runtime-agent-network.md`: таблица nftables `inet cellestial` в unit `cellestial-firewall.service`.
