@@ -929,7 +929,7 @@ apt-пакеты и Docker CE фиксированных версий; аген�
 образа backend `BACKEND_IMAGE` с venv `/opt/cellestial-agent/venv`; слои образов kernel Python и R; не
 зависящие от сессии файлы ролей runtime; маркер `/etc/cellestial/runtime-image`. Состав — только в
 `runtime-image/versions.env`; пакеты Ubuntu ставятся из `snapshot.ubuntu.com` на `UBUNTU_SNAPSHOT`, поэтому
-повторная сборка даёт те же версии. Плейбук сессии проверяет маркер (`runtime_host_image_version`) и ставит
+повторная сборка даёт те же версии. Плейбук `prepare.yml` проверяет маркер (`runtime_host_image_version`) и ставит
 wheel и requirements агента, только если backend прислал другие.
 
 **Пересборка** — при смене состава (новые версии пакетов, агент в новом релизе backend, образы kernel):
