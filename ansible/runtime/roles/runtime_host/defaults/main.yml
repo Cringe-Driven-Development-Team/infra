@@ -1,6 +1,6 @@
 ---
 # Версия состава образа runtime-VPS: IMAGE_VERSION в runtime-image/versions.env (тест test_runtime_image)
-runtime_host_image_version: "2026.11.10-1"
+runtime_host_image_version: "2026.11.08-2"
 # Docker-сеть kernel: имя передаётся агенту (KERNEL_NETWORK), имя моста — для правил nftables
 runtime_host_network: cellestial-kernel
 runtime_host_bridge: cellestial0

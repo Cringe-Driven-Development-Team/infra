@@ -986,8 +986,8 @@ wheel и requirements агента, только если backend прислал
 **Пересборка** — при смене состава (новые версии пакетов, агент в новом релизе backend, образы kernel):
 
 1. Поправить `runtime-image/versions.env`, поднять `IMAGE_VERSION`. Агент — `BACKEND_IMAGE` на digest
-   выкаченного релиза backend (`BACKEND_IMAGE_REF` в `.env` VPS2), образ kernel — его
-   `RUNTIME_PYTHON_IMAGE`. В том же PR —
+   выкаченного релиза backend (`BACKEND_IMAGE_REF` в `.env` VPS2), образы kernel — его
+   `RUNTIME_PYTHON_IMAGE`/`RUNTIME_R_IMAGE`. В том же PR —
    `runtime_host_image_version` в `ansible/runtime/roles/runtime_host/defaults/main.yml` (тест
    `test_runtime_image`).
 2. Собрать образ учёткой с правами на проект runtime (~10 мин):
