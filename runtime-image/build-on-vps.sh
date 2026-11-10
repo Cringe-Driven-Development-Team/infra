@@ -44,12 +44,13 @@ apt-get install -y --no-install-recommends $APT_PACKAGES $DOCKER_PACKAGES
 apt-mark hold $(printf '%s\n' $APT_PACKAGES $DOCKER_PACKAGES | cut -d= -f1)
 log "packages installed"
 
-# Сеть kernel, слои kernel Python; Docker не стартует при загрузке: его запускает плейбук после firewall
+# Сеть kernel, слои kernel; Docker не стартует при загрузке: его запускает плейбук после firewall
 docker network create --driver bridge --ipv4 --ipv6=false --subnet 172.30.0.0/24 \
   --opt com.docker.network.bridge.name=cellestial0 --opt com.docker.network.bridge.enable_icc=false \
   cellestial-kernel
 docker pull "$PYTHON_KERNEL_IMAGE"
-log "kernel image pulled"
+docker pull "$R_KERNEL_IMAGE"
+log "kernel images pulled"
 
 # Агент из образа backend: wheel (по sha256), requirements, unit — те же файлы, что получит сессия
 docker pull "$BACKEND_IMAGE"
