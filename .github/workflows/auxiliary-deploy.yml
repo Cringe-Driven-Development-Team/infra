@@ -124,5 +124,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
           TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_RELEASES_TOPIC_ID || vars.TELEGRAM_TOPIC_ID }}
+          DEPLOY_SERVICE: ${{ inputs.service }}
+          DEPLOY_SHA: ${{ inputs.source_sha }}
         # сбой отправки не меняет результат выкатки
-        run: npx --yes bun@1.4.4 scripts/deploy-alert.ts Auxiliary "${{ job.status }}" || echo '::warning::Алерт в Telegram не отправлен; результат выкатки — в шагах выше.'
+        run: npx --yes bun@1.4.4 scripts/deploy-alert.ts "Auxiliary${DEPLOY_SERVICE:+ $DEPLOY_SERVICE}" "${{ job.status }}" || echo '::warning::Алерт в Telegram не отправлен; результат выкатки — в шагах выше.'

@@ -6,7 +6,8 @@ export async function sendDeployAlert(label: string, status: string, env: Env = 
     if (!token || !chat) throw new Error('TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не заданы');
     const text = [
         `${label} production: ${status}`,
-        `Commit: ${env.GITHUB_SHA?.slice(0, 7)}`,
+        // DEPLOY_SHA — SHA выкатываемого образа, если он не совпадает с коммитом репозитория (auxiliary)
+        `Commit: ${(env.DEPLOY_SHA || env.GITHUB_SHA)?.slice(0, 7)}`,
         `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`,
     ].join('\n');
     const body = new URLSearchParams({ chat_id: chat, text, ...(topic ? { message_thread_id: topic } : {}) });

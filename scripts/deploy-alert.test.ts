@@ -36,6 +36,12 @@ test('omits topic when not set', async () => {
     expect(calls[0].body.has('message_thread_id')).toBe(false);
 });
 
+test('prefers the deployed image SHA over the repository commit', async () => {
+    const { calls, send } = stub({ ok: true });
+    await sendDeployAlert('Auxiliary githubbot', 'success', { ...env, DEPLOY_SHA: '9876543210' }, send);
+    expect(calls[0].body.get('text')).toStartWith('Auxiliary githubbot production: success\nCommit: 9876543\n');
+});
+
 test('fails without credentials or on Telegram error', async () => {
     const { send } = stub({ ok: false, description: 'Bad Request' });
     await expect(sendDeployAlert('Infra', 'success', { ...env, TELEGRAM_CHAT_ID: '' }, send)).rejects.toThrow('не заданы');
