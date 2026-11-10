@@ -736,3 +736,54 @@ missing-health/one-healthy; real-image тест проверяет env, offline 
 `docs/runtime-agent-network.md`: таблица nftables `inet cellestial` в unit `cellestial-firewall.service`.
 CI проверяет `ansible-lint runtime` и `--syntax-check` с заглушкой `tests/runtime/vars.json`. Настройка,
 секреты и ротация — RUNBOOK, «Runtime-VPS сессий».
+
+## Карточки релизов backend (.github#59)
+
+Для существующего Telegram-топика **Backend / Releases** используйте
+`vault_hooks_env.TELEGRAM_BACKEND_RELEASES_TOPIC_ID: "3377"`. Новый топик создавать
+не нужно. Раньше backend Actions читал ID из переменных своего репозитория;
+webhook-сервис получает собственную конфигурацию из Vault. Редактируйте
+`inventory/group_vars/all/vault.yml` через `ansible-vault edit`, сохраняя остальные
+значения `vault_hooks_env`, включая frontend-топик `TELEGRAM_RELEASES_TOPIC_ID`.
+
+Если backend-топик задан, preflight роли `hooks` проверяет положительный safe
+integer и непустой `GITHUB_API_TOKEN`. Токен сервиса должен читать backend Actions
+runs/jobs/attempts, Contents/compare, Deployments/statuses, Issues, Pull requests
+и Metadata; доступ к frontend сохраняется. Значения секретов не выводятся в логи.
+
+Примените конфигурацию штатным `auxiliary.yml` после ревью infra-изменения.
+Образ webhook-сервиса уже должен содержать backend sender и CLI из .github#59.
+Выбранные образы сервисов берутся из `/opt/hooks/releases.json`; если этот код уже
+выложен, менять digest или собирать новый образ ради добавления топика не требуется. Проверка PR работает
+в режиме `--check --diff`; merge запускает общий инфраструктурный workflow,
+поэтому перед ним изучите весь preview. После применения убедитесь, что новый
+env присутствует в контейнере webhook-сервиса.
+
+Включение backend-карточек — отдельное действие оператора. После готовности
+backend#42 и удаления прямой отправки Telegram из backend CD выполните на auxiliary:
+
+```bash
+sudo docker compose -f /opt/hooks/compose.yml exec -T hooks \
+  bun run src/cli.ts backend-release-check
+sudo docker compose -f /opt/hooks/compose.yml exec -T hooks \
+  bun run src/cli.ts backend-release-activate "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+`backend-release-check` читает GitHub и проверяет конфигурацию без отправки Telegram.
+Activation задаёт неизменяемую UTC-границу для backend; frontend activation, SQLite
+и outbox не сбрасываются. События до этой границы автоматически не воспроизводятся.
+Если уже выполненная выкатка предшествовала включению, найдите сохранённую delivery
+её терминального `deployment_status` по repository, Deployment ID и run/attempt.
+Адресно восстановите **только эту delivery** командой
+`bun run src/cli.ts release-recover <delivery-id>` в том же контейнере. Это включает
+отправку настоящего результата в Telegram, сохраняя проверку источника и дедупликацию;
+повторный backend deploy не требуется.
+
+После включения сверьте одну итоговую карточку, версии, Health Check, Summary и
+кнопки в Backend / Releases, а также outbox и Telegram message ID. При неопределённой
+доставке сначала проверьте чат, затем решайте вопрос о повторе. Production rollback
+и тестовые сообщения для этой настройки не нужны. Полный контракт и диагностика —
+[runbook webhook-сервиса](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/services/webhook-alerts/README.md).
+Сопутствующий infra PR указывает
+`Part of https://github.com/Cringe-Driven-Development-Team/.github/issues/59`;
+готовность кода не закрывает общую интеграционную приёмку.
