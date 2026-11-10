@@ -98,6 +98,30 @@ class HooksChecks(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("private-test-token", result.stdout + result.stderr)
 
+    def test_backend_release_topic_requires_valid_id_and_token(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        env = self.variables["vault_hooks_env"] | {
+            "TELEGRAM_RELEASES_TOPIC_ID": "88",
+            "TELEGRAM_BACKEND_RELEASES_TOPIC_ID": "3377",
+            "GITHUB_API_TOKEN": "private-test-token"}
+        result = self.play(tasks, self.variables | {"vault_hooks_env": env})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # Without the backend-specific validation these unsafe IDs pass the
+        # generic one-line env check. The token cases omit the frontend topic,
+        # so frontend validation cannot mask a missing backend check.
+        for change in [{"TELEGRAM_BACKEND_RELEASES_TOPIC_ID": "0"},
+                       {"TELEGRAM_BACKEND_RELEASES_TOPIC_ID": "9007199254740992"},
+                       {"TELEGRAM_BACKEND_RELEASES_TOPIC_ID": "invalid"},
+                       {"GITHUB_API_TOKEN": ""}, {"GITHUB_API_TOKEN": None}]:
+            with self.subTest(change=tuple(change)):
+                candidate = env | change
+                candidate.pop("TELEGRAM_RELEASES_TOPIC_ID")
+                if candidate.get("GITHUB_API_TOKEN") is None:
+                    candidate.pop("GITHUB_API_TOKEN", None)
+                result = self.play(tasks, self.variables | {"vault_hooks_env": candidate})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("private-test-token", result.stdout + result.stderr)
+
     def test_preflight_accepts_no_registry_credentials_and_rejects_invalid_webhook_configuration(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
         result = self.play(tasks)
@@ -249,7 +273,11 @@ class HooksChecks(unittest.TestCase):
     def test_compose_uses_image_entrypoint_and_preserves_webhook_secrets(self):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
-        variables = self.variables | {"hooks_env": {"TELEGRAM_PROXY_URL": "http://telegram-proxy:2080", "GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash"}}
+        variables = self.variables | {"hooks_env": {
+            "TELEGRAM_PROXY_URL": "http://telegram-proxy:2080",
+            "GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash",
+            "TELEGRAM_RELEASES_TOPIC_ID": "88",
+            "TELEGRAM_BACKEND_RELEASES_TOPIC_ID": "3377"}}
         (self.root / "compose.yml").write_text(templates.from_string(
             (ANSIBLE / "roles/hooks/templates/compose.yml.j2").read_text()).render(variables))
         (self.root / "githubbot.env").write_text("GITHUB_TOKEN=fake-github-token\n")
@@ -268,6 +296,8 @@ class HooksChecks(unittest.TestCase):
         self.assertIn("telegram_proxy", service["networks"])
         self.assertNotIn("telegram_proxy", services["caddy"]["networks"])
         self.assertEqual(service["environment"]["TELEGRAM_PROXY_URL"], "http://telegram-proxy:2080")
+        self.assertEqual(service["environment"]["TELEGRAM_RELEASES_TOPIC_ID"], "88")
+        self.assertEqual(service["environment"]["TELEGRAM_BACKEND_RELEASES_TOPIC_ID"], "3377")
         self.assertTrue(proxy["volumes"][0]["read_only"])
 
         self.assertRegex(service["image"], r"^ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:[0-9a-f]{64}$")

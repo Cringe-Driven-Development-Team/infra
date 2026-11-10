@@ -32,6 +32,17 @@
   when: "'TELEGRAM_RELEASES_TOPIC_ID' in hooks_env"
   no_log: true
 
+- name: Проверить настройки уведомлений о выпусках backend
+  ansible.builtin.assert:
+    that:
+      - hooks_env.TELEGRAM_BACKEND_RELEASES_TOPIC_ID | string is match('^[1-9][0-9]*$')
+      - hooks_env.TELEGRAM_BACKEND_RELEASES_TOPIC_ID | int <= 9007199254740991
+      - hooks_env.GITHUB_API_TOKEN | default('') | string | trim | length > 0
+    fail_msg: Укажите положительный TELEGRAM_BACKEND_RELEASES_TOPIC_ID и непустой GITHUB_API_TOKEN в hooks_env.
+    quiet: true
+  when: "'TELEGRAM_BACKEND_RELEASES_TOPIC_ID' in hooks_env"
+  no_log: true
+
 - name: Проверить Telegram и Apidog переменные при включённой отправке
   ansible.builtin.assert:
     that:
