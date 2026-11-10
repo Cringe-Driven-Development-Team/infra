@@ -125,4 +125,4 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
           TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_RELEASES_TOPIC_ID || vars.TELEGRAM_TOPIC_ID }}
         # сбой отправки не меняет результат выкатки
-        run: bash scripts/deploy-alert.sh Auxiliary "${{ job.status }}" || echo '::warning::Алерт в Telegram не отправлен; результат выкатки — в шагах выше.'
+        run: npx --yes bun@1.4.4 scripts/deploy-alert.ts Auxiliary "${{ job.status }}" || echo '::warning::Алерт в Telegram не отправлен; результат выкатки — в шагах выше.'
