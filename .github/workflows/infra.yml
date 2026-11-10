@@ -260,3 +260,11 @@ jobs:
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" -e "jump_known_hosts=$RUNNER_TEMP/infra/known_hosts" \
             --ssh-common-args="$INFRA_SSH_ARGS"
       - *cleanup
+      - name: Алерт в Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_RELEASES_TOPIC_ID || vars.TELEGRAM_TOPIC_ID }}
+        # сбой отправки не меняет результат выкатки
+        run: bash scripts/deploy-alert.sh Infra "${{ job.status }}" || echo '::warning::Алерт в Telegram не отправлен; результат выкатки — в шагах выше.'
