@@ -7,6 +7,27 @@ S3-бакеты через @pulumi/aws (фронт и статика под CDN,
 
 Двухсерверная схема (gateway + backend) заморожена в git в варианте `bff` документации; стек — одна VPS.
 
+## Структура программы
+
+Один project `infra` и один стек `prod`. `index.ts` только собирает модули и экспортирует outputs;
+каждый модуль — функция с типизированными входом и результатом, ресурсы создаются один раз.
+
+| Модуль | Ответственность |
+| --- | --- |
+| `config.ts` | Чтение и валидация конфига, переключатели и их совместимость, выбор образа и флейвора |
+| `foundation.ts` | Проект, сервисный пользователь стека и его S3-ключ, провайдеры OpenStack/S3, инициализация S3, сеть/подсеть/роутер, keypair |
+| `gateway.ts` | Порт, диск, VPS gateway и её floating IP |
+| `backend.ts` | VPS2 (`infra:backend`): security group, порт, диск, сервер |
+| `storage.ts` | Бакеты продукта, их тип и политики, пользователь Go API и его ключ, CDN-ресурсы |
+| `auxiliary.ts` | Вспомогательная VPS (`infra:auxiliary`), её floating IP, бакет restic со своим пользователем и провайдером пула |
+| `runtime.ts` | Runtime-VPS (`infra:runtime`): пользователь provisioner, security group, SSH-keypair, CA/клиентский сертификат, ключ шифрования |
+| `domains.ts` | DNS-провайдер, зоны и записи app/hooks/docs/CDN/аватарок, подтверждение GitHub Pages, `CdnDomain`/`BucketDomain` |
+| `selectel-storage.ts` | Dynamic-ресурсы API хранилища и CDN Selectel |
+
+Порядок: foundation → gateway, backend, storage, auxiliary → runtime и domains. CDN-ресурс создаёт
+storage, DNS-запись и привязку его домена — domains. Тесты на моках: `config.test.ts` (комбинации
+переключателей), `index.test.ts` (сборка модулей, outputs, DNS, runtime), `selectel-storage.test.ts`.
+
 ## Установка
 
 Нужны [Pulumi CLI](https://www.pulumi.com/docs/install/) и [bun](https://bun.sh).

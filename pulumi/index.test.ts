@@ -25,7 +25,7 @@ mock.module("./selectel-storage", () => {
   };
 });
 
-// Программа стека на моках: проверяется раздел runtime-VPS (infra#89). Сеть не трогается —
+// Программа стека на моках: сборка модулей, outputs, DNS и раздел runtime-VPS (infra#89). Сеть не трогается —
 // режим preview, побочные эффекты под isDryRun пропускаются.
 const created = new Map<string, { type: string; inputs: Record<string, any> }>();
 
@@ -55,6 +55,11 @@ pulumi.runtime.setAllConfig({
   "infra:runtime": "true",
   "infra:runtimeFlavorName": "SL1.1-2048",
   "infra:runtimeVolumeType": "basicssd.ru-9a",
+  "infra:cdn": "true",
+  "infra:cdnDomain": "cdn.example.ru",
+  "infra:domain": "example.ru",
+  "infra:hooksDomain": "hooks.example.ru",
+  "infra:dnsZone": "example.ru.",
 });
 
 const fixedIps: Record<string, string> = { gateway: "192.168.199.225", backend: "192.168.199.10", auxiliary: "192.168.199.30" };
@@ -108,6 +113,39 @@ const find = (type: string, name: string) => created.get(`${type}::${name}`)!;
 beforeAll(async () => {
   stack = await import("./index");
   await Promise.all([value(stack.runtimeSecurityGroupId), value(stack.runtimeBlockedPublicIps), value(stack.runtimeKeypairName)]);
+});
+
+describe("сборка модулей", () => {
+  test("outputs стека", async () => {
+    expect(Object.keys(stack).sort()).toEqual([
+      "auxiliaryBackupAccessKey", "auxiliaryBackupBucket", "auxiliaryBackupPoolName", "auxiliaryBackupSecretKey",
+      "auxiliaryPublicIp", "avatarsBucket", "avatarsCustomDomain", "avatarsPublicDomain", "backendPrivateIp",
+      "cdnCustomDomain", "cdnDefaultDomain", "cdnResourceId", "domain", "gatewayName", "gatewayPrivateIp",
+      "hooksDomain", "notebooksAccessKey", "notebooksBucket", "notebooksSecretKey", "projectId", "publicIp",
+      "runtimeAccountId", "runtimeAvailabilityZone", "runtimeBlockedPublicIps", "runtimeCaCert", "runtimeCaKey",
+      "runtimeClientCert", "runtimeClientKey", "runtimeFlavorId", "runtimeImageId", "runtimeKeypairName",
+      "runtimeNetworkId", "runtimeOsPassword", "runtimeOsUsername", "runtimeProjectId", "runtimeRegion",
+      "runtimeSecretsKey", "runtimeSecurityGroupId", "runtimeSshPrivateKey", "runtimeSubnetId", "runtimeVolumeType",
+      "s3AccessKey", "s3Bucket", "s3Endpoint", "s3PublicDomain", "s3SecretKey", "serviceUserName",
+      "serviceUserPassword", "sshUser", "staticBucket", "staticCdnDefaultDomain", "staticCdnResourceId",
+      "staticCustomDomain", "staticPublicDomain",
+    ]);
+    for (const name of ["serviceUserPassword", "s3SecretKey", "notebooksSecretKey", "auxiliaryBackupSecretKey"] as const) {
+      expect(await stack[name]!.isSecret).toBe(true);
+    }
+    expect(await value(stack.gatewayPrivateIp)).toBe("192.168.199.225");
+    expect(await value(stack.backendPrivateIp)).toBe("192.168.199.10");
+    expect(await value(stack.auxiliaryPublicIp)).toBe("203.0.113.2");
+    expect(await value(stack.cdnDefaultDomain)).toBe("cdn.selcdn.net");
+  });
+
+  test("DNS: адреса VPS и CDN-ресурс из своих модулей", () => {
+    const rrset = (name: string) => find("selectel:index/domainsRrsetV2:DomainsRrsetV2", name).inputs;
+    expect(rrset("app")).toMatchObject({ name: "example.ru.", type: "A", records: [{ content: "203.0.113.1" }] });
+    expect(rrset("hooks")).toMatchObject({ name: "hooks.example.ru.", type: "A", records: [{ content: "203.0.113.2" }] });
+    expect(rrset("cdn")).toMatchObject({ name: "cdn.example.ru.", type: "CNAME", records: [{ content: "cdn.selcdn.net." }] });
+    expect(find("test:storage:CdnDomain", "cdn").inputs).toMatchObject({ resourceId: "cdn-id", domain: "cdn.example.ru" });
+  });
 });
 
 describe("runtime-VPS", () => {
