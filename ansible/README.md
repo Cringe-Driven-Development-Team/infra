@@ -451,19 +451,10 @@ Backend скачивается из публичного GHCR package `ghcr.io/c
 Перевод package в Public и проверка реального анонимного pull выполняются вручную в рамках
 backend#42 до применения infra#69. Новый playbook не использует GHCR credentials на runner или
 сохранённую авторизацию Docker на VPS; публикация образов по-прежнему требует права записи.
-Денис создаёт
-отдельную пару CI-ключей без passphrase, добавляет **только** `ci.pub` в
-`files/authorized_keys/` через PR и запускает `site.yml` своим уже разрешённым
-ключом. Приватный ключ и проверенный host key передаются через защищённое
-хранилище для environment secrets `DEPLOY_SSH_KEY` и `SSH_KNOWN_HOSTS` в бэке.
-Пароль существующего Vault — в `ANSIBLE_VAULT_PASSWORD`.
-
-Для `team/backend` используется отдельная пара CI: её public key —
-`files/authorized_keys/ci-team-backend.pub`, private key — только в новом
-production secret `DEPLOY_SSH_KEY`. После ревью PR с public key оператор
-добавляет его в `authorized_keys` существующим разрешённым ключом. Старый
-`ci.pub` сохраняется для отката. Host key нового CI проверен по fingerprint
-из аутентифицированной консоли провайдера; личный ключ оператора в CI не передаётся.
+CD бэка (`team/backend`) входит своим CI-ключом: public key —
+`files/authorized_keys/ci-team-backend.pub` (на хосты его кладёт роль `users` через `site.yml`),
+private key — только в secret `DEPLOY_SSH_KEY` environment `production` бэка, там же
+`SSH_KNOWN_HOSTS` и пароль Vault в `ANSIBLE_VAULT_PASSWORD`. Личный ключ оператора в CI не передаётся.
 
 Для `team/frontend` (CD и Rollback BFF, `deploy-bff.yml`) — своя пара CI: public key —
 `files/authorized_keys/gateway/ci-team-frontend.pub` (только на gateway), private key — только в secret `DEPLOY_SSH_KEY`
@@ -589,37 +580,6 @@ ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 подготовить оба PR → вручную открыть package и проверить pull → применить infra#69 →
 применить backend#42 → проверить общую выкатку и Health Check/Summary. Локальная проверка
 контракта не требует пробного отката production.
-
-### Откат из проверенного архива без registry
-
-Если текущий токен не читает старый private package, перед переключением сохранить
-работающий image через `docker image save`. Это архив образа, не контейнера:
-production environment и данные volumes в него не входят. Сверить его blob hashes
-и зафиксировать SHA256 архива, затем проверить `docker image load` на отдельном
-Docker. Архив и прежний image на VPS сохраняются вне retention новой организации.
-
-Перед откатом выключить `PRODUCTION_ENABLED` в team/backend и дождаться текущей
-выкатки. Передать на VPS проверенный архив и
-`files/backend-rollback.override.yml`; сверить SHA256 с журналом окна. Если старый
-образ уже присутствует, повторный load не требуется. Следующие команды выполняются
-на VPS; путь к архиву и полный старый SHA-тег взять из журнала:
-
-```bash
-sudo docker image load -i /path/to/verified-old-image.tar
-sudo env ROLLBACK_BACKEND_IMAGE='ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development:sha-OLD' \
-  docker compose --project-directory /opt/cellestial --env-file /opt/cellestial/.env \
-  -f /opt/cellestial/compose.yml -f /tmp/backend-rollback.override.yml \
-  up -d --no-deps --pull never --wait --wait-timeout 120 api
-curl --silent --output /dev/null --write-out '%{http_code}\n' \
-  https://cellestial.ru/api/v1/users/me
-```
-
-Ожидаются healthy у API и HTTP401. Overlay меняет только image API и запрещает pull;
-секреты, Caddy, Postgres, сети и volumes берутся из существующего Compose. Не
-запускать `down -v` или миграции Down. Overlay используется только в этом вызове;
-перед возвращением автоматических выкаток согласовать image/tag в infra и снова
-включить production. Повторное скачивание старого package из GHCR по-прежнему
-требует отдельного read credential его организации.
 
 ## Webhook alerts на auxiliary (infra#76)
 
@@ -772,7 +732,7 @@ missing-health/one-healthy; real-image тест проверяет env, offline 
 `prepare.yml` готовит runtime-VPS без сессии и запускает агента в режиме ожидания (infra#138); сессию
 назначает Go API запросом `POST /assign` к агенту, без SSH и Ansible (пул VPS, backend#89). Запускает его Go API на VPS2 (backend#57) с `inventory.json` и
 `vars.json` операции; роль `app` копирует каталог на VPS2 и монтирует в контейнер API в
-`/app/deploy/runtime` (при `runtime_enabled`). Сеть kernel — по контракту backend
+`/app/deploy/runtime`. Сеть kernel — по контракту backend
 `docs/runtime-agent-network.md`: таблица nftables `inet cellestial` в unit `cellestial-firewall.service`.
-CI проверяет `ansible-lint runtime` и `--syntax-check` с заглушкой `tests/runtime/vars.json`. Включение,
+CI проверяет `ansible-lint runtime` и `--syntax-check` с заглушкой `tests/runtime/vars.json`. Настройка,
 секреты и ротация — RUNBOOK, «Runtime-VPS сессий».

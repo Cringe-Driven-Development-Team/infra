@@ -125,6 +125,7 @@
       - "'http://' not in app_cors_allowed_origins"
     fail_msg: Set app_cors_allowed_origins in inventory/group_vars/all/vars.yml to HTTPS origins only.
 
+# Runtime-настройки нужны только Go API (deploy-backend.yml); BFF-деплой их не требует
 - name: Check the runtime VPS configuration
   ansible.builtin.assert:
     that:
@@ -150,7 +151,7 @@
     fail_msg: >-
       Set the runtime_* values in inventory/group_vars/all/vars.yml from the Pulumi runtime* outputs
       (RUNBOOK.md, "Runtime-VPS"); runtime_extra_env keys must be RUNTIME_*.
-  when: runtime_enabled | bool
+  when: app_deploy_service == 'api'
 
 - name: Check the runtime VPS secrets
   ansible.builtin.assert:
@@ -166,5 +167,5 @@
     fail_msg: >-
       vault_runtime_* must hold the Pulumi runtime* outputs (pulumi stack output <name> --show-secrets):
       a single-line password, base64 of 32 bytes for the secrets key, OpenSSH and PKCS#8 PEM keys.
-  when: runtime_enabled | bool
+  when: app_deploy_service == 'api'
   no_log: true

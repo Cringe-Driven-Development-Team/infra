@@ -21,13 +21,6 @@
       {% endif %}
   notify: Restart sshd
 
-# Старое имя drop-in (99-) от предыдущих прогонов: sshd берёт первое значение, 00- его перекрывает,
-# но лишний неуправляемый файл оставлять нельзя.
-- name: Удалить старый drop-in 99-hardening.conf
-  ansible.builtin.file:
-    path: /etc/ssh/sshd_config.d/99-hardening.conf
-    state: absent
-
 - name: SSH-сервис включён
   ansible.builtin.service:
     name: ssh

@@ -17,7 +17,7 @@ import unittest
 
 from ansible.parsing.vault import VaultLib, VaultSecret
 from ansible.plugins.filter.core import to_bool, to_json
-from jinja2 import Environment, StrictUndefined
+from jinja2 import Environment, StrictUndefined, UndefinedError
 import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1]
@@ -81,17 +81,11 @@ class DeploymentChecks(unittest.TestCase):
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
             'app_backend_address: "127.0.0.1"\n'
-            'runtime_enabled: false\n'
+            + yaml.safe_dump(RUNTIME_OPEN)
+            + "".join(f'{k}: "{{{{ vault_{k} }}}}"\n' for k in RUNTIME_SECRETS)
         )
+        self.write_runtime_vault(RUNTIME_VAULT)
         password = b"test-vault-password-only"
-        vault = VaultLib([("default", VaultSecret(password))])
-        (variables / "vault.yml").write_bytes(
-            vault.encrypt(
-                b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
-                b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n"
-                + BFF_VAULT + TOTP_VAULT
-            )
-        )
         password_file = self.root / "vault-pass"
         password_file.write_bytes(password)
         password_file.chmod(0o600)
@@ -507,29 +501,13 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertNotIn('PORT', bff['environment'])
                 self.assertFalse(bff.get('ports'))
 
-    def test_emergency_overlay_changes_only_selected_image(self):
-        config, _ = self.render_host(['api', 'postgres', 'redis'])
-        image = BACKEND_REF.replace('d' * 64, 'e' * 64)
-        compose = shlex.split(os.environ.get('COMPOSE_CLI', 'docker compose'))
-        command = [*compose, '-f', str(self.root / 'compose.yml'), '-f',
-                   str(ANSIBLE / 'files/backend-rollback.override.yml'), 'config', '--format', 'json']
-        clean = {k: v for k, v in os.environ.items() if not k.isupper() or k in ('PATH', 'HOME')}
-        recovery = subprocess.run(command, capture_output=True, text=True, check=True,
-                                  timeout=30, env=clean | {'ROLLBACK_BACKEND_IMAGE': image})
-        config['services']['api'].update(image=image, pull_policy='never')
-        self.assertEqual(json.loads(recovery.stdout), config)
-        missing = subprocess.run(command, capture_output=True, text=True, timeout=30, env=clean)
-        self.assertNotEqual(missing.returncode, 0)
-        self.assertIn('ROLLBACK_BACKEND_IMAGE', missing.stderr)
-
     def render_host(self, services, runtime=None, secrets=None):
         """compose.yml и .env одного хоста по реальным шаблонам роли app; Compose проверяет результат."""
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
         variables.update(app_compose_dir="/opt/cellestial",
                          app_runtime_secrets_dir="/opt/cellestial/runtime-secrets",
                          app_runtime_playbook_dir="/opt/cellestial/runtime-playbook")
-        variables.update(runtime_enabled=False)
-        variables.update(runtime or {})
+        variables.update(self.runtime_values() if runtime is None else runtime)
         variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
         address = "192.168.199.10"
         variables.update(
@@ -598,6 +576,11 @@ class DeploymentChecks(unittest.TestCase):
         for secret in ["pg-secret", "jwt-secret", "csrf-secret", "redis-secret", "s3-secret"]:
             self.assertNotIn(secret, env)
         self.assertNotIn("BACKEND_IMAGE_REF", env)
+        # runtime-настроек и ключей на gateway нет
+        self.assertNotIn("RUNTIME_", env)
+        self.assertNotIn("RUNTIME_", json.dumps(config))
+        for secret in [*RUNTIME_PEM_BODIES, RUNTIME_SECRETS["runtime_secrets_key"]]:
+            self.assertNotIn(secret, env)
 
     def test_backend_publishes_the_api_only_on_the_private_address(self):
         config, env = self.render_host(["api", "postgres", "redis"])
@@ -762,21 +745,21 @@ class DeploymentChecks(unittest.TestCase):
         """Значения runtime_* в формате выходов Pulumi; секреты — заглушки, не настоящие ключи."""
         return dict(RUNTIME_OPEN, **RUNTIME_SECRETS)
 
-    def test_runtime_disabled_passes_only_the_flag(self):
-        config, env = self.render_host(["api", "postgres", "redis"])
-        api = config["services"]["api"]
-        self.assertEqual(api["environment"]["RUNTIME_ENABLED"], "false")
-        self.assertEqual([k for k in api["environment"] if k.startswith("RUNTIME_")], ["RUNTIME_ENABLED"])
-        self.assertFalse(api.get("volumes"))
-        self.assertIn("RUNTIME_ENABLED=false\n", env)
+    def test_api_render_requires_the_runtime_configuration(self):
+        # Выключателя runtime нет: без обязательного runtime_* шаблон Go API не рендерится
+        for name in ["runtime_security_group_id", "runtime_os_password"]:
+            with self.subTest(name=name):
+                values = self.runtime_values()
+                values.pop(name)
+                with self.assertRaises(UndefinedError):
+                    self.render_host(["api", "postgres", "redis"], runtime=values)
 
-    def test_runtime_enabled_passes_env_and_mounts_secrets_read_only(self):
-        values = dict(self.runtime_values(), runtime_enabled=True,
-                      runtime_extra_env={"RUNTIME_MAX_ACTIVE": 3})
+    def test_runtime_passes_env_and_mounts_secrets_read_only(self):
+        values = dict(self.runtime_values(), runtime_extra_env={"RUNTIME_MAX_ACTIVE": 3})
         config, env = self.render_host(["api", "postgres", "redis"], runtime=values)
         api = config["services"]["api"]["environment"]
         expected = {
-            "RUNTIME_ENABLED": "true", "RUNTIME_PROVIDER": "openstack",
+            "RUNTIME_PROVIDER": "openstack",
             "RUNTIME_OS_AUTH_URL": "https://cloud.api.selcloud.ru/identity/v3",
             "RUNTIME_OS_USERNAME": "cellestialRuntimeProvisioner",
             "RUNTIME_OS_PASSWORD": RUNTIME_SECRETS["runtime_os_password"],
@@ -806,15 +789,12 @@ class DeploymentChecks(unittest.TestCase):
             ("/var/lib/cellestial/runtime", "/var/lib/cellestial/runtime", False),
         })
         # PEM-ключи — только файлами, не в .env
-        for secret in ["ssh-key-body", "ca-key-body", "client-key-body"]:
+        for secret in RUNTIME_PEM_BODIES:
             self.assertNotIn(secret, env)
+        self.assertNotIn("RUNTIME_ENABLED", env)
 
     def test_runtime_validation(self):
-        open_values = dict(RUNTIME_OPEN, runtime_enabled=True,
-                           app_backend_address="192.168.199.10")
-        vault = "".join(f"vault_{k}: {json.dumps(v)}\n"
-                        for k, v in RUNTIME_SECRETS.items())
-        self.write_runtime_vault(vault)
+        open_values = {"app_backend_address": "192.168.199.10"}
         data = yaml.safe_load(self.inventory.read_text())
         data["all"]["children"]["backend"] = {"hosts": {"test-backend": {
             "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
@@ -826,12 +806,29 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("runtime_*", result.stdout + result.stderr)
         # битый ключ шифрования не попадает в вывод
-        broken = vault.replace(RUNTIME_SECRETS["runtime_secrets_key"], "short-leaked-key")
+        broken = RUNTIME_VAULT.replace(RUNTIME_SECRETS["runtime_secrets_key"], "short-leaked-key")
         self.write_runtime_vault(broken)
         result = self.validate(BACKEND_REF, extra=open_values)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("short-leaked-key", result.stdout + result.stderr)
         self.assertIn("vault_runtime_", result.stdout + result.stderr)
+        # пропущенный секрет останавливает backend-деплой на проверке, до изменения сервера
+        self.write_runtime_vault(RUNTIME_VAULT.replace("vault_runtime_ca_key", "unused_ca_key"))
+        result = self.validate(BACKEND_REF, extra=open_values)
+        output = result.stdout + result.stderr
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Check the runtime VPS secrets", output)
+        self.assertNotIn("Pull the backend", output)
+        self.assertNotIn("ca-key-body", output)
+
+    def test_bff_deploy_needs_no_runtime_configuration(self):
+        variables = self.root / "group_vars/all/vars.yml"
+        keys = tuple(f"{k}:" for k in [*RUNTIME_OPEN, *RUNTIME_SECRETS])
+        variables.write_text("".join(line for line in variables.read_text().splitlines(keepends=True)
+                                     if not line.startswith(keys)))
+        self.write_runtime_vault("")
+        result = self.validate_bff()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def write_runtime_vault(self, runtime_vault):
         password = b"test-vault-password-only"
@@ -840,10 +837,6 @@ class DeploymentChecks(unittest.TestCase):
             b"vault_postgres_password: fake-database-password\nvault_jwt_secret: fake-jwt-secret\n"
             b"vault_csrf_secret: fake-csrf-secret\nvault_redis_password: fake-redis-password-0123\n"
             + BFF_VAULT + TOTP_VAULT + runtime_vault.encode()))
-        variables = self.root / "group_vars/all/vars.yml"
-        if "runtime_os_password:" not in variables.read_text():
-            variables.write_text(variables.read_text() + "".join(
-                f'{k}: "{{{{ vault_{k} }}}}"\n' for k in RUNTIME_SECRETS))
 
 
 UUID = "01234567-89ab-cdef-0123-456789abcdef"
@@ -868,6 +861,8 @@ RUNTIME_SECRETS = {
     "runtime_client_cert": "-----BEGIN CERTIFICATE-----\nclient-cert-body\n-----END CERTIFICATE-----\n",
     "runtime_client_key": "-----BEGIN PRIVATE KEY-----\nclient-key-body\n-----END PRIVATE KEY-----\n",
 }
+RUNTIME_PEM_BODIES = ["ssh-key-body", "ca-key-body", "client-key-body"]
+RUNTIME_VAULT = "".join(f"vault_{k}: {json.dumps(v)}\n" for k, v in RUNTIME_SECRETS.items())
 
 
 if __name__ == "__main__":

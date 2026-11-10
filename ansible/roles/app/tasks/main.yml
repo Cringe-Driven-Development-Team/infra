@@ -71,7 +71,7 @@
     # Runtime-VPS (infra#89): ключи и сертификаты — файлами 0400 пользователя контейнера Go API,
     # каталогом (замена файла шаблоном видна в контейнере); каталог заданий Ansible — writable
     - name: Runtime files on VPS2
-      when: "'api' in app_services and runtime_enabled | bool"
+      when: "'api' in app_services"
       block:
         - name: Runtime secrets directory
           ansible.builtin.file:
@@ -209,14 +209,3 @@
 
 - name: Apply the Caddy route before the public probe
   ansible.builtin.meta: flush_handlers
-
-# Runtime выключен: ключей runtime и плейбука на VPS2 нет (каталог заданий остаётся — в нём только
-# временные каталоги операций, Go API удаляет их сам)
-- name: Remove the runtime files when runtime VPS are disabled
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "{{ app_runtime_secrets_dir }}"
-    - "{{ app_runtime_playbook_dir }}"
-  when: "'api' in app_services and not (runtime_enabled | bool)"

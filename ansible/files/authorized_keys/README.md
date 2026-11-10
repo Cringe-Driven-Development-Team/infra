@@ -10,10 +10,9 @@
 
 Сервер пересоздавать не нужно. Приватные ключи сюда коммитить нельзя.
 
-Для GitHub Actions Денис добавляет отдельный `ci.pub`. Приватная часть хранится
-только в `DEPLOY_SSH_KEY` environment `production` бэка. Перед первым деплоем
-нужно применить `site.yml` существующим разрешённым ключом. Личный ключ
-участника не используется как CI-ключ.
+`ci-team-backend.pub` — ключ CD бэка (`deploy-backend.yml`): приватная часть хранится только в
+`DEPLOY_SSH_KEY` environment `production` репозитория backend. Личный ключ участника не используется
+как CI-ключ.
 
 `ci-infra.pub` — ключ CI самой инфраструктуры (`.github/workflows/infra.yml`): приватная часть —
 только в секрете `INFRA_DEPLOY_SSH_KEY` environments `production` и `infra-preview` этого

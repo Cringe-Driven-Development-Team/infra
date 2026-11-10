@@ -65,10 +65,8 @@ avatars_public_domain: avatars.cellestial.ru
 
 # Runtime-VPS пользовательских сессий (infra#89, backend#57): Go API на VPS2 сам создаёт, настраивает
 # (ansible/runtime) и удаляет VPS на сессию. Значения — выходы Pulumi runtime* (RUNBOOK.md, «Runtime-VPS»).
-# false — Go API получает только RUNTIME_ENABLED=false: остальных RUNTIME_*, файлов ключей и каталога
-# заданий на VPS2 нет. true — с заполненными vault_runtime_*; security group runtime пускает SSH
+# Все обязательны для backend-деплоя (vault_runtime_* — тоже); security group runtime пускает SSH
 # и 8443 лишь с VPS2.
-runtime_enabled: true
 runtime_provider: openstack
 runtime_os_auth_url: https://cloud.api.selcloud.ru/identity/v3
 runtime_os_username: cellestialRuntimeProvisioner                # выход runtimeOsUsername
