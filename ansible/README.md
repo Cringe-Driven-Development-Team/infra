@@ -734,5 +734,5 @@ missing-health/one-healthy; real-image тест проверяет env, offline 
 `vars.json` операции; роль `app` копирует каталог на VPS2 и монтирует в контейнер API в
 `/app/deploy/runtime`. Сеть kernel — по контракту backend
 `docs/runtime-agent-network.md`: таблица nftables `inet cellestial` в unit `cellestial-firewall.service`.
-CI проверяет `ansible-lint runtime` и `--syntax-check` с заглушкой `tests/runtime/vars.json`. Включение,
+CI проверяет `ansible-lint runtime` и `--syntax-check` с заглушкой `tests/runtime/vars.json`. Настройка,
 секреты и ротация — RUNBOOK, «Runtime-VPS сессий».

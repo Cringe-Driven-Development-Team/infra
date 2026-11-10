@@ -952,7 +952,7 @@ openstack server delete --wait runtime-check && openstack volume delete runtime-
 ### Ротация
 
 Каждая ротация: `pulumi up --replace '<URN>'` (URN — `pulumi stack --show-urns`), затем шаг 3
-«Включение» (новые значения в vault) и выкатка Go — хендлер роли `app` пересоздаёт контейнер API, чтобы
+«Настройка с нуля» (новые значения в vault) и выкатка Go — хендлер роли `app` пересоздаёт контейнер API, чтобы
 он перечитал файлы.
 
 - **SSH-ключ provisioner** — `--replace` у `tls:index/privateKey:PrivateKey::runtime-ssh`: keypair
