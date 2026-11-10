@@ -71,14 +71,14 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 | `vault_jwt_secret` | `jwt_secret` |
 | `vault_csrf_secret` | `csrf_secret` |
 | `vault_totp_encryption_key` | `totp_encryption_key` |
-| `vault_notebooks_s3_access_key` | `notebooks_s3_access_key` |
-| `vault_notebooks_s3_secret_key` | `notebooks_s3_secret_key` |
+| `vault_avatars_s3_access_key` | `avatars_s3_access_key` |
+| `vault_avatars_s3_secret_key` | `avatars_s3_secret_key` |
 | `vault_session_key` | `session_key` |
 | `vault_bff_api_key` | `bff_api_key` |
 
-`notebooks_s3_*` — общий S3-доступ к аватарам и архивным объектам блокнотов, значения — выходы Pulumi
-`notebooksAccessKey` и `notebooksSecretKey` (`pulumi stack output <имя> --show-secrets`, оба секретные;
-`pulumi/README.md`, «Бакет ноутбуков»). Ключ перевыпущен (пересоздан стек или пользователь) — обновить
+`avatars_s3_*` — ключ Go API только к объектам бакета аватарок (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`),
+значения — выходы Pulumi `avatarsAccessKey` и `avatarsSecretKey` (`pulumi stack output <имя> --show-secrets`,
+оба секретные; `pulumi/README.md`, «Бакет аватарок»). Ключ перевыпущен (пересоздан стек или пользователь) — обновить
 оба значения через `ansible-vault edit`. В `.env` Go API они попадут через роль `app`
 ([backend#2](https://github.com/Cringe-Driven-Development-Team/backend/issues/2)).
 
@@ -105,8 +105,7 @@ Go — как `BFF_API_KEY`; 32+ символов `[A-Za-z0-9_-]` (`openssl rand
 `.env` и явный `services.api.environment.TOTP_ENCRYPTION_KEY`; validation отклоняет отсутствующий
 или некорректный ключ до записи файлов сервера, не раскрывая его в выводе.
 
-`notebooks_bucket` сохраняется в inventory как имя архивного бакета старых блокнотов;
-API его не использует, блокноты не переносятся (backend#79). Однократный сброс БД и отчёт приёмки —
+Блокноты хранятся в PostgreSQL; S3-бакета блокнотов нет (архив удалён в infra#64). Однократный сброс БД и отчёт приёмки —
 [RUNBOOK, infra#112](../RUNBOOK.md#восстановление-api-полный-сброс-бд-приложения-infra112).
 
 Роли и шаблоны используют только открытые имена; `vault_*` напрямую не читаются. Новый секрет —
@@ -137,7 +136,7 @@ ansible-vault edit inventory/group_vars/all/vault.yml    # $EDITOR, при со�
 ```
 
 Только `edit`: `decrypt` → правка → `encrypt` оставляет на диске открытый текст, который легко
-закоммитить. Значения секретов — `openssl rand -base64 32` (кроме `notebooks_s3_*` — они из Pulumi).
+закоммитить. Значения секретов — `openssl rand -base64 32` (кроме `avatars_s3_*` — они из Pulumi).
 
 ### CI
 
@@ -182,22 +181,22 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 
 1. новый пароль vault — как в «Смена пароля»;
 2. `ansible-vault edit` — новые значения секретов (`openssl rand -base64 32`), **кроме**
-   `notebooks_s3_*`;
-3. S3-ключ Go API (`notebooks_s3_*`) случайной строкой не заменить: бэк получит `InvalidAccessKeyId`,
-   а утёкший ключ останется рабочим (чтение, запись и удаление ноутбуков и аватарок). Ключ
+   `avatars_s3_*`;
+3. S3-ключ Go API (`avatars_s3_*`) случайной строкой не заменить: бэк получит `InvalidAccessKeyId`,
+   а утёкший ключ останется рабочим (чтение, запись и удаление аватарок). Ключ
    перевыпускается в Pulumi:
 
    ```bash
    cd ../pulumi
-   pulumi stack --show-urns | grep notebooks-s3     # URN ресурса IamS3CredentialsV1 "notebooks-s3"
-   pulumi up --replace '<URN notebooks-s3>'
-   pulumi stack output notebooksAccessKey --show-secrets
-   pulumi stack output notebooksSecretKey --show-secrets
+   pulumi stack --show-urns | grep avatars-s3     # URN ресурса IamS3CredentialsV1 "avatars-s3"
+   pulumi up --replace '<URN avatars-s3>'
+   pulumi stack output avatarsAccessKey --show-secrets
+   pulumi stack output avatarsSecretKey --show-secrets
    ```
 
    новые значения — в `vault.yml` через `ansible-vault edit`;
 4. выкатить: пароль Postgres меняется и в самой БД, смена `jwt_secret` разлогинивает пользователей;
-5. убедиться, что старый S3-ключ больше не действует: запрос с ним к бакету ноутбуков должен
+5. убедиться, что старый S3-ключ больше не действует: запрос с ним к бакету аватарок должен
    вернуть `InvalidAccessKeyId`;
 6. обновить `ANSIBLE_VAULT_PASSWORD` в CI.
 

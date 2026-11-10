@@ -83,7 +83,6 @@ pulumi config set infra:dnsProjectId '<project id из п.1.2>'
 
 pulumi config set infra:s3Pool   ru-7
 pulumi config set infra:s3Bucket '<имя бакета релизов, глобально уникальное>'
-pulumi config set infra:notebooksBucket '<имя приватного бакета ноутбуков, глобально уникальное>'
 pulumi config set infra:avatarsBucket '<имя публичного бакета аватарок, глобально уникальное>'
 pulumi config set infra:staticBucket '<имя публичного бакета статики, глобально уникальное>'
 pulumi config set infra:s3PublicRead true   # публичное чтение объектов (политика бакета), нужно для DoD
@@ -94,13 +93,13 @@ pulumi config set infra:s3PublicRead true   # публичное чтение о
 ```bash
 pulumi preview        # должно быть: 1 server, 1 volume, сеть, бакет, rrset, ...
 pulumi up             # подтвердить, ~5-10 минут
-pulumi stack output   # projectId, publicIp, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, domain, notebooks*, avatars*
+pulumi stack output   # projectId, publicIp, s3Endpoint, s3Bucket, s3AccessKey, s3SecretKey, domain, avatars*
 ```
 
-Ключ Go API к бакету ноутбуков (`notebooksAccessKey`, `notebooksSecretKey`, оба — с `--show-secrets`)
+Ключ Go API к бакету аватарок (`avatarsAccessKey`, `avatarsSecretKey`, оба — с `--show-secrets`)
 после первого `up` и после пересоздания стека переносится в vault: `ansible-vault edit`, переменные
-`vault_notebooks_s3_access_key` и `vault_notebooks_s3_secret_key` (п.5, «Секреты»). Проверка доступа —
-`pulumi/README.md`, «Бакет ноутбуков».
+`vault_avatars_s3_access_key` и `vault_avatars_s3_secret_key` (п.5, «Секреты»). Проверка доступа —
+`pulumi/README.md`, «Бакет аватарок».
 
 ## 5. Ansible: креды и запуск
 
@@ -148,9 +147,9 @@ ansible-vault edit inventory/group_vars/all/vault.yml    # поправить (�
 - **Утечка пароля**: `rekey` не помогает — старый шифротекст остаётся в истории git и открывается
   утёкшим паролем. Меняются сами секреты: новый пароль vault, новые значения в `vault.yml`
   (`openssl rand -base64 32`), выкатка (пароль Postgres — и в самой БД), обновить секрет в CI.
-  S3-ключ Go API (`vault_notebooks_s3_*`) случайной строкой не заменить — он перевыпускается в Pulumi:
-  `pulumi up --replace '<URN notebooks-s3>'` (URN — из `pulumi stack --show-urns`), новые
-  `notebooksAccessKey` / `notebooksSecretKey` — в `vault.yml`, выкатка, затем проверить запросом, что
+  S3-ключ Go API (`vault_avatars_s3_*`) случайной строкой не заменить — он перевыпускается в Pulumi:
+  `pulumi up --replace '<URN avatars-s3>'` (URN — из `pulumi stack --show-urns`), новые
+  `avatarsAccessKey` / `avatarsSecretKey` — в `vault.yml`, выкатка, затем проверить запросом, что
   старый ключ больше не действует. По шагам — `ansible/README.md`, «Утечка пароля».
 
 ## 6. Проверки руками (DoD)
@@ -202,7 +201,7 @@ curl -I "https://$(pulumi stack output avatarsCustomDomain)/<ключ авата
 
 ## 7. Снос всего
 
-Бакеты ноутбуков и аватарок защищены (`protect: true`, без `forceDestroy`). Pulumi проверяет `protect`
+Бакеты аватарок и бэкапов restic защищены (`protect: true`, без `forceDestroy`). Pulumi проверяет `protect`
 при построении плана: обычный `pulumi destroy` упадёт с `unable to delete resource … marked for
 protection` и **не удалит ничего** — VPS, сеть и бакет релизов останутся и продолжат тарифицироваться.
 
@@ -216,10 +215,75 @@ pulumi stack --show-urns                          # проверить, что �
 Снести совсем — сохранить или удалить объекты обоих бакетов, затем:
 
 ```bash
-pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'
 pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'
+pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::auxiliary-backups'
 pulumi destroy
 ```
+
+## Удаление архива блокнотов и пользователя notebooks (infra#64)
+
+Однократная операция; удаление необратимо, копия не сохраняется. Блокноты живут в PostgreSQL, бакет
+`cellestial-notebooks-0` (пул `ru-7`, проект `pulumi-cellestial`) — архив, API его не использует.
+Go API ходит в S3 ключом пользователя `avatars` (`vault_avatars_s3_*`), не `notebooks`.
+
+1. **Подготовка ключей.** PR с пользователем `avatars` смержен, CI сделал `pulumi up`. Новые значения —
+   в Vault без вывода в терминал, старые `vault_notebooks_s3_*` удалить:
+
+   ```bash
+   cd ansible
+   VAULT=inventory/group_vars/all/vault.yml
+   { ansible-vault view "$VAULT" | grep -v -E '^vault_(notebooks|avatars)_s3_'
+     (cd ../pulumi && pulumi stack output --json --show-secrets) | python3 -c '
+   import json, sys
+   o = json.load(sys.stdin)
+   print("vault_avatars_s3_access_key:", json.dumps(o["avatarsAccessKey"]))
+   print("vault_avatars_s3_secret_key:", json.dumps(o["avatarsSecretKey"]))'
+   } | ansible-vault encrypt --output "$VAULT.new"
+   ansible-vault view "$VAULT.new" | sed -E 's/:.*//'   # имена: без notebooks, с двумя avatars
+   mv "$VAULT.new" "$VAULT"
+   ```
+
+2. **Сверка цели** по стейту — имя, пул, проект и URN, ничего другого не трогать:
+
+   ```bash
+   cd pulumi
+   pulumi stack export | python3 -c '
+   import json, sys
+   for r in json.load(sys.stdin)["deployment"]["resources"]:
+       if r["urn"].endswith("::notebooks"):
+           o = r.get("outputs", {}); print(r["urn"], r.get("id"), o.get("region") or o.get("pool"), o.get("projectId", ""))'
+   # aws:s3/bucket:Bucket::notebooks  cellestial-notebooks-0  ru-7 …; BucketAccess — projectId проекта стека
+   ```
+
+3. **Адресная очистка** — только этот бакет, ключом пользователя стека (у него `s3:*` по политике бакета).
+   Версионирование у бакета не включалось; если `list-object-versions` покажет версии или delete
+   markers, удалить их тем же `delete-objects` с `VersionId`:
+
+   ```bash
+   B=cellestial-notebooks-0; E=$(pulumi stack output s3Endpoint)
+   s3() { AWS_ACCESS_KEY_ID=$(pulumi stack output s3AccessKey --show-secrets) \
+     AWS_SECRET_ACCESS_KEY=$(pulumi stack output s3SecretKey --show-secrets) \
+     AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+     aws --endpoint-url "$E" --region ru-7 "$@"; }       # AWS_CA_BUNDLE — корневой сертификат Selectel
+   s3 s3api list-object-versions --bucket "$B" --query '{v: length(Versions || `[]`), m: length(DeleteMarkers || `[]`)}'
+   s3 s3 rm "s3://$B" --recursive
+   s3 s3api list-object-versions --bucket "$B" --query '{v: length(Versions || `[]`), m: length(DeleteMarkers || `[]`)}'   # {0, 0}
+   ```
+
+4. **Снять `protect` только с архива** — остальные бакеты остаются защищёнными, `forceDestroy` не включается:
+
+   ```bash
+   pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'
+   pulumi preview --diff   # удаление: Bucket/BucketPolicy/BucketAccess notebooks, IamServiceuserV1 notebooks,
+                           # IamS3CredentialsV1 notebooks-s3, RandomPassword notebooks-serviceuser — и больше ничего
+   ```
+
+5. **Мерж PR** с удалением из программы: CI делает `pulumi up` (удаляет перечисленное), затем выкатка Go
+   с текущим digest (`deploy-backend.yml`, «Go API: первая выкатка и откат»): `.env` получает ключ `avatars`.
+   Не `pulumi destroy` и не `pulumi state delete`.
+6. **Проверка:** `pulumi preview` — без изменений; `s3 s3api head-bucket --bucket cellestial-notebooks-0` —
+   `404`; старый ключ `notebooks` — `InvalidAccessKeyId`; загрузка, публичное чтение и удаление аватарки
+   через приложение работают, ключ `avatars` получает `AccessDenied` в других бакетах.
 
 ## Частые грабли
 

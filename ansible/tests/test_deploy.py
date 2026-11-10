@@ -75,9 +75,9 @@ class DeploymentChecks(unittest.TestCase):
             'redis_password: "{{ vault_redis_password }}"\n'
             'session_key: "{{ vault_session_key }}"\n'
             'bff_api_key: "{{ vault_bff_api_key }}"\n'
-            'notebooks_s3_access_key: fake-key\nnotebooks_s3_secret_key: fake-secret\n'
+            'avatars_s3_access_key: fake-key\navatars_s3_secret_key: fake-secret\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
-            'notebooks_bucket: notebooks\navatars_bucket: avatars\n'
+            'avatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
             'app_backend_address: "127.0.0.1"\n'
@@ -147,12 +147,6 @@ class DeploymentChecks(unittest.TestCase):
                 if isinstance(key, str) and len(key) > 10:
                     self.assertNotIn(key, output)
                 self.assertNotIn(TOTP_KEY, output)
-
-    def test_api_validation_needs_no_notebook_bucket(self):
-        variables = self.root / "group_vars/all/vars.yml"
-        variables.write_text(variables.read_text().replace("notebooks_bucket: notebooks\n", ""))
-        result = self.validate(BACKEND_REF)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_backend_requires_exact_package_digest(self):
         image = "ghcr.io/cringe-driven-development-team/backend"
@@ -481,8 +475,8 @@ class DeploymentChecks(unittest.TestCase):
                        "back\\'quote", "space # value", 'double"quote', "${ENV}$value"]:
             with self.subTest(secret=secret):
                 values = {name: secret for name in ('postgres_password', 'jwt_secret', 'csrf_secret',
-                          'redis_password', 'session_key', 'bff_api_key', 'notebooks_s3_access_key',
-                          'notebooks_s3_secret_key')}
+                          'redis_password', 'session_key', 'bff_api_key', 'avatars_s3_access_key',
+                          'avatars_s3_secret_key')}
                 config, env = self.render_host(['api', 'postgres', 'redis'], secrets=values)
                 services = config['services']
                 self.assertEqual(set(services), {'api', 'postgres', 'redis'})
@@ -549,7 +543,7 @@ class DeploymentChecks(unittest.TestCase):
             jwt_secret="jwt-secret", csrf_secret="csrf-secret", redis_password="redis-secret",
             session_key="session-secret", bff_api_key="s2s-secret",
             totp_encryption_key=TOTP_KEY,
-            notebooks_s3_access_key="s3-key", notebooks_s3_secret_key="s3-secret")
+            avatars_s3_access_key="s3-key", avatars_s3_secret_key="s3-secret")
         variables.update(secrets or {})
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
@@ -568,7 +562,7 @@ class DeploymentChecks(unittest.TestCase):
                                 env=clean)
         return json.loads(result.stdout), env
 
-    def test_totp_and_avatar_configuration_without_notebook_bucket(self):
+    def test_totp_and_avatar_configuration(self):
         services = ["api", "postgres", "redis"]
         config, env = self.render_host(services)
         api = config["services"]["api"]["environment"]

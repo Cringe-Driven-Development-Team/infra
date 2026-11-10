@@ -101,10 +101,10 @@
 - name: Check S3 credentials
   ansible.builtin.assert:
     that:
-      - notebooks_s3_access_key | length > 0
-      - notebooks_s3_secret_key | length > 0
-      - notebooks_s3_access_key.splitlines() | length == 1
-      - notebooks_s3_secret_key.splitlines() | length == 1
+      - avatars_s3_access_key | length > 0
+      - avatars_s3_secret_key | length > 0
+      - avatars_s3_access_key.splitlines() | length == 1
+      - avatars_s3_secret_key.splitlines() | length == 1
     fail_msg: S3 credentials must be nonempty single-line values.
   no_log: true
 
