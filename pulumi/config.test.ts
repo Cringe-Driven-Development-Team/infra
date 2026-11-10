@@ -14,7 +14,6 @@ const base = {
   "infra:sshPublicKey": "ssh-ed25519 AAAA test",
   "infra:s3Pool": "ru-7",
   "infra:s3Bucket": "releases",
-  "infra:notebooksBucket": "notebooks",
   "infra:avatarsBucket": "avatars",
 };
 const load = (extra: Record<string, string> = {}) => {

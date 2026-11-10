@@ -19,7 +19,7 @@ pulumi stack export --show-secrets -s "$STACK" > "$STATE"
 CREDS="$(python3 - "$STATE" <<'PY'
 import json, sys
 res = json.load(open(sys.argv[1]))["deployment"]["resources"]
-# В стейте два IamS3CredentialsV1: ключ стека (product-s3) и ключ Go API (notebooks-s3) — берём по имени
+# В стейте два IamS3CredentialsV1: ключ стека (product-s3) и ключ Go API (avatars-s3) — берём по имени
 cred = next((r for r in res
              if r["type"].endswith("IamS3CredentialsV1") and r["urn"].endswith("::product-s3")), None)
 if not cred:

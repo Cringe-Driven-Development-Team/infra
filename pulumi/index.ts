@@ -39,11 +39,8 @@ export const serviceUserName = f.serviceUser.name;
 export const serviceUserPassword = pulumi.secret(f.serviceUserPassword.result);
 export const s3AccessKey = f.s3Credentials.accessKey;
 export const s3SecretKey = pulumi.secret(f.s3Credentials.secretKey);
-// Ключ Go API к бакету ноутбуков; endpoint и регион — s3Endpoint и infra:s3Pool
-export const notebooksBucket = storage.notebooksBucket.bucket;
-export const notebooksAccessKey = storage.notebooksCredentials.accessKey;
-export const notebooksSecretKey = pulumi.secret(storage.notebooksCredentials.secretKey);
-// Бакет аватарок: пишет ключ Go API avatarsAccessKey, публичный URL — https://<avatarsPublicDomain>/<ключ>
+// Бакет аватарок: пишет ключ Go API avatarsAccessKey (endpoint и регион — s3Endpoint и infra:s3Pool),
+// публичный URL — https://<avatarsPublicDomain>/<ключ>
 export const avatarsAccessKey = storage.avatarsCredentials.accessKey;
 export const avatarsSecretKey = pulumi.secret(storage.avatarsCredentials.secretKey);
 export const avatarsBucket = storage.avatarsBucket.bucket;

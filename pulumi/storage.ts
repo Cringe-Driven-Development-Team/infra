@@ -9,8 +9,6 @@ import { BucketAccess, CdnResource } from "./selectel-storage";
 export interface Storage {
   releasesBucket: aws.s3.Bucket;
   releasesAccess: BucketAccess;
-  notebooksBucket: aws.s3.Bucket;
-  notebooksCredentials: selectel.IamS3CredentialsV1;
   avatarsCredentials: selectel.IamS3CredentialsV1;
   avatarsBucket: aws.s3.Bucket;
   avatarsAccess: BucketAccess;
@@ -22,24 +20,6 @@ export interface Storage {
 
 export function createStorage(c: InfraConfig, f: Foundation): Storage {
   const { project, serviceUser, s3 } = f;
-
-  // Сервисный пользователь Go API — только бакет ноутбуков. Ключ пользователя release бэку не годится:
-  // у того member на весь проект (OpenStack и все бакеты). s3.bucket.user сам по себе не даёт ничего —
-  // доступ появляется только там, где пользователь назван в политике бакета (ниже, "notebooks").
-  // Пароль нужен API IAM, им никто не входит: бэк ходит в S3 по ключу.
-  const notebooksUser = new selectel.IamServiceuserV1("notebooks", {
-    name: c.s3.notebooksUserName,
-    password: new random.RandomPassword("notebooks-serviceuser", serviceUserPasswordArgs).result,
-    roles: [
-      { roleName: "s3.bucket.user", scope: "project", projectId: project.id },
-    ],
-  });
-
-  const notebooksCredentials = new selectel.IamS3CredentialsV1("notebooks-s3", {
-    name: `${c.name}-notebooks`,
-    userId: notebooksUser.id,
-    projectId: project.id,
-  });
 
   // Пользователь Go API для аватарок: s3.bucket.user сам по себе ничего не даёт — доступ только к
   // объектам бакета аватарок по его политике (ниже, "avatars"). Пароль нужен API IAM, им никто не входит.
@@ -103,57 +83,8 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
     }, { provider: s3 });
   }
 
-  // Бакет ноутбуков пользователей. Данные пользователей: без forceDestroy и с protect — pulumi destroy
+  // Бакет аватарок пользователей. Данные пользователей: без forceDestroy и с protect — pulumi destroy
   // и случайная замена ресурса не сносят бакет с объектами (снять: pulumi state unprotect).
-  const notebooksBucket = new aws.s3.Bucket("notebooks", {
-    bucket: c.s3.notebooksBucket,
-  }, { provider: s3, protect: true });
-
-  // Тип private задаётся явно: публичного домена <uuid>.selstorage.ru у бакета нет, источником CDN
-  // он не служит.
-  new BucketAccess("notebooks", {
-    projectId: project.id,
-    pool: c.s3.pool,
-    bucket: notebooksBucket.bucket,
-    type: "private",
-  }, { dependsOn: [notebooksBucket] });
-
-  // Пользователю бэка — объекты и листинг только этого бакета; в product-releases его нет ни в какой
-  // политике, там он получает AccessDenied. Как и у product-public-read, с появлением политики роли
-  // проекта перестают действовать, поэтому первым правилом полный доступ оставлен пользователю стека
-  // (release) — иначе 403 уже на GetBucketPolicy, и Pulumi не сможет ни изменить, ни снять политику.
-  new aws.s3.BucketPolicy("notebooks", {
-    bucket: notebooksBucket.id,
-    policy: pulumi.all([notebooksBucket.arn, serviceUser.id, notebooksUser.id])
-      .apply(([arn, stackUserId, backendUserId]) => JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Sid: "StackServiceUserFullAccess",
-            Effect: "Allow",
-            Principal: { AWS: [stackUserId] },
-            Action: "s3:*",
-            Resource: [arn, `${arn}/*`],
-          },
-          {
-            Sid: "BackendObjects",
-            Effect: "Allow",
-            Principal: { AWS: [backendUserId] },
-            Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-            Resource: `${arn}/*`,
-          },
-          {
-            Sid: "BackendList",
-            Effect: "Allow",
-            Principal: { AWS: [backendUserId] },
-            Action: "s3:ListBucket",
-            Resource: arn,
-          },
-        ],
-      })),
-  }, { provider: s3 });
-
-  // Бакет аватарок пользователей. Как и ноутбуки — данные пользователей: protect и без forceDestroy.
   const avatarsBucket = new aws.s3.Bucket("avatars", {
     bucket: c.s3.avatarsBucket,
   }, { provider: s3, protect: true });
@@ -234,8 +165,6 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
   return {
     releasesBucket,
     releasesAccess,
-    notebooksBucket,
-    notebooksCredentials,
     avatarsCredentials,
     avatarsBucket,
     avatarsAccess,

@@ -21,13 +21,10 @@ Selectel: одна VPS, S3, DNS и CDN — Pulumi (`pulumi/`, стек `prod`; `
 - Бакет `infra:s3Bucket`, **публичный** (`infra:s3Public`, по умолчанию `true`): тип бакета ставит
   dynamic-ресурс `BucketAccess` (`pulumi/selectel-storage.ts`), публичный домен
   `<uuid>.selstorage.ru` — выход `s3PublicDomain`.
-- Бакет ноутбуков `infra:notebooksBucket`, **приватный** (`BucketAccess` с `type: "private"`, не источник
-  CDN), `protect: true` и без `forceDestroy` — данные пользователей. Сервисный пользователь Go API
-  (`infra:notebooksUserName`, роль `s3.bucket.user`) и его S3-ключ — выходы `notebooksAccessKey`,
-  `notebooksSecretKey`; доступ ему даёт только политика этого бакета (в ней же `s3:*` пользователю стека).
 - Бакет аватарок `infra:avatarsBucket`, **публичный** (`BucketAccess` с `type: "public"`, не источник
-  CDN), `protect: true` и без `forceDestroy`. Пишет тот же пользователь Go API (политика бакета:
-  объекты — ему, `s3:*` — пользователю стека); выходы `avatarsBucket`, `avatarsPublicDomain`.
+  CDN), `protect: true` и без `forceDestroy`. Пишет пользователь Go API `cellestialAvatarsUser`
+  (роль `s3.bucket.user`; политика бакета: объекты — ему, `s3:*` — пользователю стека); выходы
+  `avatarsBucket`, `avatarsPublicDomain`, `avatarsAccessKey`, `avatarsSecretKey`.
   Анонимное чтение по ключу — `https://<avatarsPublicDomain>/<ключ>`, его даёт тип бакета. Правило
   `PublicRead` в политику не возвращать: политика Selectel действует только на авторизованные
   запросы, через S3 API анонимный запрос получает `403` при любой политике.

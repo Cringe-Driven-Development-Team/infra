@@ -55,8 +55,6 @@ export interface InfraConfig {
     releasesBucket: string;
     public: boolean;
     publicRead: boolean;
-    notebooksBucket: string;
-    notebooksUserName: string;
     avatarsBucket: string;
     staticBucket?: string;
     // Задан ⇔ infra:cdn; CDN-ресурс статики — при infra:staticBucket
@@ -167,8 +165,6 @@ export function loadConfig(): InfraConfig {
   // и region подписи. Имя бакета глобально уникально в рамках аккаунта.
   const s3Pool = cfg.require("s3Pool");
   const s3Bucket = cfg.require("s3Bucket");
-  // Приватный бакет ноутбуков пользователей (.ipynb) — в том же пуле; доступ только у Go API.
-  const notebooksBucket = cfg.require("notebooksBucket");
   // Публичный бакет аватарок пользователей — в том же пуле; пишет Go API, читают все.
   const avatarsBucket = cfg.require("avatarsBucket");
   // Публичный бакет статики продукта (картинки, шрифты) — в том же пуле; пишет CI репозитория static
@@ -261,8 +257,6 @@ export function loadConfig(): InfraConfig {
       // Тип бакета Selectel: public (по умолчанию) — чтение объектов без авторизации, источник для CDN.
       public: cfg.getBoolean("s3Public") ?? true,
       publicRead: cfg.getBoolean("s3PublicRead") ?? false,
-      notebooksBucket,
-      notebooksUserName: cfg.get("notebooksUserName") ?? "cellestialNotebooksUser",
       avatarsBucket,
       staticBucket,
       cdnName: cdnEnabled ? checkCdnName(cfg.get("cdnName") ?? `${name}-cdn`) : undefined,

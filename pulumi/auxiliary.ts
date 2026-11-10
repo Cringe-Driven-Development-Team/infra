@@ -87,7 +87,7 @@ export function createAuxiliary(c: InfraConfig, f: Foundation): Auxiliary | unde
     floatingIp: floatingIp.address,
   }, { ...withOs, dependsOn: [f.routerInterface] });
 
-  // Бэкапы restic с VPS: приватный бакет и свой пользователь, как у бакета ноутбуков. Ключ этого
+  // Бэкапы restic с VPS: приватный бакет и свой пользователь, как у бакета аватарок. Ключ этого
   // пользователя лежит на VPS — доступ у него только к этому бакету (по политике).
   const backupUser = new selectel.IamServiceuserV1("auxiliary-backup", {
     name: aux.backupUserName,
@@ -130,7 +130,7 @@ export function createAuxiliary(c: InfraConfig, f: Foundation): Auxiliary | unde
     bucket: backupBucket.bucket,
     type: "private",
   }, { dependsOn: [backupBucket] });
-  // Первым правилом s3:* пользователю стека — иначе политика отрежет его самого (см. "notebooks").
+  // Первым правилом s3:* пользователю стека — иначе политика отрежет его самого (см. "avatars").
   new aws.s3.BucketPolicy("auxiliary-backups", {
     bucket: backupBucket.id,
     policy: pulumi.all([backupBucket.arn, f.serviceUser.id, backupUser.id])

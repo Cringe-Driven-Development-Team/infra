@@ -45,7 +45,6 @@ pulumi.runtime.setAllConfig({
   "infra:sshPublicKey": "ssh-ed25519 AAAA test",
   "infra:s3Pool": "ru-7",
   "infra:s3Bucket": "releases",
-  "infra:notebooksBucket": "notebooks",
   "infra:avatarsBucket": "avatars",
   "infra:backend": "true",
   "infra:backendFlavorName": "SL1.2-4096",
@@ -121,7 +120,7 @@ describe("сборка модулей", () => {
       "auxiliaryBackupAccessKey", "auxiliaryBackupBucket", "auxiliaryBackupPoolName", "auxiliaryBackupSecretKey",
       "auxiliaryPublicIp", "avatarsAccessKey", "avatarsBucket", "avatarsCustomDomain", "avatarsPublicDomain", "avatarsSecretKey", "backendPrivateIp",
       "cdnCustomDomain", "cdnDefaultDomain", "cdnResourceId", "domain", "gatewayName", "gatewayPrivateIp",
-      "hooksDomain", "notebooksAccessKey", "notebooksBucket", "notebooksSecretKey", "projectId", "publicIp",
+      "hooksDomain", "projectId", "publicIp",
       "runtimeAccountId", "runtimeAvailabilityZone", "runtimeBlockedPublicIps", "runtimeCaCert", "runtimeCaKey",
       "runtimeClientCert", "runtimeClientKey", "runtimeFlavorId", "runtimeImageId", "runtimeKeypairName",
       "runtimeNetworkId", "runtimeOsPassword", "runtimeOsUsername", "runtimeProjectId", "runtimeRegion",
@@ -130,7 +129,7 @@ describe("сборка модулей", () => {
       "serviceUserPassword", "sshUser", "staticBucket", "staticCdnDefaultDomain", "staticCdnResourceId",
       "staticCustomDomain", "staticPublicDomain",
     ]);
-    for (const name of ["serviceUserPassword", "s3SecretKey", "notebooksSecretKey", "avatarsSecretKey", "auxiliaryBackupSecretKey"] as const) {
+    for (const name of ["serviceUserPassword", "s3SecretKey", "avatarsSecretKey", "auxiliaryBackupSecretKey"] as const) {
       expect(await stack[name]!.isSecret).toBe(true);
     }
     expect(await value(stack.gatewayPrivateIp)).toBe("192.168.199.225");

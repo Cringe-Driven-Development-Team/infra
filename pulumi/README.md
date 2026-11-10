@@ -2,7 +2,7 @@
 
 Создаёт: проект, сервисного пользователя проекта (+ S3-ключи), keypair, приватную сеть с роутером
 (нужна для floating IP), VPS (floating IP, роль gateway: Caddy, позже Go API и Postgres в Docker Compose),
-S3-бакеты через @pulumi/aws (фронт и статика под CDN, аватарки, ноутбуки — см. «Бакеты»), A-запись домена
+S3-бакеты через @pulumi/aws (фронт и статика под CDN, аватарки — см. «Бакеты»), A-запись домена
 на VPS, отдельного сервисного пользователя с S3-ключом для Go API.
 
 Двухсерверная схема (gateway + backend) заморожена в git в варианте `bff` документации; стек — одна VPS.
@@ -95,9 +95,6 @@ pulumi config set infra:dnsProjectId <id проекта с зоной>
 # Object Storage
 pulumi config set infra:s3Pool   ru-1
 pulumi config set infra:s3Bucket <имя-бакета>
-# Приватный бакет ноутбуков (.ipynb) в том же пуле и сервисный пользователь Go API
-pulumi config set infra:notebooksBucket <имя-бакета>
-# pulumi config set infra:notebooksUserName cellestialNotebooksUser   # по умолчанию; уникально в аккаунте
 # Публичный бакет аватарок в том же пуле
 pulumi config set infra:avatarsBucket <имя-бакета>
 ```
@@ -136,15 +133,13 @@ A-запись домена находится под управлением Pul
 |---|---|---|---|---|---|
 | фронт | `infra:s3Bucket` | статика фронтенда (релизы) | публичный | да, источник CDN-ресурса (`infra:cdn`) | пользователь стека (`s3AccessKey`) |
 | статика | `infra:staticBucket` | статические файлы продукта (картинки, шрифты) | публичный | да, источник своего CDN-ресурса | пользователь стека (`s3AccessKey`), CI репозитория `static` |
-| аватарки | `infra:avatarsBucket` | аватарки пользователей, бэкенд | публичный | нет | Go API (`notebooksAccessKey`) |
-| ноутбуки | `infra:notebooksBucket` | `.ipynb` пользователей, бэкенд | приватный | нет | Go API (`notebooksAccessKey`) |
+| аватарки | `infra:avatarsBucket` | аватарки пользователей, бэкенд | публичный | нет | Go API (`avatarsAccessKey`) |
 
 - Фронт отдаётся через CDN (`cdnDefaultDomain`, свой домен — `cdnCustomDomain`) или напрямую с
   `https://<s3PublicDomain>/<ключ>`; проверка — ниже, «Проверка S3».
 - Статика отдаётся через свой CDN-ресурс (`staticCdnDefaultDomain`, свой домен — `staticCustomDomain`)
   — «Бакет статики».
 - Аватарки отдаются напрямую с `https://<avatarsPublicDomain>/<ключ>` — «Бакет аватарок».
-- Ноутбуки читает и пишет только Go API своим ключом — «Бакет ноутбуков».
 
 ## Проверка S3 (из DoD)
 
@@ -172,27 +167,8 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
 ```
 
 При сносе стека бакет удаляется вместе с объектами (`forceDestroy: true`). Сам `pulumi destroy` без
-флагов упадёт на защищённых бакетах ноутбуков и аватарок и не удалит ничего — нужен
+флагов упадёт на защищённых бакетах аватарок и бэкапов и не удалит ничего — нужен
 `pulumi destroy --exclude-protected` (`RUNBOOK.md`, п.7).
-
-## Бакет ноутбуков
-
-`infra:notebooksBucket` — данные пользователей (`.ipynb`), доступ только у Go API:
-
-- тип бакета `private` (`BucketAccess`), публичного домена `selstorage.ru` нет, источником CDN не служит;
-- сервисный пользователь `infra:notebooksUserName` с ролью `s3.bucket.user` и свой S3-ключ. Ключ
-  пользователя стека (`s3AccessKey`) бэку не отдаётся: у того `member` на весь проект;
-- политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject`, `ListBucket` только
-  здесь; пользователю стека — `s3:*` (с политикой роли проекта не действуют, без этого правила Pulumi
-  получил бы `403` на `GetBucketPolicy`). В `infra:s3Bucket` пользователя бэка нет — там `AccessDenied`;
-- `protect: true`, без `forceDestroy`: `pulumi destroy` с защищённым бакетом в стейте падает на плане
-  и не удаляет ничего (снос остального — `--exclude-protected`). Удалить осознанно — опустошить бакет
-  и `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::notebooks'`.
-
-Выходы: `notebooksBucket`, `notebooksAccessKey`, `notebooksSecretKey` (оба ключа — только с
-`--show-secrets`). Endpoint и регион те же: `s3Endpoint`, `infra:s3Pool`. Ключи переносятся в
-`ansible/inventory/group_vars/all/vault.yml` (`vault_notebooks_s3_access_key`,
-`vault_notebooks_s3_secret_key`) через `ansible-vault edit` — `ansible/README.md`, «Секреты».
 
 ## Бакет статики
 
@@ -219,38 +195,42 @@ curl -I "$S3_ENDPOINT/$S3_BUCKET/hello.txt"   # 200
   (`<s3Endpoint>/<бакет>/<ключ>`) анонимный запрос получает `403`: политика бакета в Selectel
   действует только на авторизованные запросы, анонимного чтения она не открывает. Источником CDN
   не служит;
-- отдельного пользователя нет: пишет пользователь бэка `infra:notebooksUserName` тем же ключом
-  (`notebooksAccessKey`, `notebooksSecretKey`);
-- политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject` (без листинга);
-  пользователю стека — `s3:*`. Правила для всех (`PublicRead`) нет — анонимное чтение даёт тип бакета;
-- `protect: true`, без `forceDestroy`, как у ноутбуков: `pulumi destroy` без `--exclude-protected`
-  падает на плане. Удалить осознанно — опустошить бакет и
+- пишет Go API ключом своего сервисного пользователя `cellestialAvatarsUser` (роль `s3.bucket.user`,
+  ключ `avatars-s3`). Ключ пользователя стека (`s3AccessKey`) бэку не отдаётся: у того `member` на весь
+  проект; `s3.bucket.user` без политики не даёт ничего — доступ только в этом бакете;
+- политика бакета: пользователю бэка — `GetObject`, `PutObject`, `DeleteObject` объектов (без листинга);
+  пользователю стека — `s3:*` (с политикой роли проекта не действуют, без этого правила Pulumi получил
+  бы `403` на `GetBucketPolicy`). Правила для всех (`PublicRead`) нет — анонимное чтение даёт тип бакета;
+- `protect: true`, без `forceDestroy`: `pulumi destroy` без `--exclude-protected` падает на плане. Удалить осознанно — опустошить бакет и
   `pulumi state unprotect 'urn:pulumi:prod::infra::aws:s3/bucket:Bucket::avatars'`.
 
 Выходы: `avatarsBucket`, `avatarsPublicDomain`, `avatarsCustomDomain` (свой домен — «Свои домены»; его
-бэк и отдаёт в ссылках на аватарки).
+бэк и отдаёт в ссылках на аватарки), `avatarsAccessKey`, `avatarsSecretKey` (оба ключа — только с
+`--show-secrets`; endpoint и регион — `s3Endpoint`, `infra:s3Pool`). Ключи переносятся в
+`ansible/inventory/group_vars/all/vault.yml` (`vault_avatars_s3_access_key`,
+`vault_avatars_s3_secret_key`) через `ansible-vault edit` — `ansible/README.md`, «Секреты».
 
 Проверка доступа (после `source bootstrap/env.sh`):
 
 ```bash
 S3_ENDPOINT=$(pulumi stack output s3Endpoint)
 S3_POOL=$(pulumi config get infra:s3Pool)
-NB_BUCKET=$(pulumi stack output notebooksBucket)
-NB_AK=$(pulumi stack output notebooksAccessKey --show-secrets)
-NB_SK=$(pulumi stack output notebooksSecretKey --show-secrets)
-nb_aws() {   # ключ бэка — только этой команде, AWS_* оболочки (ключ стейта) не трогаем
-  AWS_ACCESS_KEY_ID="$NB_AK" AWS_SECRET_ACCESS_KEY="$NB_SK" \
+AV_BUCKET=$(pulumi stack output avatarsBucket)
+AV_AK=$(pulumi stack output avatarsAccessKey --show-secrets)
+AV_SK=$(pulumi stack output avatarsSecretKey --show-secrets)
+av_aws() {   # ключ бэка — только этой команде, AWS_* оболочки (ключ стейта) не трогаем
+  AWS_ACCESS_KEY_ID="$AV_AK" AWS_SECRET_ACCESS_KEY="$AV_SK" \
     AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null \
     aws --endpoint-url "$S3_ENDPOINT" --region "$S3_POOL" "$@"
 }
 
-echo '{}' > /tmp/check.ipynb
-nb_aws s3 cp /tmp/check.ipynb "s3://$NB_BUCKET/check.ipynb"        # проходит
-nb_aws s3 cp "s3://$NB_BUCKET/check.ipynb" /tmp/check-back.ipynb   # проходит
-nb_aws s3 ls "s3://$NB_BUCKET/"                                    # check.ipynb
-nb_aws s3 cp /tmp/check.ipynb "s3://$(pulumi stack output s3Bucket)/check.ipynb"   # AccessDenied
-curl -I "$S3_ENDPOINT/$NB_BUCKET/check.ipynb"                      # 403 без авторизации
-nb_aws s3 rm "s3://$NB_BUCKET/check.ipynb"
+echo check > /tmp/check.txt
+av_aws s3 cp /tmp/check.txt "s3://$AV_BUCKET/check.txt"           # проходит
+curl -sI "https://$(pulumi stack output avatarsCustomDomain)/check.txt" | head -1   # 200 без авторизации
+av_aws s3 cp "s3://$AV_BUCKET/check.txt" /tmp/check-back.txt      # проходит
+av_aws s3 ls "s3://$AV_BUCKET/"                                   # AccessDenied: листинга нет
+av_aws s3 cp /tmp/check.txt "s3://$(pulumi stack output s3Bucket)/check.txt"   # AccessDenied
+av_aws s3 rm "s3://$AV_BUCKET/check.txt"                          # проходит
 ```
 
 Новый ключ шлюз S3 признаёт не сразу: первые секунды (иногда минуты) — `InvalidAccessKeyId`.
@@ -408,4 +388,4 @@ pulumi config set infra:runtimeImageId 8f57fbe7-2b6e-4e0b-a8ac-edf936815411
 `refresh` и `delete` исполняют код провайдера из стейта. `BucketAccess`, `CdnDomain` и `BucketDomain` показывают такую
 правку как `update` (те же значения выставляются повторно).
 
-Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"notebooks"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.
+Логические имена ресурсов (`"release"`, `"gateway"`, `"product-releases"`, `"avatars"`) не меняйте: это пересоздание ресурсов. Если переименовать всё-таки нужно, добавляйте `aliases` со старым именем — так сделано для бывших `"study"`. Ресурсы backend-сервера (Instance/Port/Volume `"backend"`) удалены при переходе на одну VPS — возвращать их прежним именем нельзя до проверки стейта.
