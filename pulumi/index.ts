@@ -43,7 +43,9 @@ export const s3SecretKey = pulumi.secret(f.s3Credentials.secretKey);
 export const notebooksBucket = storage.notebooksBucket.bucket;
 export const notebooksAccessKey = storage.notebooksCredentials.accessKey;
 export const notebooksSecretKey = pulumi.secret(storage.notebooksCredentials.secretKey);
-// Бакет аватарок: пишет тот же ключ Go API, публичный URL — https://<avatarsPublicDomain>/<ключ>
+// Бакет аватарок: пишет ключ Go API avatarsAccessKey, публичный URL — https://<avatarsPublicDomain>/<ключ>
+export const avatarsAccessKey = storage.avatarsCredentials.accessKey;
+export const avatarsSecretKey = pulumi.secret(storage.avatarsCredentials.secretKey);
 export const avatarsBucket = storage.avatarsBucket.bucket;
 export const avatarsPublicDomain = storage.avatarsAccess.publicDomain;
 export const avatarsCustomDomain = c.dns.avatarsDomain ?? null;
