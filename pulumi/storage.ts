@@ -11,6 +11,7 @@ export interface Storage {
   releasesAccess: BucketAccess;
   notebooksBucket: aws.s3.Bucket;
   notebooksCredentials: selectel.IamS3CredentialsV1;
+  avatarsCredentials: selectel.IamS3CredentialsV1;
   avatarsBucket: aws.s3.Bucket;
   avatarsAccess: BucketAccess;
   staticBucket?: aws.s3.Bucket;
@@ -37,6 +38,22 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
   const notebooksCredentials = new selectel.IamS3CredentialsV1("notebooks-s3", {
     name: `${c.name}-notebooks`,
     userId: notebooksUser.id,
+    projectId: project.id,
+  });
+
+  // Пользователь Go API для аватарок: s3.bucket.user сам по себе ничего не даёт — доступ только к
+  // объектам бакета аватарок по его политике (ниже, "avatars"). Пароль нужен API IAM, им никто не входит.
+  const avatarsUser = new selectel.IamServiceuserV1("avatars", {
+    name: "cellestialAvatarsUser",
+    password: new random.RandomPassword("avatars-serviceuser", serviceUserPasswordArgs).result,
+    roles: [
+      { roleName: "s3.bucket.user", scope: "project", projectId: project.id },
+    ],
+  });
+
+  const avatarsCredentials = new selectel.IamS3CredentialsV1("avatars-s3", {
+    name: `${c.name}-avatars`,
+    userId: avatarsUser.id,
     projectId: project.id,
   });
 
@@ -150,15 +167,14 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
     type: "public",
   }, { dependsOn: [avatarsBucket] });
 
-  // Пишет аватарки тот же пользователь Go API, что и ноутбуки (ключ notebooksAccessKey); листинг ему
-  // не нужен. Политика отключает роли проекта, поэтому пользователю стека явно оставлен полный доступ.
+  // Пишет аватарки пользователь avatars (ключ avatarsAccessKey); листинг ему не нужен. Политика отключает роли проекта, поэтому пользователю стека явно оставлен полный доступ.
   // Анонимное чтение по ключу — https://<avatarsPublicDomain>/<ключ>: его даёт тип бакета public, а не
   // политика. Политика Selectel действует только на авторизованные запросы (Principal "*" — «все
   // авторизованные»), поэтому правила PublicRead здесь нет: через S3 API (endpoint пула) анонимный
   // запрос получает 403 при любой политике.
   new aws.s3.BucketPolicy("avatars", {
     bucket: avatarsBucket.id,
-    policy: pulumi.all([avatarsBucket.arn, serviceUser.id, notebooksUser.id])
+    policy: pulumi.all([avatarsBucket.arn, serviceUser.id, avatarsUser.id])
       .apply(([arn, stackUserId, backendUserId]) => JSON.stringify({
         Version: "2012-10-17",
         Statement: [
@@ -220,6 +236,7 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
     releasesAccess,
     notebooksBucket,
     notebooksCredentials,
+    avatarsCredentials,
     avatarsBucket,
     avatarsAccess,
     staticBucket,

@@ -119,7 +119,7 @@ describe("сборка модулей", () => {
   test("outputs стека", async () => {
     expect(Object.keys(stack).sort()).toEqual([
       "auxiliaryBackupAccessKey", "auxiliaryBackupBucket", "auxiliaryBackupPoolName", "auxiliaryBackupSecretKey",
-      "auxiliaryPublicIp", "avatarsBucket", "avatarsCustomDomain", "avatarsPublicDomain", "backendPrivateIp",
+      "auxiliaryPublicIp", "avatarsAccessKey", "avatarsBucket", "avatarsCustomDomain", "avatarsPublicDomain", "avatarsSecretKey", "backendPrivateIp",
       "cdnCustomDomain", "cdnDefaultDomain", "cdnResourceId", "domain", "gatewayName", "gatewayPrivateIp",
       "hooksDomain", "notebooksAccessKey", "notebooksBucket", "notebooksSecretKey", "projectId", "publicIp",
       "runtimeAccountId", "runtimeAvailabilityZone", "runtimeBlockedPublicIps", "runtimeCaCert", "runtimeCaKey",
@@ -130,13 +130,33 @@ describe("сборка модулей", () => {
       "serviceUserPassword", "sshUser", "staticBucket", "staticCdnDefaultDomain", "staticCdnResourceId",
       "staticCustomDomain", "staticPublicDomain",
     ]);
-    for (const name of ["serviceUserPassword", "s3SecretKey", "notebooksSecretKey", "auxiliaryBackupSecretKey"] as const) {
+    for (const name of ["serviceUserPassword", "s3SecretKey", "notebooksSecretKey", "avatarsSecretKey", "auxiliaryBackupSecretKey"] as const) {
       expect(await stack[name]!.isSecret).toBe(true);
     }
     expect(await value(stack.gatewayPrivateIp)).toBe("192.168.199.225");
     expect(await value(stack.backendPrivateIp)).toBe("192.168.199.10");
     expect(await value(stack.auxiliaryPublicIp)).toBe("203.0.113.2");
     expect(await value(stack.cdnDefaultDomain)).toBe("cdn.selcdn.net");
+  });
+
+  test("пользователь avatars: только объекты бакета аватарок", () => {
+    const user = find("selectel:index/iamServiceuserV1:IamServiceuserV1", "avatars").inputs;
+    expect(user.name).toBe("cellestialAvatarsUser");
+    expect(user.roles).toEqual([{ roleName: "s3.bucket.user", scope: "project", projectId: "release-id" }]);
+    expect(find("selectel:index/iamS3CredentialsV1:IamS3CredentialsV1", "avatars-s3").inputs)
+      .toMatchObject({ name: "pulumi-test-avatars", userId: "avatars-id" });
+    const statements = (name: string) => JSON.parse(find("aws:s3/bucketPolicy:BucketPolicy", name).inputs.policy).Statement;
+    expect(statements("avatars")).toEqual([
+      { Sid: "StackServiceUserFullAccess", Effect: "Allow", Principal: { AWS: ["release-id"] }, Action: "s3:*",
+        Resource: ["arn:avatars", "arn:avatars/*"] },
+      { Sid: "BackendObjects", Effect: "Allow", Principal: { AWS: ["avatars-id"] },
+        Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource: "arn:avatars/*" },
+    ]);
+    // В политиках других бакетов пользователя avatars нет
+    const others = [...created.entries()]
+      .filter(([key]) => key.startsWith("aws:s3/bucketPolicy:BucketPolicy::") && !key.endsWith("::avatars"));
+    expect(others.length).toBeGreaterThan(0);
+    for (const [, policy] of others) expect(policy.inputs.policy).not.toContain("avatars-id");
   });
 
   test("DNS: адреса VPS и CDN-ресурс из своих модулей", () => {
