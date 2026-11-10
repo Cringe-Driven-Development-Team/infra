@@ -227,20 +227,24 @@ pulumi destroy
 Go API ходит в S3 ключом пользователя `avatars` (`vault_avatars_s3_*`), не `notebooks`.
 
 1. **Подготовка ключей.** PR с пользователем `avatars` смержен, CI сделал `pulumi up`. Новые значения —
-   в Vault без вывода в терминал, старые `vault_notebooks_s3_*` удалить:
+   в Vault через `ansible-vault edit`: редактором служит скрипт, он берёт выходы Pulumi сам, заменяет
+   `vault_notebooks_s3_*`/`vault_avatars_s3_*` и ничего не печатает:
 
    ```bash
    cd ansible
-   VAULT=inventory/group_vars/all/vault.yml
-   { ansible-vault view "$VAULT" | grep -v -E '^vault_(notebooks|avatars)_s3_'
-     (cd ../pulumi && pulumi stack output --json --show-secrets) | python3 -c '
-   import json, sys
-   o = json.load(sys.stdin)
-   print("vault_avatars_s3_access_key:", json.dumps(o["avatarsAccessKey"]))
-   print("vault_avatars_s3_secret_key:", json.dumps(o["avatarsSecretKey"]))'
-   } | ansible-vault encrypt --output "$VAULT.new"
-   ansible-vault view "$VAULT.new" | sed -E 's/:.*//'   # имена: без notebooks, с двумя avatars
-   mv "$VAULT.new" "$VAULT"
+   script=$(mktemp)
+   cat > "$script" <<'PY'
+   import json, re, subprocess, sys
+   path = sys.argv[1]
+   out = json.loads(subprocess.run(["pulumi", "stack", "output", "--stack", "prod", "--json", "--show-secrets"],
+                                   cwd="../pulumi", capture_output=True, check=True, text=True).stdout)
+   lines = [l for l in open(path).read().splitlines() if not re.match(r"vault_(notebooks|avatars)_s3_", l)]
+   lines += [f"vault_avatars_s3_access_key: {json.dumps(out['avatarsAccessKey'])}",
+             f"vault_avatars_s3_secret_key: {json.dumps(out['avatarsSecretKey'])}"]
+   open(path, "w").write("\n".join(lines) + "\n")
+   PY
+   EDITOR="python3 $script" ansible-vault edit inventory/group_vars/all/vault.yml; rm -f "$script"
+   ansible-vault view inventory/group_vars/all/vault.yml | sed -E 's/:.*//'   # имена: без notebooks, с двумя avatars
    ```
 
 2. **Сверка цели** по стейту — имя, пул, проект и URN, ничего другого не трогать:
