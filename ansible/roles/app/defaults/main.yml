@@ -26,8 +26,8 @@ app_runtime_secrets_dir: "{{ app_compose_dir }}/runtime-secrets"
 app_runtime_playbook_dir: "{{ app_compose_dir }}/runtime-playbook"
 # Каталог заданий Ansible Go API (RUNTIME_WORK_DIR): тот же путь на VPS2 и в контейнере
 app_runtime_work_dir: /var/lib/cellestial/runtime
-# RUNTIME_* из .env, которые Compose передаёт Go API при runtime_enabled (имена — internal/config/runtime.go
-# backend); RUNTIME_ENABLED передаётся всегда, runtime_extra_env — дополнительно
+# RUNTIME_* из .env, которые Compose передаёт Go API (имена — internal/config/runtime.go backend);
+# runtime_extra_env — дополнительно
 app_runtime_env_names:
   - RUNTIME_PROVIDER
   - RUNTIME_OS_AUTH_URL

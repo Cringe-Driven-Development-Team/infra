@@ -880,19 +880,20 @@ Go API на VPS2 сам создаёт VPS на пользовательскую
 `192.168.199.0/24` с security group `runtime`, диск из образа runtime («Образ runtime-VPS»), сервер с keypair `runtime-provisioner`, без
 floating IP (наружу — SNAT роутера). Настраивает её плейбуком `ansible/runtime` по SSH на приватный адрес
 и ходит к агенту по mTLS на `:8443`. Инфраструктура для этого — раздел «Runtime-VPS сессий» в
-`pulumi/README.md`; выключатель — `runtime_enabled` в `group_vars/all/vars.yml` (на проде `true`; при `false`
-Go API получает только `RUNTIME_ENABLED=false`, ключей runtime на VPS2 нет).
+`pulumi/README.md`. Выключателя нет (infra#64, backend#42): Go API всегда получает полный набор `RUNTIME_*`,
+ключи и плейбук runtime; без любого обязательного значения или секрета backend-деплой останавливается на
+`validate.yml`, до изменения VPS2. Выкатка BFF (`deploy-bff.yml`) runtime-настроек не требует.
 
 **Квоты** проекта `pulumi-cellestial`, ru-9a (quota-manager API, 2026-10-29): `compute_cores` 600, занято 6;
 `compute_ram` 5 000 GiB, занято 16 GiB; `volume_gigabytes_fast` 5 000 GB, занято 100; портов Neutron квота не
 ограничивает. Три одновременные runtime-VPS (3 vCPU, 6 GiB, 3 × 20 GiB, 3 порта) проходят без изменений в
 панели. Проверка заново — project-токен, `GET https://ru-9.cloud.api.selcloud.ru/quota-manager/v1/projects/<projectId>/quotas`.
 
-### Включение
+### Настройка с нуля
 
 Предусловие: Go работает на приватной VPS2 («Go и Postgres на VPS2»); security group `runtime`
-пускает SSH и 8443 только с `backendPrivateIp`. При `runtime_enabled: true` нужны заполненные
-настройки и секреты runtime-VPS; `validate.yml` проверяет их до запуска приложения.
+пускает SSH и 8443 только с `backendPrivateIp`. Backend-деплою нужны заполненные настройки и секреты
+runtime-VPS; `validate.yml` проверяет их до запуска приложения.
 
 1. **Pulumi.** `pulumi preview` по `prod`: только создание — пользователь `runtime` и его пароль, security
    group `runtime` и три правила, ключи `runtime-ssh`/`runtime-ca`/`runtime-client`, сертификаты, keypair
@@ -924,8 +925,7 @@ Go API получает только `RUNTIME_ENABLED=false`, ключей runti
 
    Значения в старом `vault.yml` однострочные (пароли и ключи), иначе `grep -v` оставил бы хвосты —
    тогда править `ansible-vault edit`.
-4. **Включить** после мержа backend#57: `runtime_enabled: true` в `vars.yml` (PR вместе с `vault.yml`),
-   затем выкатка Go (`deploy-backend.yml`, CD бэка). Роль `app` пишет на VPS2 `/opt/cellestial/runtime-secrets`
+4. **Выкатка Go** (`deploy-backend.yml`, CD бэка) после мержа PR с `vars.yml` и `vault.yml`. Роль `app` пишет на VPS2 `/opt/cellestial/runtime-secrets`
    (каталог `0500`, файлы `0400`, владелец uid 10001 — пользователь `app` образа), каталог заданий
    `/var/lib/cellestial/runtime` (`0700`, uid 10001) и плейбук `/opt/cellestial/runtime-playbook`; Compose
    монтирует их в контейнер Go API: `/run/secrets/runtime` и `/app/deploy/runtime` — read-only.

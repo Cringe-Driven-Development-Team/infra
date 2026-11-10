@@ -772,7 +772,7 @@ missing-health/one-healthy; real-image тест проверяет env, offline 
 `prepare.yml` готовит runtime-VPS без сессии и запускает агента в режиме ожидания (infra#138); сессию
 назначает Go API запросом `POST /assign` к агенту, без SSH и Ansible (пул VPS, backend#89). Запускает его Go API на VPS2 (backend#57) с `inventory.json` и
 `vars.json` операции; роль `app` копирует каталог на VPS2 и монтирует в контейнер API в
-`/app/deploy/runtime` (при `runtime_enabled`). Сеть kernel — по контракту backend
+`/app/deploy/runtime`. Сеть kernel — по контракту backend
 `docs/runtime-agent-network.md`: таблица nftables `inet cellestial` в unit `cellestial-firewall.service`.
 CI проверяет `ansible-lint runtime` и `--syntax-check` с заглушкой `tests/runtime/vars.json`. Включение,
 секреты и ротация — RUNBOOK, «Runtime-VPS сессий».
