@@ -509,21 +509,6 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertNotIn('PORT', bff['environment'])
                 self.assertFalse(bff.get('ports'))
 
-    def test_emergency_overlay_changes_only_selected_image(self):
-        config, _ = self.render_host(['api', 'postgres', 'redis'])
-        image = BACKEND_REF.replace('d' * 64, 'e' * 64)
-        compose = shlex.split(os.environ.get('COMPOSE_CLI', 'docker compose'))
-        command = [*compose, '-f', str(self.root / 'compose.yml'), '-f',
-                   str(ANSIBLE / 'files/backend-rollback.override.yml'), 'config', '--format', 'json']
-        clean = {k: v for k, v in os.environ.items() if not k.isupper() or k in ('PATH', 'HOME')}
-        recovery = subprocess.run(command, capture_output=True, text=True, check=True,
-                                  timeout=30, env=clean | {'ROLLBACK_BACKEND_IMAGE': image})
-        config['services']['api'].update(image=image, pull_policy='never')
-        self.assertEqual(json.loads(recovery.stdout), config)
-        missing = subprocess.run(command, capture_output=True, text=True, timeout=30, env=clean)
-        self.assertNotEqual(missing.returncode, 0)
-        self.assertIn('ROLLBACK_BACKEND_IMAGE', missing.stderr)
-
     def render_host(self, services, runtime=None, secrets=None):
         """compose.yml и .env одного хоста по реальным шаблонам роли app; Compose проверяет результат."""
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())

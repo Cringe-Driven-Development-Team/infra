@@ -304,28 +304,11 @@ Go API ходит в S3 ключом пользователя `avatars` (`vault_
 
 После мержа infra#22 и infra#30 установите CI-ключ через `site.yml`, настройте
 секреты и ручное approval environment `production` бэка. Backend PR мержится
-последним и запускает первый деплой. Команды первой выкатки, проверки и отката
-по SHA-тегу — в [ansible/README.md](ansible/README.md#go-api-первая-выкатка-и-откат).
+последним и запускает первый деплой. Команды выкатки, проверки и отката на ранее
+подтверждённый digest (`backend_image_ref=ghcr.io/cringe-driven-development-team/backend@sha256:…`) — в [ansible/README.md](ansible/README.md#go-api-первая-выкатка-и-откат).
 Pulumi из CI не запускается. Перед приёмкой проверьте pull приватного образа и logout GHCR,
 healthy у API и Postgres, сохранность данных после отката и неизменность тега API
 после `site.yml`; маршруты клиента и закрытые порты — через `verify.yml`.
-
-Перенос backend в team/backend меняет default image на
-`ghcr.io/cringe-driven-development-team/backend`. Этот infra PR принимается
-только после публикации нового private package и остановки старого deploy,
-который также читает infra@main. Затем включается новый production writer.
-Полное окно и metadata gates — в
-[runbook организации](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/docs/migrations/team-repositories-runbook.md).
-Откат к прежней организации требует явного
-`app_backend_image=ghcr.io/go-park-mail-ru/2026_2_cringe_driven_development`,
-старого SHA-тега и GHCR credential, читающего старый private package.
-Команда с override — в ansible/README.md; volumes и БД при переносе не меняются.
-Если старый private package недоступен текущему токену, подготовить до переключения
-проверенный архив работающего image. Откат из него через отдельный Compose overlay
-с `pull_policy: never` описан в
-[ansible/README.md](ansible/README.md#откат-из-проверенного-архива-без-registry).
-Архив, его SHA256 и результаты load-проверки хранить в журнале окна вне checkout;
-повторный pull старого package остаётся отдельной операцией с прежним read credential.
 
 ## Выкатка BFF (infra#58)
 
