@@ -795,7 +795,6 @@ class DeploymentChecks(unittest.TestCase):
 
     def test_runtime_validation(self):
         open_values = {"app_backend_address": "192.168.199.10"}
-        vault = RUNTIME_VAULT
         data = yaml.safe_load(self.inventory.read_text())
         data["all"]["children"]["backend"] = {"hosts": {"test-backend": {
             "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
@@ -807,14 +806,14 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("runtime_*", result.stdout + result.stderr)
         # битый ключ шифрования не попадает в вывод
-        broken = vault.replace(RUNTIME_SECRETS["runtime_secrets_key"], "short-leaked-key")
+        broken = RUNTIME_VAULT.replace(RUNTIME_SECRETS["runtime_secrets_key"], "short-leaked-key")
         self.write_runtime_vault(broken)
         result = self.validate(BACKEND_REF, extra=open_values)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("short-leaked-key", result.stdout + result.stderr)
         self.assertIn("vault_runtime_", result.stdout + result.stderr)
         # пропущенный секрет останавливает backend-деплой на проверке, до изменения сервера
-        self.write_runtime_vault(vault.replace("vault_runtime_ca_key", "unused_ca_key"))
+        self.write_runtime_vault(RUNTIME_VAULT.replace("vault_runtime_ca_key", "unused_ca_key"))
         result = self.validate(BACKEND_REF, extra=open_values)
         output = result.stdout + result.stderr
         self.assertNotEqual(result.returncode, 0)

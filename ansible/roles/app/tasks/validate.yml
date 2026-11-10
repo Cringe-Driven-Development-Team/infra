@@ -125,8 +125,7 @@
       - "'http://' not in app_cors_allowed_origins"
     fail_msg: Set app_cors_allowed_origins in inventory/group_vars/all/vars.yml to HTTPS origins only.
 
-# Runtime — только у Go API: app_deploy_service == 'api' — это deploy-backend.yml на VPS2, где роль app
-# пишет файлы runtime; BFF-деплой их не требует
+# Runtime-настройки нужны только Go API (deploy-backend.yml); BFF-деплой их не требует
 - name: Check the runtime VPS configuration
   ansible.builtin.assert:
     that:
