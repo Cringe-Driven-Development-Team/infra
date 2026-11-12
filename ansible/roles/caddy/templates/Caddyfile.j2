@@ -3,11 +3,13 @@
 {# Политика под то, что грузит клиент: чанки JS и CSS — с CDN бакета релизов, картинки и шрифты —
     со статики, аватарки — со своего бакета, API — свой домен. data: в img-src — иконки: они заданы
     в CSS как mask-image с SVG в data:. 'self' — файлы PWA, которые отдаёт BFF: service worker, манифест,
-    его иконки, стили и шрифт офлайн-страницы. Инлайновых скриптов и style-атрибутов в разметке нет. -#}
+    его иконки, стили и шрифт офлайн-страницы. CSS не ограничен (infra#153): HTML-вывод ячеек (Polars и др.)
+    в iframe srcdoc наследует эту политику и несёт встроенные <style>, style-атрибуты и внешние стили.
+    Инлайновых скриптов в разметке нет. -#}
 {% set caddy_csp = [
     "default-src 'none'",
     "script-src https://" ~ frontend_cdn_domain,
-    "style-src 'self' https://" ~ frontend_cdn_domain,
+    "style-src * data: blob: 'unsafe-inline'",
     "img-src 'self' https://" ~ frontend_cdn_domain ~ " https://" ~ frontend_static_domain
         ~ " https://" ~ avatars_public_domain ~ " data:",
     "font-src 'self' https://" ~ frontend_static_domain,
@@ -37,7 +39,7 @@
 	handle {
 {% if caddy_bff_enabled | default(caddy_bff_deployed) | bool %}
 		reverse_proxy bff:3000 {
-			# ограничивает последствия XSS: страница грузит скрипты, стили, картинки и шрифты только
+			# ограничивает последствия XSS: страница грузит скрипты, картинки и шрифты только
 			# со своих доменов; у Report-Only нарушения только пишутся в консоль браузера
 			header_down {{ 'Content-Security-Policy-Report-Only' if caddy_csp_report_only | default(true) | bool else 'Content-Security-Policy' }} "{{ caddy_csp }}"
 		}
