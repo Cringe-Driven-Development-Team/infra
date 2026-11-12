@@ -707,7 +707,7 @@ class DeploymentChecks(unittest.TestCase):
 
     def test_caddy_routes_to_bff_once_it_is_deployed(self):
         csp = ("default-src 'none'; script-src https://cdn.example.org; "
-               "style-src 'self' https://cdn.example.org; "
+               "style-src * data: blob: 'unsafe-inline'; "
                "img-src 'self' https://cdn.example.org https://static.example.org "
                "https://avatars.example.org data:; "
                "font-src 'self' https://static.example.org; connect-src 'self'; manifest-src 'self'; "

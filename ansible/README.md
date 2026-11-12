@@ -268,8 +268,9 @@ BFF сам разбирает остальное: `/api/trpc` и `/api/trpc/*` �
 - До первой выкатки BFF (в `.env` на VPS нет `BFF_IMAGE_REF`) Caddy на всех путях, кроме `/health`,
   отвечает `503` с телом `BFF is not deployed`.
 - Все ответы Caddy несут `X-Content-Type-Options: nosniff`, ответы BFF — ещё и
-  `Content-Security-Policy`, и браузер её применяет: скрипты — только с `frontend_cdn_domain`, стили — с него
-  и со своего домена, картинки — со своего домена, с него, `frontend_static_domain`,
+  `Content-Security-Policy`, и браузер её применяет: скрипты — только с `frontend_cdn_domain`, стили не ограничены
+  (`style-src * data: blob: 'unsafe-inline'`: HTML-вывод ячеек в `iframe srcdoc` наследует политику
+  и несёт встроенные `<style>` и `style`-атрибуты), картинки — со своего домена, с него, `frontend_static_domain`,
   `avatars_public_domain` и из `data:` (иконки-маски), шрифты — с `frontend_static_domain`, запросы,
   манифест и service worker — со своего домена. Политика задаётся в `Caddyfile.j2`, режим — в
   `caddy_csp_report_only` (`inventory/group_vars/all/vars.yml`); в BFF заголовка нет. Новый источник
