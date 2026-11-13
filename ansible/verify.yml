@@ -200,8 +200,8 @@
       register: sshd_effective
       changed_when: false
 
-    # Пересылка запрещена, кроме gateway при VPS2: только ssh -W на её SSH (infra#59)
-    - name: "Hardening активен: root/пароли выключены, форвардинг — только jump на VPS2"
+    # Пересылка запрещена, кроме gateway при VPS2: ровно VPS2:22 (jump, infra#59) и VPS2:8080 (Go API, infra#155)
+    - name: "Hardening активен: root/пароли выключены, форвардинг — только VPS2:22 и VPS2:8080"
       ansible.builtin.assert:
         that:
           - sshd_effective.stdout is search('(?m)^permitrootlogin no$')
@@ -210,7 +210,9 @@
           - >-
             sshd_effective.stdout is search('(?m)^allowtcpforwarding no$')
             if (ssh_hardening_jump_targets | default([])) | length == 0
-            else (sshd_effective.stdout is search('(?m)^allowtcpforwarding local$')
+            else (ssh_hardening_jump_targets | sort
+                  == [app_backend_address ~ ':22', app_backend_address ~ ':8080'] | sort
+                  and sshd_effective.stdout is search('(?m)^allowtcpforwarding local$')
                   and sshd_effective.stdout is search('(?m)^permitopen ' ~ (ssh_hardening_jump_targets | join(' ') | regex_escape) ~ '$'))
         fail_msg: "sshd -T: {{ sshd_effective.stdout }}"
 
