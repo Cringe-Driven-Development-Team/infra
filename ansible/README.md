@@ -206,7 +206,7 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 |---|---|---|
 | users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive, с проверкой ключа запускающего), sudo NOPASSWD — в bootstrap и в каждом site.yml |
 | common | все | базовые пакеты |
-| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей; gateway разрешает SSH jump только к приватной VPS2 (`PermitOpen`), на остальных хостах forwarding запрещён; Ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
+| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей; gateway разрешает пересылку только к приватной VPS2: `:22` (SSH jump) и `:8080` (Go API для туннеля локального BFF) — `PermitOpen`; на остальных хостах, включая VPS2, forwarding запрещён; Ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
 | firewall | все | ufw: deny incoming; публичный gateway — 22/80/443, приватная VPS2 — 22/8080 только с gateway |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: все пути, кроме закрытого `/health`, — BFF (до его первой выкатки — `503 BFF is not deployed`), раздел «Клиент и BFF»; сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
@@ -427,7 +427,7 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
 Группа `backend` — сервер Pulumi с `metadata.role: backend`, без публичного IP; `ansible_host` — его
 приватный адрес. Ansible ходит на неё через gateway: `ansible_ssh_extra_args` в `group_vars/backend`
 задаёт `ProxyCommand` с ключом `deploy_key_path` (known_hosts gateway — `jump_known_hosts`), а sshd на
-gateway пускает пересылку только на `VPS2:22` (`ssh_hardening_jump_targets`). `site.yml` настраивает VPS2 так же,
+gateway пускает пересылку только на `VPS2:22` и `VPS2:8080` (`ssh_hardening_jump_targets`; 8080 — [туннель локального BFF](#ssh-туннель-локального-bff-к-go-api-infra155)). `site.yml` настраивает VPS2 так же,
 как gateway, без Caddy; ufw на ней пускает 22 и 8080 только с `app_gateway_address`.
 
 Раскладка фиксирована: Caddy и BFF работают на gateway, Go API, Postgres и Redis — на
@@ -438,6 +438,51 @@ gateway пускает пересылку только на `VPS2:22` (`ssh_hard
 `deploy-bff.yml` работает только на gateway и перед запуском требует доступный Go на VPS2.
 Откат версии повторно выкатывает прежний digest на VPS2, без возврата сервисов на gateway.
 Порядок выкатки и отката — [RUNBOOK.md](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
+
+## SSH-туннель локального BFF к Go API (infra#155)
+
+Локальные клиент и BFF разработчика ходят в действующий Go на VPS2 через обычный SSH-туннель:
+`локальный клиент → локальный BFF → 127.0.0.1:18080 → SSH gateway → приватный адрес VPS2:8080`.
+Go API в интернет не публикуется, у VPS2 нет публичного IP. На gateway sshd пускает local forwarding
+только на `VPS2:22` и `VPS2:8080` (`PermitOpen`); остальные назначения отклоняются. На VPS2 и других
+хостах `AllowTcpForwarding no`. ufw VPS2 пускает 8080 только с gateway — туннель приходит именно оттуда.
+
+> **Production.** Через туннель идут запросы к production Go: production-данные и общий пул runtime
+> VPS. Режим согласован владельцем; используйте тестовый аккаунт и завершайте запущенные окружения.
+
+Нужен SSH-доступ к gateway под своим пользователем — его выдаёт и описывает
+[командный справочник подключения](https://github.com/Cringe-Driven-Development-Team/agent-plugins-private/blob/main/plugins/cellestial-ops/skills/cellestial-ops/SKILL.md) (приватный репозиторий команды). Там же — адрес
+gateway и приватный адрес VPS2 (`pulumi stack output backendPrivateIp`). В отдельном терминале:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes \
+  -L 127.0.0.1:18080:<PRIVATE_IP_VPS2>:8080 <USER>@<GATEWAY>
+```
+
+Локальный порт слушает только loopback: не используйте `-g` и адрес привязки `0.0.0.0`/`*`.
+Остановка — Ctrl+C, после неё порт 18080 закрыт. `ExitOnForwardFailure` завершает ssh только при ошибке
+локального bind (порт 18080 занят). Отказ gateway (`PermitOpen` не применён, неверный адрес VPS2)
+виден лишь при первом соединении через туннель: ssh пишет `open failed: administratively prohibited`
+и продолжает работать. Поэтому после запуска проверьте туннель запросом — ответ `{"status": "alive"}`:
+
+```sh
+curl -s http://127.0.0.1:18080/health
+```
+
+Локальному BFF (frontend, корневой `.env` — в Git не попадает, или окружение запуска):
+
+```dotenv
+GO_API_URL=http://127.0.0.1:18080/api/v1
+BFF_KEY=<S2S-ключ выбранного Go>
+```
+
+`BFF_KEY` — действующий `bff_api_key` production (раздел «Секреты»), берётся через выданный доступ к
+секретам; значение хранится только локально, не в Git, примерах и отчётах. Без ключа или с неверным Go
+отвечает `403 s2s_forbidden`. Запуск клиента и BFF — по документации frontend
+([реальный Go](https://github.com/Cringe-Driven-Development-Team/frontend/blob/main/docs/api-contract.md#реальный-go)).
+
+Изменение `PermitOpen` применяется `ansible-playbook -i inventory/ci.yml site.yml --limit gateway`
+и проверяется `verify.yml` (`sshd -T`: ровно два назначения).
 
 ## Go API: первая выкатка и откат
 

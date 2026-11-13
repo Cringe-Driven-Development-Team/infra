@@ -807,7 +807,7 @@ sshd gateway разрешает пересылку только на `VPS2:22`. 
    VPS2 playbook завершается на проверке inventory, без выкатки на gateway.
 2. После добавления VPS2 или смены её адреса сначала выполнить
    `ansible-playbook -i inventory/ci.yml site.yml --limit gateway`: это обновляет
-   разрешённый SSH jump-путь и `PermitOpen` до нового `VPS2:22`.
+   разрешённый SSH jump-путь и `PermitOpen` до нового `VPS2:22` и `VPS2:8080` (туннель локального BFF, infra#155).
    Затем для новой VPS2 один раз выполнить `bootstrap.yml --limit backend` и
    `site.yml --limit backend` для пользователей, SSH-hardening, ufw и Docker.
    Полная команда выбора inventory и ключей — в [Ansible README](ansible/README.md).

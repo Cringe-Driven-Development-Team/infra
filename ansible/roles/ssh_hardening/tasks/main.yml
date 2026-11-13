@@ -13,7 +13,8 @@
       MaxAuthTries 4
       X11Forwarding no
       {% if ssh_hardening_jump_targets | length > 0 %}
-      # Gateway — jump-хост для приватной VPS2 (infra#59): пересылка только ssh -W на её SSH
+      # Gateway — пересылка только к назначениям ssh_hardening_jump_targets: SSH VPS2 (jump, infra#59)
+      # и её Go API (туннель локального BFF, infra#155)
       AllowTcpForwarding local
       PermitOpen {{ ssh_hardening_jump_targets | join(' ') }}
       {% else %}
