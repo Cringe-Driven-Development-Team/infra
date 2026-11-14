@@ -92,7 +92,8 @@ runtime_blocked_public_ips: 87.228.26.154,87.228.26.22           # выход ru
 #   runtime_extra_env: { RUNTIME_PYTHON_IMAGE: "ghcr.io/...@sha256:...", RUNTIME_MAX_ACTIVE: "3" }
 # Одновременно активных окружений (по умолчанию 3): при тестировании несколькими людьми слоты кончались (infra#136)
 # shortcut: RUNTIME_ENABLED нужен Go API до backend#42 (без него runtime выключен); убрать вместе с backend#42
-runtime_extra_env: { RUNTIME_MAX_ACTIVE: "10", RUNTIME_ENABLED: "true" }
+# Заранее подготовленных VPS (по умолчанию 2): окружение стартует без ожидания создания VPS
+runtime_extra_env: { RUNTIME_MAX_ACTIVE: "10", RUNTIME_WARM_POOL_SIZE: "10", RUNTIME_ENABLED: "true" }
 # Секреты runtime — выходы Pulumi с --show-secrets, в vault.yml (сертификаты не секретны, но
 # многострочные — лежат там же, рядом со своими ключами)
 runtime_os_password: "{{ vault_runtime_os_password }}"           # runtimeOsPassword
