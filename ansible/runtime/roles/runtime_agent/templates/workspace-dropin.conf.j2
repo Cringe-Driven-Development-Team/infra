@@ -1,0 +1,7 @@
+[Unit]
+RequiresMountsFor=/srv/cellestial/workspace
+BindsTo=srv-cellestial-workspace.mount
+
+[Service]
+ExecStartPre=+/usr/local/sbin/cellestial-prepare-workspace --verify-mount
+ReadWritePaths=/srv/cellestial/workspace

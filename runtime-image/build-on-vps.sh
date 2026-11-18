@@ -81,6 +81,13 @@ install -m 0644 /root/static/sysctl.conf /etc/sysctl.d/90-cellestial-runtime.con
 install -m 0644 /root/static/cellestial-firewall.service /etc/systemd/system/cellestial-firewall.service
 install -m 0644 /root/static/nginx-network.conf /etc/systemd/system/nginx.service.d/10-cellestial-network.conf
 install -m 0644 /root/static/firewall-dropin.conf /etc/systemd/system/cellestial-agent.service.d/10-cellestial-firewall.conf
+# Эти утилиты входят в базовый образ. Проверяем их наличие до публикации.
+for workspace_tool in fallocate mkfs.ext4 findmnt losetup flock; do
+  command -v "$workspace_tool" >/dev/null
+done
+install -m 0755 /root/static/prepare-workspace.sh /usr/local/sbin/cellestial-prepare-workspace
+install -m 0644 /root/static/srv-cellestial-workspace.mount /etc/systemd/system/srv-cellestial-workspace.mount
+install -m 0644 /root/static/workspace-dropin.conf /etc/systemd/system/cellestial-agent.service.d/20-cellestial-workspace.conf
 rm -f /etc/nginx/sites-enabled/default
 systemctl daemon-reload
 systemctl disable docker.service docker.socket

@@ -102,6 +102,14 @@
     group: root
     mode: "0644"
 
+- name: Require the workspace mount before starting the agent
+  ansible.builtin.template:
+    src: workspace-dropin.conf.j2
+    dest: /etc/systemd/system/{{ runtime_agent_service }}.service.d/20-cellestial-workspace.conf
+    owner: root
+    group: root
+    mode: "0644"
+
 # Плейбук идёт на свежей VPS до назначения сессии; при сбое Go API удаляет VPS, а не повторяет плейбук
 - name: Start the agent
   ansible.builtin.systemd_service:

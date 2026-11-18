@@ -1,0 +1,11 @@
+[Unit]
+Description=Cellestial runtime workspace
+
+[Mount]
+What=/var/lib/cellestial-workspace/workspace.ext4
+Where=/srv/cellestial/workspace
+Type=ext4
+Options=loop,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
