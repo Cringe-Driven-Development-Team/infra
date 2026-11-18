@@ -10,6 +10,24 @@
     append: true
     shell: /usr/sbin/nologin
 
+# Kernel получает только data. setgid сохраняет общую группу для новых подкаталогов.
+- name: Prepare the shared kernel workspace directory
+  ansible.builtin.file:
+    path: /srv/cellestial/workspace/data
+    state: directory
+    owner: "{{ runtime_agent_user }}"
+    group: "65532"
+    mode: "2770"
+    follow: false
+
+- name: Prepare the private upload staging directory
+  ansible.builtin.file:
+    path: /srv/cellestial/workspace/staging
+    state: directory
+    owner: "{{ runtime_agent_user }}"
+    mode: "0700"
+    follow: false
+
 - name: Agent installation and configuration directories
   ansible.builtin.file:
     path: "{{ item }}"

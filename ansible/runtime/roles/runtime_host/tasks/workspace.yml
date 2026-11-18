@@ -63,10 +63,10 @@
   ansible.builtin.command: /usr/local/sbin/cellestial-prepare-workspace --verify-mount
   changed_when: false
 
-- name: Set kernel ownership on the workspace
+- name: Keep the workspace root owned by the host
   ansible.builtin.file:
     path: /srv/cellestial/workspace
     state: directory
-    owner: "65532"
-    group: "65532"
+    owner: root
+    group: root
     mode: "0755"
