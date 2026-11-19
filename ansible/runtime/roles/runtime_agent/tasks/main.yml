@@ -1,14 +1,41 @@
 ---
 # Агент в режиме ожидания: wheel из образа Go API (версия и sha256 — от backend), venv, agent.env, unit проекта.
+- name: Create the kernel workspace group
+  ansible.builtin.group:
+    name: cellestial-workspace
+    gid: 65532
+    system: true
+
 - name: Agent account
   ansible.builtin.user:
     name: "{{ runtime_agent_user }}"
     system: true
     create_home: false
     home: /nonexistent
-    groups: docker
+    groups:
+      - docker
+      - cellestial-workspace
     append: true
     shell: /usr/sbin/nologin
+  register: runtime_agent_account
+
+# Kernel получает только data. setgid сохраняет общую группу для новых подкаталогов.
+- name: Prepare the shared kernel workspace directory
+  ansible.builtin.file:
+    path: /srv/cellestial/workspace/data
+    state: directory
+    owner: "{{ runtime_agent_user }}"
+    group: "65532"
+    mode: "2770"
+    follow: false
+
+- name: Prepare the private upload staging directory
+  ansible.builtin.file:
+    path: /srv/cellestial/workspace/staging
+    state: directory
+    owner: "{{ runtime_agent_user }}"
+    mode: "0700"
+    follow: false
 
 - name: Agent installation and configuration directories
   ansible.builtin.file:
@@ -102,16 +129,44 @@
     group: root
     mode: "0644"
 
+- name: Require the workspace mount before starting the agent
+  ansible.builtin.template:
+    src: workspace-dropin.conf.j2
+    dest: /etc/systemd/system/{{ runtime_agent_service }}.service.d/20-cellestial-workspace.conf
+    owner: root
+    group: root
+    mode: "0644"
+
 # Плейбук идёт на свежей VPS до назначения сессии; при сбое Go API удаляет VPS, а не повторяет плейбук
 - name: Start the agent
   ansible.builtin.systemd_service:
     name: "{{ runtime_agent_service }}"
     daemon_reload: true
     enabled: true
-    state: started
+    # Уже запущенный процесс получает новые группы только после рестарта.
+    state: "{{ 'restarted' if runtime_agent_account is changed else 'started' }}"
 
 - name: The agent listens on loopback
   ansible.builtin.wait_for:
     host: 127.0.0.1
     port: "{{ runtime_agent_port }}"
     timeout: 60
+
+- name: Read the running agent PID  # noqa: command-instead-of-module
+  ansible.builtin.command: systemctl show --property=MainPID --value {{ runtime_agent_service }}.service
+  register: runtime_agent_main_pid
+  changed_when: false
+  failed_when: runtime_agent_main_pid.rc != 0 or runtime_agent_main_pid.stdout is not match('^[1-9][0-9]*$')
+
+- name: Read the kernel credentials of the running agent
+  ansible.builtin.slurp:
+    src: /proc/{{ runtime_agent_main_pid.stdout }}/status
+  register: runtime_agent_process_status
+
+- name: Verify the running agent can use the kernel workspace group
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((runtime_agent_process_status.content | b64decode).splitlines()
+        | select('match', '^Groups:') | first).split()[1:] | select('equalto', '65532') | list | length == 1
+    fail_msg: The running runtime agent is missing supplementary GID 65532.

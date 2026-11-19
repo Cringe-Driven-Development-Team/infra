@@ -134,6 +134,9 @@
   delay: 10
   until: runtime_host_pull is succeeded
 
+- name: Prepare the disk workspace before starting the agent
+  ansible.builtin.import_tasks: workspace.yml
+
 # --- TLS-прокси API агента ---------------------------------------------------------------------------
 - name: Remove the default nginx site
   ansible.builtin.file:

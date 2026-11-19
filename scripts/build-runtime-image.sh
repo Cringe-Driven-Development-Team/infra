@@ -66,6 +66,9 @@ fi
 # Статические файлы ролей runtime (без переменных Jinja): в образе они те же, что пишет плейбук
 roles="$root/ansible/runtime/roles"
 static=(
+  "$roles/runtime_host/files/prepare-workspace.sh:prepare-workspace.sh"
+  "$roles/runtime_host/files/srv-cellestial-workspace.mount:srv-cellestial-workspace.mount"
+  "$roles/runtime_agent/templates/workspace-dropin.conf.j2:workspace-dropin.conf"
   "$roles/runtime_host/templates/sysctl.conf.j2:sysctl.conf"
   "$roles/runtime_host/templates/cellestial-firewall.service.j2:cellestial-firewall.service"
   "$roles/runtime_host/templates/nginx-network.conf.j2:nginx-network.conf"
