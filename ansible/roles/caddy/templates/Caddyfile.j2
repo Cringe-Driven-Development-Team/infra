@@ -34,7 +34,7 @@
 		respond 404
 	}
 
-	# Всё остальное — BFF: HTML с пользователем, /api/trpc, публичные файлы сборки. Чанки JS и CSS
+	# Всё остальное — BFF: HTML с пользователем, HTTP API /api/*, публичные файлы сборки. Чанки JS и CSS
 	# браузер берёт с CDN каталога своего релиза напрямую. До первой выкатки BFF — заглушка.
 	handle {
 {% if caddy_bff_enabled | default(caddy_bff_deployed) | bool %}

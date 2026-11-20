@@ -17,7 +17,7 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1]
 RELEASE = 'b' * 40
-VALID_LOGIN = {'error': {'data': {'code': 'BAD_REQUEST', 'appCode': 'invalid_credentials'}}}
+VALID_LOGIN = {'error': {'code': 'BAD_REQUEST', 'message': 'Неверный логин или пароль', 'appCode': 'invalid_credentials'}}
 
 
 class BackendProbes(unittest.TestCase):
@@ -49,7 +49,7 @@ class BackendProbes(unittest.TestCase):
                 if self.path in cls.timeout_paths:
                     time.sleep(6)
                 headers = {}
-                if self.path == '/api/trpc/auth.login':
+                if self.path == '/api/auth/login':
                     status, value = cls.login
                 elif self.path == '/health' and self.server is cls.http:
                     status, value = cls.sequence.pop(0) if cls.sequence else cls.health
@@ -58,8 +58,8 @@ class BackendProbes(unittest.TestCase):
                         '<script id="bootstrap" type="application/json">{"user":null}</script></html>')
                     headers = {'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
                                'Content-Security-Policy-Report-Only': "default-src 'none'"}
-                elif self.path == '/api/trpc/users.me':
-                    status, value = 401, {'error': {'data': {'code': 'UNAUTHORIZED'}}}
+                elif self.path == '/api/users/me':
+                    status, value = 401, {'error': {'code': 'UNAUTHORIZED', 'message': 'Нет сессии'}}
                 else:
                     status, value = cls.hidden
                 data = json.dumps(value).encode() if isinstance(value, dict) else str(value).encode()
@@ -155,10 +155,10 @@ class BackendProbes(unittest.TestCase):
     def test_login_probe_requires_invalid_credentials(self):
         tasks = self.tasks('probe-bff.yml')
         cases = [(400, VALID_LOGIN, True), (401, VALID_LOGIN, False),
-                 (400, {'error': {'data': {'code': 'BAD_REQUEST'}}}, False),
-                 (400, {'error': {'data': {'code': 'UNAUTHORIZED', 'appCode': 'invalid_credentials'}}}, False),
-                 (400, {'error': {'data': {'code': 'BAD_REQUEST', 'appCode': 'invalid_bff_key'}}}, False),
-                 (403, {'error': {'data': {'code': 'FORBIDDEN', 'appCode': 'csrf'}}}, False),
+                 (400, {'error': {'code': 'BAD_REQUEST', 'message': 'x'}}, False),
+                 (400, {'error': {'code': 'UNAUTHORIZED', 'appCode': 'invalid_credentials', 'message': 'x'}}, False),
+                 (400, {'error': {'code': 'BAD_REQUEST', 'appCode': 'invalid_bff_key', 'message': 'x'}}, False),
+                 (403, {'error': {'code': 'FORBIDDEN', 'appCode': 'csrf', 'message': 'x'}}, False),
                  (400, '<html>denied</html>', False), (400, '{bad-json', False),
                  (500, {}, False), (200, VALID_LOGIN, False), (302, 'redirect', False)]
         previous_login = None
@@ -168,7 +168,7 @@ class BackendProbes(unittest.TestCase):
                 type(self).login = status, body
                 result = self.run_tasks(tasks)
                 self.assertEqual(result.returncode == 0, passes, result.stdout + result.stderr)
-                calls = [r for r in self.requests if r[0] == '/api/trpc/auth.login']
+                calls = [r for r in self.requests if r[0] == '/api/auth/login']
                 self.assertEqual(len(calls), 1 if passes else 6)
                 self.assertEqual(len({r[3] for r in calls}), 1)
                 payload = json.loads(calls[0][3])
@@ -200,7 +200,7 @@ class BackendProbes(unittest.TestCase):
                         {r[0] for r in self.requests}))
 
     def test_socket_timeouts_fail_with_at_most_six_requests(self):
-        for filename, path in [('probe-backend.yml', '/health'), ('probe-bff.yml', '/api/trpc/auth.login')]:
+        for filename, path in [('probe-backend.yml', '/health'), ('probe-bff.yml', '/api/auth/login')]:
             with self.subTest(probe=filename):
                 type(self).requests = []
                 type(self).timeout_paths = {path}
@@ -221,7 +221,7 @@ class BackendProbes(unittest.TestCase):
         type(self).health = 503, {}
         result = self.run_tasks(self.tasks('probe-backend.yml') + self.tasks('probe-bff.yml'))
         self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+        self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
 
     def test_failed_external_probe_preserves_previous_success_in_log(self):
         type(self).login = 500, {}
@@ -229,7 +229,7 @@ class BackendProbes(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Backend internal HTTP check', result.stdout)
         self.assertIn('ok: [backend-test -> gateway-test', result.stdout)
-        self.assertTrue(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+        self.assertTrue(any(r[0] == '/api/auth/login' for r in self.requests))
 
     def test_real_backend_post_tasks_read_gateway_release_and_keep_stage_results(self):
         # Keep the actual production post_tasks and imported task arguments. Only map external
@@ -286,10 +286,10 @@ class BackendProbes(unittest.TestCase):
                             and r[2].get('Host') == f'127.0.0.1:{self.http.server_port}']
                 self.assertEqual(len(internal), 6 if scenario == 'internal-failure' else 1)
                 if scenario == 'internal-failure':
-                    self.assertFalse(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+                    self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
                 else:
                     self.assertRegex(output, r'TASK \[Backend internal HTTP check\][^\n]*\nok: \[backend-test -> gateway-test')
                     if scenario == 'missing-release':
-                        self.assertFalse(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+                        self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
                     else:
-                        self.assertTrue(any(r[0] == '/api/trpc/auth.login' for r in self.requests))
+                        self.assertTrue(any(r[0] == '/api/auth/login' for r in self.requests))
