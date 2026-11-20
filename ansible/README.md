@@ -257,7 +257,7 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 | `/health` | `404` от Caddy: внутренний health BFF снаружи не виден |
 | остальные | `reverse_proxy bff:3000` |
 
-BFF сам разбирает остальное: `/api/trpc` и `/api/trpc/*` — tRPC; `/api/v1/*` и прочие `/api/*` —
+BFF сам разбирает остальное: маршруты своего HTTP API (`/api/auth/login`, `/api/users/me` и др., frontend#254); `/api/v1/*` и прочие `/api/*` —
 `404`, в Go не проксируются и не становятся HTML; публичные файлы сборки — по списку;
 `GET`/`HEAD` страниц с `Accept: text/html` — HTML клиента с пользователем в
 `<script id="bootstrap">` и `Cache-Control: private, no-store`. Go API напрямую снаружи недоступен.
@@ -295,7 +295,7 @@ BFF сам разбирает остальное: `/api/trpc` и `/api/trpc/*` �
   `healthy` (`roles/app/tasks/check-bff-image.yml`); снаружи (`roles/app/tasks/probe-bff.yml`) —
   гостевой HTML `/login` с ровно одним `<script id="bootstrap">` и `{"user":null}`,
   `<meta name="release">` с полным `BFF_RELEASE_SHA`, `Cache-Control: private, no-store`,
-  `nosniff` и CSP; `users.me` без сессии — tRPC `UNAUTHORIZED` (401); `/api/v1/users/me`,
+  `nosniff` и CSP; `GET /api/users/me` без сессии — `UNAUTHORIZED` (401); `/api/v1/users/me`,
   `/api/unknown` и `/health` — `404` и не HTML;
 - сертификат от Let's Encrypt;
 - после выкатки бэка с Redis (есть `redis/redis.conf`) Redis отвечает `PONG` на `redis-cli -h redis ping` из сети `app` (одноразовый
@@ -552,14 +552,14 @@ Docker config. Login/logout не выполняются; сохранённые 
 2. `Backend internal HTTP check`: запрос с gateway к приватному адресу VPS2 `:8080/health`,
    одновременно HTTP 200 и JSON `status: alive`. Runner не обращается к приватному HTTP напрямую.
    Redirects и proxy запрещены; timeout 5 секунд, максимум шесть запросов с интервалом 5 секунд.
-3. `Backend external BFF check`: runner выполняет HTTPS POST `/api/trpc/auth.login`, отправляя
+3. `Backend external BFF check`: runner выполняет HTTPS POST `/api/auth/login`, отправляя
    `Origin`, `X-CSRF: 1`, JSON с новым случайным login из 32 hex-символов и паролем
-   `deploy-probe-invalid-password`. Успех — одновременно HTTP 400, `BAD_REQUEST` и
-   `invalid_credentials`. Login один на все повторы; максимум шесть запросов, timeout 5 секунд,
+   `deploy-probe-invalid-password`. Успех — одновременно HTTP 400, `error.code` `BAD_REQUEST` и
+   `error.appCode` `invalid_credentials`. Login один на все повторы; максимум шесть запросов, timeout 5 секунд,
    интервал 5 секунд. TLS проверяется, redirects запрещены; существующий S2S-ключ добавляет BFF,
    для запроса runner ключ не получает.
 
-Сохраняются проверки `/login` и гостевого `users.me`. Затем `/api/v1/users/me`, `/api/unknown`
+Сохраняются проверки `/login` и гостевого `GET /api/users/me`. Затем `/api/v1/users/me`, `/api/unknown`
 и `/health` с runner должны вернуть 404 без HTML. Общие HTTP tasks используются также BFF playbook;
 backend-выкатка читает текущий BFF release на gateway, не меняя его образ. Отсутствие BFF release
 или ошибка любой обязательной проверки завершают playbook неуспехом. Уже пройденные задачи остаются

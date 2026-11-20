@@ -8,7 +8,7 @@
 
 - name: Backend external BFF check
   ansible.builtin.uri:
-    url: "https://{{ app_domain }}/api/trpc/auth.login"
+    url: "https://{{ app_domain }}/api/auth/login"
     method: POST
     headers:
       Origin: "https://{{ app_domain }}"
@@ -29,8 +29,8 @@
   become: false
   failed_when: >-
     app_probe_login_result.status | default(0) != 400
-    or (app_probe_login_result.json.error.data.code | default('')) != 'BAD_REQUEST'
-    or (app_probe_login_result.json.error.data.appCode | default('')) != 'invalid_credentials'
+    or (app_probe_login_result.json.error.code | default('')) != 'BAD_REQUEST'
+    or (app_probe_login_result.json.error.appCode | default('')) != 'invalid_credentials'
   until: app_probe_login_result is succeeded
   retries: 5
   delay: 5
@@ -68,9 +68,9 @@
       {{ app_domain }} does not serve the guest HTML of the BFF
       release {{ bff_probe_release }} with nosniff, CSP and Cache-Control: private, no-store.
 
-- name: A protected RPC without a session is a tRPC UNAUTHORIZED
+- name: A protected API route without a session is UNAUTHORIZED
   ansible.builtin.uri:
-    url: "https://{{ app_domain }}/api/trpc/users.me"
+    url: "https://{{ app_domain }}/api/users/me"
     headers:
       X-CSRF: "1"
     status_code: 401
@@ -83,7 +83,7 @@
   become: false
   failed_when: >-
     app_probe_rpc.status != 401
-    or (app_probe_rpc.json.error.data.code | default('')) != 'UNAUTHORIZED'
+    or (app_probe_rpc.json.error.code | default('')) != 'UNAUTHORIZED'
 
 - name: Go API, unknown API paths and the internal health are not public
   ansible.builtin.uri:

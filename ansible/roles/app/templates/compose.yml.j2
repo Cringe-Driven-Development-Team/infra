@@ -78,7 +78,7 @@ services:
 
 {% endif %}
 {% if 'bff' in app_services %}
-  # BFF (infra#58): HTML и /api/trpc снаружи — через Caddy. PORT не задаётся: в .env он для api (8080),
+  # BFF (infra#58): HTML и HTTP API /api/* снаружи — через Caddy. PORT не задаётся: в .env он для api (8080),
   # а BFF слушает 3000 по умолчанию.
   bff:
     # образ по digest (infra#74): скачан и сверен deploy-bff.yml до записи в .env

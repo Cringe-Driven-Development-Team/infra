@@ -317,7 +317,7 @@ healthy у API и Postgres, сохранность данных после от�
 ## Выкатка BFF (infra#58)
 
 Схема: браузер → Caddy → BFF (`bff:3000`) → Go (`api:8080`, только сеть `app`). Снаружи — HTML,
-`/api/trpc` и публичные файлы через BFF; `/api/v1/*` и прочие `/api/*` — `404` от BFF (не HTML),
+HTTP API BFF (`/api/auth/*`, `/api/notebooks/*` и др., frontend#254) и публичные файлы через BFF; `/api/v1/*` и прочие `/api/*` — `404` от BFF (не HTML),
 `/health` — `404` от Caddy. Чанки JS и CSS — с CDN каталога своего релиза. До первой выкатки BFF
 домен отвечает `503 BFF is not deployed`. Подробно — [ansible/README.md](ansible/README.md#клиент-и-bff).
 
@@ -334,7 +334,7 @@ healthy у API и Postgres, сохранность данных после от�
    `/notebooks/<id>`. Затем `verify.yml`.
 4. Откат — шаг 2 с прежними `bff_image_ref` и `bff_release_sha`; после него те же проверки. `SESSION_KEY` не меняется, сессия
    остаётся. Go и БД откат BFF не трогает.
-5. Недоступность Go: RPC отвечает tRPC `BAD_GATEWAY` (502), HTML — `503` без приложения, а не SPA.
+5. Недоступность Go: API BFF отвечает `BAD_GATEWAY` (502), HTML — `503` без приложения, а не SPA.
 
 ## Вспомогательная VPS (infra#54)
 
