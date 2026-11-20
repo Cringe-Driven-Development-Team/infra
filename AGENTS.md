@@ -47,9 +47,12 @@ workspace поиск охватывает соседние wiki; в `openwiki_re
 worktree, основной checkout находится через
 `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`; соседей ищи
 относительно него и проверяй их `origin` в организации. Для общего поиска один
-раз запусти `openwiki link` из родительской папки, выбери четыре готовые wiki и
-назови пространство `CDD`. Реестр локальный, не коммить его. При нескольких
-пространствах выбери активное `openwiki workspace use CDD`.
+раз запусти `openwiki link` из родительской папки, выбери готовые wiki `docs` и
+`infra` и назови пространство `CDD`. Если пространство `CDD` уже связано, запусти
+`openwiki link` → `CDD` → `Edit wikis`, сними выбор с `frontend` и `backend`,
+оставь `docs` и `infra`, затем выбери `Save workspace` → `Finish`. Реестр локальный,
+не коммить его. При нескольких пространствах выбери активное
+`openwiki workspace use CDD`.
 
 Проверки свежести (`bun scripts/openwiki-check.ts --against <SHA>` у владельца)
 относятся к обслуживанию, генерации, CI и явной диагностике по запросу пользователя.
