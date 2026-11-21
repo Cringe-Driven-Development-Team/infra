@@ -307,8 +307,16 @@ jobs:
                 || '' }}
         # сбой отправки не меняет результат выкатки
         run: |
+          alert_script=scripts/deploy-alert.ts
+          if [[ ! -s "$alert_script" ]]; then
+            alert_script="$RUNNER_TEMP/deploy-alert.ts"
+            if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/scripts/deploy-alert.ts?ref=$GITHUB_SHA" > "$alert_script"; then
+              echo '::warning::Отправитель алерта недоступен после checkout.'
+              exit 0
+            fi
+          fi
           runner=(bun)
           if ! command -v bun >/dev/null; then
             runner=(npx --yes bun@1.4.4)
           fi
-          "${runner[@]}" scripts/deploy-alert.ts infra "$DEPLOY_STATUS" || echo '::warning::Алерт о результате выкатки не отправлен.'
+          "${runner[@]}" "$alert_script" infra "$DEPLOY_STATUS" || echo '::warning::Алерт о результате выкатки не отправлен.'

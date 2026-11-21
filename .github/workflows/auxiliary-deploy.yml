@@ -163,4 +163,13 @@ jobs:
                 || steps.deploy.outcome == 'failure' && 'Применение playbook'
                 || '' }}
         # сбой отправки не меняет результат выкатки
-        run: npx --yes bun@1.4.4 scripts/deploy-alert.ts auxiliary "$DEPLOY_STATUS" || echo '::warning::Алерт о результате операции VPS3 не отправлен.'
+        run: |
+          alert_script=scripts/deploy-alert.ts
+          if [[ ! -s "$alert_script" ]]; then
+            alert_script="$RUNNER_TEMP/deploy-alert.ts"
+            if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/scripts/deploy-alert.ts?ref=$GITHUB_SHA" > "$alert_script"; then
+              echo '::warning::Отправитель алерта недоступен после checkout.'
+              exit 0
+            fi
+          fi
+          npx --yes bun@1.4.4 "$alert_script" auxiliary "$DEPLOY_STATUS" || echo '::warning::Алерт о результате операции VPS3 не отправлен.'

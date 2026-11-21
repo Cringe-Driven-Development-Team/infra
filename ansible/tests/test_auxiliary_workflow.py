@@ -38,13 +38,44 @@ class WorkflowChecks(unittest.TestCase):
         self.assertIn('validate --request',steps[1]['run'])
         self.assertNotIn('secrets.',str(auxiliary['jobs']['validate']))
         self.assertNotIn('pulumi',str(auxiliary).lower())
-        apply=next(s['run'] for s in steps if s.get('name')=='Check order and apply selected operation')
-        self.assertLess(apply.index('check-order'),apply.index('deploy-auxiliary.yml'))
-        self.assertIn('inventory/ci.yml',apply)
+        step_indexes = {step.get('id'): index for index, step in enumerate(steps)}
+        prepare = step_indexes['prepare']
+        deploy = step_indexes['deploy']
+        self.assertLess(prepare, step_indexes['alert_start'])
+        self.assertLess(step_indexes['alert_start'], deploy)
+        self.assertIn('check-order', steps[prepare]['run'])
+        self.assertIn('deploy-auxiliary.yml', steps[deploy]['run'])
+        self.assertIn('inventory/ci.yml', steps[deploy]['run'])
         self.assertIn('initialize-auxiliary-releases.yml',infra['jobs']['checks']['steps'][-2]['run'])
         self.assertIn('AUXILIARY_INITIAL_RELEASES', str(infra['jobs']['preview']))
         self.assertNotIn('AUXILIARY_INITIAL_RELEASES', str(infra['jobs']['apply']))
         self.assertNotIn('AUXILIARY_INITIAL_RELEASES', str(auxiliary))
+
+    def test_result_alert_can_run_after_checkout_failure(self):
+        stubs = r"""
+gh() {
+    test "$*" = 'api -H Accept: application/vnd.github.raw+json repos/o/infra/contents/scripts/deploy-alert.ts?ref=revision' || return 1
+    printf 'recovered sender\n'
+}
+bun() {
+    test "$2" = "$EXPECTED_KIND" && test "$3" = failure && cat "$1"
+}
+npx() {
+    shift 2
+    bun "$@"
+}
+"""
+        for workflow, job, kind in [('infra', 'apply', 'infra'), ('auxiliary-deploy', 'production', 'auxiliary')]:
+            with self.subTest(workflow=workflow), tempfile.TemporaryDirectory() as directory:
+                config = yaml.safe_load((ROOT / f'.github/workflows/{workflow}.yml').read_text())
+                command = config['jobs'][job]['steps'][-1]['run']
+                env = os.environ | {
+                    'RUNNER_TEMP': directory, 'GITHUB_REPOSITORY': 'o/infra', 'GITHUB_SHA': 'revision',
+                    'DEPLOY_STATUS': 'failure', 'EXPECTED_KIND': kind,
+                }
+                result = subprocess.run(['bash', '-e', '-c', stubs + command], cwd=directory,
+                                        env=env, capture_output=True, text=True, check=True)
+                self.assertEqual(result.stdout, 'recovered sender\n')
 
     def test_shared_secret_helper(self):
         with tempfile.TemporaryDirectory() as directory:
