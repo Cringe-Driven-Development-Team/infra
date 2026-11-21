@@ -648,7 +648,7 @@ try {
   console.log("integrity_check:", integrity);
   console.log(db.query("SELECT id, source, delivery_id, prepared FROM deliveries ORDER BY id").all());
   console.log(db.query("SELECT id, origin_type, origin_id, status, telegram_message_id FROM outbox ORDER BY id").all());
-  row = db.query("SELECT source, delivery_id, event, raw FROM deliveries WHERE dedupe_kind = ? LIMIT 1").get("id");
+  row = db.query("SELECT source, delivery_id, event, raw FROM deliveries WHERE source = ? LIMIT 1").get("github");
 } finally { db.close(); }
 if (!row) throw new Error("A stable-ID delivery is required for the duplicate check");
 const store = openStore(path);
