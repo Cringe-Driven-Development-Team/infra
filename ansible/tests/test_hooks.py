@@ -63,6 +63,7 @@ class HooksChecks(unittest.TestCase):
                 "domain": ["full:api.telegram.org"], "outboundTag": "telegram-vless"}]}}
         self.variables["vault_hooks_env"] = {
             "TELEGRAM_BOT_TOKEN": "fake-bot-token",
+            "GITHUB_API_TOKEN": "private-test-token",
             "GITHUB_WEBHOOK_SECRET": "fake-github-secret",
             "APIDOG_SIGNATURE_KEY": "fake-apidog-secret",
             "APIDOG_SIGNATURE_HEADER": "X-Test-Signature"}
@@ -116,6 +117,24 @@ class HooksChecks(unittest.TestCase):
             with self.subTest(change=tuple(change)):
                 candidate = env | change
                 candidate.pop("TELEGRAM_RELEASES_TOPIC_ID")
+                if candidate.get("GITHUB_API_TOKEN") is None:
+                    candidate.pop("GITHUB_API_TOKEN", None)
+                result = self.play(tasks, self.variables | {"vault_hooks_env": candidate})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("private-test-token", result.stdout + result.stderr)
+
+    def test_infra_alerts_have_default_topic_and_require_valid_id_and_token(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        result = self.play(tasks + [{"ansible.builtin.assert": {"that": [
+            "hooks_env.TELEGRAM_INFRA_ALERTS_TOPIC_ID | default('') == '14389'",
+        ]}}])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        env = self.variables["vault_hooks_env"]
+        for change in [{"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "0"},
+                       {"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "9007199254740992"},
+                       {"GITHUB_API_TOKEN": " "}, {"GITHUB_API_TOKEN": None}]:
+            with self.subTest(change=tuple(change)):
+                candidate = env | change
                 if candidate.get("GITHUB_API_TOKEN") is None:
                     candidate.pop("GITHUB_API_TOKEN", None)
                 result = self.play(tasks, self.variables | {"vault_hooks_env": candidate})

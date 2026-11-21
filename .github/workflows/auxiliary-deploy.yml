@@ -49,7 +49,7 @@ jobs:
     needs: validate
     permissions:
       contents: read
-      pull-requests: read
+      deployments: write
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: production
@@ -59,8 +59,6 @@ jobs:
       queue: max
     env:
       DEPLOY_OPERATION: ${{ inputs.operation }}
-      DEPLOY_SERVICE: ${{ inputs.service }}
-      DEPLOY_SHA: ${{ inputs.source_sha }}
     steps:
       - uses: actions/checkout@v7
         id: checkout
@@ -95,13 +93,11 @@ jobs:
           else
             python -c 'import json,os; p=os.environ["RUNNER_TEMP"]; json.dump({"auxiliary_initial_releases":json.load(open(p+"/release.json"))},open(p+"/vars.json","w"))'
           fi
-      - name: Алерт о начале операции VPS3
-        id: alert_start
+      - name: Register start of VPS3 operation
+        id: start
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
-          TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_INFRA_ALERTS_TOPIC_ID }}
-        run: npx --yes bun@1.4.4 scripts/deploy-alert.ts auxiliary started || echo '::warning::Алерт о начале операции VPS3 не отправлен.'
+          GH_TOKEN: ${{ github.token }}
+        run: npx --yes bun@1.4.4 scripts/deploy-event.ts start auxiliary || echo '::warning::Не удалось опубликовать начало операции VPS3 в GitHub.'
       - name: Apply selected operation
         id: deploy
         working-directory: ansible
@@ -145,31 +141,11 @@ jobs:
       - name: Remove secret files
         if: always()
         run: rm -rf "$RUNNER_TEMP/infra"
-      - name: Алерт о результате операции VPS3
-        id: alert_result
-        if: always()
+      - name: Finalize Deployment in GitHub
+        id: finish
+        if: always() && steps.start.outputs.deployment_id != ''
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
-          TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_INFRA_ALERTS_TOPIC_ID }}
           GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_ID: ${{ steps.start.outputs.deployment_id }}
           DEPLOY_STATUS: ${{ job.status }}
-          DEPLOY_FAILED_STEP: >-
-            ${{ steps.checkout.outcome == 'failure' && 'Checkout'
-                || steps.validate_release.outcome == 'failure' && 'Валидация выпуска'
-                || steps.install_ansible.outcome == 'failure' && 'Установка Ansible'
-                || steps.secrets.outcome == 'failure' && 'Подготовка SSH и Vault'
-                || steps.prepare.outcome == 'failure' && 'Подготовка выпуска'
-                || steps.deploy.outcome == 'failure' && 'Применение playbook'
-                || '' }}
-        # сбой отправки не меняет результат выкатки
-        run: |
-          alert_script=scripts/deploy-alert.ts
-          if [[ ! -s "$alert_script" ]]; then
-            alert_script="$RUNNER_TEMP/deploy-alert.ts"
-            if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/$GITHUB_REPOSITORY/contents/scripts/deploy-alert.ts?ref=$GITHUB_SHA" > "$alert_script"; then
-              echo '::warning::Отправитель алерта недоступен после checkout.'
-              exit 0
-            fi
-          fi
-          npx --yes bun@1.4.4 "$alert_script" auxiliary "$DEPLOY_STATUS" || echo '::warning::Алерт о результате операции VPS3 не отправлен.'
+        run: npx --yes bun@1.4.4 scripts/deploy-event.ts finish "$DEPLOYMENT_ID" "$DEPLOY_STATUS" || echo '::warning::Не удалось завершить Deployment в GitHub.'

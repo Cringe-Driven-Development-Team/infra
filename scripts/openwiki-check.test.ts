@@ -294,8 +294,8 @@ test('wiki CI has no production environment or secrets; infra CI excludes wiki p
         '.github/workflows/infra.yml',
         'scripts/ansible-ci-secrets.sh',
         'scripts/auxiliary_release.py',
-        'scripts/deploy-alert.ts',
-        'scripts/deploy-alert.test.ts',
+        'scripts/deploy-event.ts',
+        'scripts/deploy-event.test.ts',
     ]);
     expect(infra.on.push.paths).toEqual(infra.on.pull_request.paths);
 });

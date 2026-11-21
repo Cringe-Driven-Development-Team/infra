@@ -41,8 +41,9 @@ class WorkflowChecks(unittest.TestCase):
         step_indexes = {step.get('id'): index for index, step in enumerate(steps)}
         prepare = step_indexes['prepare']
         deploy = step_indexes['deploy']
-        self.assertLess(prepare, step_indexes['alert_start'])
-        self.assertLess(step_indexes['alert_start'], deploy)
+        self.assertIn('start', step_indexes)
+        self.assertLess(prepare, step_indexes['start'])
+        self.assertLess(step_indexes['start'], deploy)
         self.assertIn('check-order', steps[prepare]['run'])
         self.assertIn('deploy-auxiliary.yml', steps[deploy]['run'])
         self.assertIn('inventory/ci.yml', steps[deploy]['run'])
@@ -51,14 +52,33 @@ class WorkflowChecks(unittest.TestCase):
         self.assertNotIn('AUXILIARY_INITIAL_RELEASES', str(infra['jobs']['apply']))
         self.assertNotIn('AUXILIARY_INITIAL_RELEASES', str(auxiliary))
 
-    def test_result_alert_can_run_after_checkout_failure(self):
+    def test_deployment_write_permissions_and_production_job_names(self):
+        for name, production, job_name in [('infra', 'apply', 'Выкатка на прод'),
+                                           ('auxiliary-deploy', 'production', 'production')]:
+            with self.subTest(workflow=name):
+                workflow = yaml.safe_load((ROOT / f'.github/workflows/{name}.yml').read_text())
+                self.assertNotIn('deployments', workflow['permissions'])
+                for key, job in workflow['jobs'].items():
+                    permissions = job.get('permissions', {})
+                    if key == production:
+                        self.assertEqual(permissions.get('deployments'), 'write')
+                        self.assertEqual(job.get('name', key), job_name)
+                    else:
+                        self.assertNotIn('deployments', permissions)
+        steps = yaml.safe_load((ROOT / '.github/workflows/infra.yml').read_text())['jobs']['apply']['steps']
+        step_indexes = {step.get('id'): index for index, step in enumerate(steps)}
+        self.assertIn('start', step_indexes)
+        self.assertLess(step_indexes['start'], step_indexes['pulumi_up'])
+        self.assertEqual(steps[step_indexes['verify']]['name'], 'verify.yml')
+
+    def test_deployment_publication_failure_warns_and_does_not_fail_workflow(self):
         stubs = r"""
-gh() {
-    test "$*" = 'api -H Accept: application/vnd.github.raw+json repos/o/infra/contents/scripts/deploy-alert.ts?ref=revision' || return 1
-    printf 'recovered sender\n'
-}
 bun() {
-    test "$2" = "$EXPECTED_KIND" && test "$3" = failure && cat "$1"
+    printf '%s\n' "$*"
+    if [[ "$2" == start ]]; then
+        echo 'deployment_id=42' >> "$GITHUB_OUTPUT"
+    fi
+    return 1
 }
 npx() {
     shift 2
@@ -68,14 +88,20 @@ npx() {
         for workflow, job, kind in [('infra', 'apply', 'infra'), ('auxiliary-deploy', 'production', 'auxiliary')]:
             with self.subTest(workflow=workflow), tempfile.TemporaryDirectory() as directory:
                 config = yaml.safe_load((ROOT / f'.github/workflows/{workflow}.yml').read_text())
-                command = config['jobs'][job]['steps'][-1]['run']
+                steps = {step.get('id'): step for step in config['jobs'][job]['steps']}
+                self.assertIn('start', steps.keys())
+                self.assertIn('finish', steps.keys())
+                self.assertEqual(steps['finish']['if'], "always() && steps.start.outputs.deployment_id != ''")
+                output = Path(directory) / 'output'
                 env = os.environ | {
-                    'RUNNER_TEMP': directory, 'GITHUB_REPOSITORY': 'o/infra', 'GITHUB_SHA': 'revision',
-                    'DEPLOY_STATUS': 'failure', 'EXPECTED_KIND': kind,
+                    'GITHUB_OUTPUT': str(output), 'DEPLOYMENT_ID': '42', 'DEPLOY_STATUS': 'failure',
                 }
-                result = subprocess.run(['bash', '-e', '-c', stubs + command], cwd=directory,
-                                        env=env, capture_output=True, text=True, check=True)
-                self.assertEqual(result.stdout, 'recovered sender\n')
+                for step_id, args in [('start', f'start {kind}'), ('finish', 'finish 42 failure')]:
+                    result = subprocess.run(['bash', '-e', '-c', stubs + steps[step_id]['run']], cwd=directory,
+                                            env=env, capture_output=True, text=True, check=True)
+                    self.assertIn(f'scripts/deploy-event.ts {args}\n', result.stdout)
+                    self.assertIn('::warning::', result.stdout)
+                self.assertEqual(output.read_text(), 'deployment_id=42\n')
 
     def test_shared_secret_helper(self):
         with tempfile.TemporaryDirectory() as directory:
