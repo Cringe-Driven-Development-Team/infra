@@ -129,6 +129,7 @@ class HooksChecks(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         env = self.variables["vault_hooks_env"]
         for change in [{"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "0"},
+                       {"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "14389x"},
                        {"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "9007199254740992"},
                        {"GITHUB_API_TOKEN": " "}, {"GITHUB_API_TOKEN": None}]:
             with self.subTest(change=tuple(change)):
@@ -138,6 +139,16 @@ class HooksChecks(unittest.TestCase):
                 result = self.play(tasks, self.variables | {"vault_hooks_env": candidate})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("private-test-token", result.stdout + result.stderr)
+
+    def test_infra_alerts_preflight_accepts_blank_topic_without_api_token(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        env = self.variables["vault_hooks_env"].copy()
+        del env["GITHUB_API_TOKEN"]
+        for topic in ["", " "]:
+            with self.subTest(topic=topic):
+                result = self.play(tasks, self.variables | {"vault_hooks_env": env | {
+                    "TELEGRAM_INFRA_ALERTS_TOPIC_ID": topic}})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_preflight_accepts_no_registry_credentials_and_rejects_invalid_webhook_configuration(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
