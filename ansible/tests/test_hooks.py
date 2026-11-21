@@ -63,6 +63,7 @@ class HooksChecks(unittest.TestCase):
                 "domain": ["full:api.telegram.org"], "outboundTag": "telegram-vless"}]}}
         self.variables["vault_hooks_env"] = {
             "TELEGRAM_BOT_TOKEN": "fake-bot-token",
+            "GITHUB_API_TOKEN": "private-test-token",
             "GITHUB_WEBHOOK_SECRET": "fake-github-secret"}
 
     def play(self, tasks, variables=None, check=False):
@@ -119,6 +120,35 @@ class HooksChecks(unittest.TestCase):
                 result = self.play(tasks, self.variables | {"vault_hooks_env": candidate})
                 self.assertNotEqual(result.returncode, 0)
                 self.assertNotIn("private-test-token", result.stdout + result.stderr)
+
+    def test_infra_alerts_have_default_topic_and_require_valid_id_and_token(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        result = self.play(tasks + [{"ansible.builtin.assert": {"that": [
+            "hooks_env.TELEGRAM_INFRA_ALERTS_TOPIC_ID | default('') == '14389'",
+        ]}}])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        env = self.variables["vault_hooks_env"]
+        for change in [{"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "0"},
+                       {"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "14389x"},
+                       {"TELEGRAM_INFRA_ALERTS_TOPIC_ID": "9007199254740992"},
+                       {"GITHUB_API_TOKEN": " "}, {"GITHUB_API_TOKEN": None}]:
+            with self.subTest(change=tuple(change)):
+                candidate = env | change
+                if candidate.get("GITHUB_API_TOKEN") is None:
+                    candidate.pop("GITHUB_API_TOKEN", None)
+                result = self.play(tasks, self.variables | {"vault_hooks_env": candidate})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("private-test-token", result.stdout + result.stderr)
+
+    def test_infra_alerts_preflight_accepts_blank_topic_without_api_token(self):
+        tasks = self.import_task("roles/hooks/tasks/validate.yml")
+        env = self.variables["vault_hooks_env"].copy()
+        del env["GITHUB_API_TOKEN"]
+        for topic in ["", " "]:
+            with self.subTest(topic=topic):
+                result = self.play(tasks, self.variables | {"vault_hooks_env": env | {
+                    "TELEGRAM_INFRA_ALERTS_TOPIC_ID": topic}})
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_preflight_accepts_no_registry_credentials_and_rejects_invalid_webhook_configuration(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
@@ -281,6 +311,7 @@ class HooksChecks(unittest.TestCase):
         self.assertEqual(service["environment"]["TELEGRAM_PROXY_URL"], "http://telegram-proxy:2080")
         self.assertEqual(service["environment"]["TELEGRAM_RELEASES_TOPIC_ID"], "88")
         self.assertEqual(service["environment"]["TELEGRAM_BACKEND_RELEASES_TOPIC_ID"], "3377")
+        self.assertEqual(service["environment"]["TELEGRAM_INFRA_ALERTS_TOPIC_ID"], "14389")
         self.assertTrue(proxy["volumes"][0]["read_only"])
 
         self.assertRegex(service["image"], r"^ghcr.io/cringe-driven-development-team/webhook-alerts@sha256:[0-9a-f]{64}$")

@@ -11,6 +11,8 @@ on:
       - .github/workflows/infra.yml
       - scripts/ansible-ci-secrets.sh
       - scripts/auxiliary_release.py
+      - scripts/deploy-event.ts
+      - scripts/deploy-event.test.ts
   push:
     branches: [main]
     paths: *infra-paths
@@ -62,7 +64,7 @@ jobs:
         run: |
           (cd pulumi && bunx tsc --noEmit -p . && bun test)
           (cd pulumi/bootstrap && bun test)
-          bun test scripts/deploy-alert.test.ts
+          bun test scripts/deploy-event.test.ts
       - name: Ansible — зависимости
         working-directory: ansible
         run: |
@@ -117,6 +119,7 @@ jobs:
           (cd ansible && python -m pip install -r deploy-requirements.txt && ansible-galaxy collection install -r requirements.yml)
       - &secrets-step
         name: Секреты в файлы
+        id: secrets
         env:
           SELECTEL_ENV_FILE: ${{ secrets.SELECTEL_ENV_FILE }}
           DEPLOY_SSH_KEY: ${{ secrets.INFRA_DEPLOY_SSH_KEY }}
@@ -131,6 +134,7 @@ jobs:
           echo "SELECTEL_ENV=$RUNNER_TEMP/infra/selectel.env" >> "$GITHUB_ENV"
       - &pulumi-install
         name: Pulumi — зависимости
+        id: pulumi_install
         working-directory: pulumi
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -204,6 +208,9 @@ jobs:
     name: Выкатка на прод
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: checks
+    permissions:
+      contents: read
+      deployments: write
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment:
@@ -218,24 +225,34 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        id: checkout
         with:
           persist-credentials: false
       # shortcut: Bun через npm, пока GitHub Releases отдаёт 504; вернуть setup-bun — infra#117
       - name: Install Bun 1.4.4 via npm
+        id: bun
         run: |
           npm install -g bun@1.4.4
           test "$(bun --version)" = "1.4.4"
       - uses: actions/setup-python@v7
+        id: python
         with:
           python-version: '3.13'
       - name: Инструменты
+        id: tools
         run: |
           curl -fsSL https://get.pulumi.com | sh -s -- --version "$PULUMI_VERSION"
           echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
           (cd ansible && python -m pip install -r deploy-requirements.txt && ansible-galaxy collection install -r requirements.yml)
       - *secrets-step
       - *pulumi-install
+      - name: Зарегистрировать начало выкатки
+        id: start
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/deploy-event.ts start infra || echo '::warning::Не удалось опубликовать начало выкатки в GitHub.'
       - name: pulumi up
+        id: pulumi_up
         working-directory: pulumi
         run: |
           . bootstrap/env.sh
@@ -243,29 +260,32 @@ jobs:
           pulumi up --stack prod --diff --yes --non-interactive 2>&1 | grep -v 'no supported checksum'
           exit "${PIPESTATUS[0]}"
       - name: site.yml
+        id: site
         working-directory: ansible
         run: |
           ansible-playbook -i inventory/ci.yml site.yml \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" -e "jump_known_hosts=$RUNNER_TEMP/infra/known_hosts" \
             --ssh-common-args="$INFRA_SSH_ARGS"
       - name: auxiliary.yml
+        id: auxiliary
         working-directory: ansible
         run: |
           ansible-playbook -i inventory/ci.yml auxiliary.yml \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
       # verify.yml — последним: проверяет итоговое состояние обеих VPS после выкатки
       - name: verify.yml
+        id: verify
         working-directory: ansible
         run: |
           ansible-playbook -i inventory/ci.yml verify.yml \
             -e "deploy_key_path=$INFRA_DEPLOY_KEY" -e "jump_known_hosts=$RUNNER_TEMP/infra/known_hosts" \
             --ssh-common-args="$INFRA_SSH_ARGS"
       - *cleanup
-      - name: Алерт в Telegram
-        if: always()
+      - name: Завершить Deployment в GitHub
+        id: finish
+        if: always() && steps.start.outputs.deployment_id != ''
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
-          TELEGRAM_TOPIC_ID: ${{ vars.TELEGRAM_RELEASES_TOPIC_ID || vars.TELEGRAM_TOPIC_ID }}
-        # сбой отправки не меняет результат выкатки
-        run: bun scripts/deploy-alert.ts Infra "${{ job.status }}" || echo '::warning::Алерт в Telegram не отправлен; результат выкатки — в шагах выше.'
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_ID: ${{ steps.start.outputs.deployment_id }}
+          DEPLOY_STATUS: ${{ job.status }}
+        run: bun scripts/deploy-event.ts finish "$DEPLOYMENT_ID" "$DEPLOY_STATUS" || echo '::warning::Не удалось завершить Deployment в GitHub.'

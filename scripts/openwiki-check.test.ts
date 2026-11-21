@@ -288,6 +288,14 @@ test('wiki CI has no production environment or secrets; infra CI excludes wiki p
     const text = readFileSync(resolve(import.meta.dir, '../.github/workflows/openwiki-freshness.yml'), 'utf8');
     expect(text).not.toMatch(/environment:|secrets\.|pulumi (up|preview)|ansible-playbook/);
     const infra = Bun.YAML.parse(readFileSync(resolve(import.meta.dir, '../.github/workflows/infra.yml'), 'utf8')) as any;
-    expect(infra.on.pull_request.paths).toEqual(['pulumi/**', 'ansible/**', '.github/workflows/infra.yml']);
+    expect(infra.on.pull_request.paths).toEqual([
+        'pulumi/**',
+        'ansible/**',
+        '.github/workflows/infra.yml',
+        'scripts/ansible-ci-secrets.sh',
+        'scripts/auxiliary_release.py',
+        'scripts/deploy-event.ts',
+        'scripts/deploy-event.test.ts',
+    ]);
     expect(infra.on.push.paths).toEqual(infra.on.pull_request.paths);
 });

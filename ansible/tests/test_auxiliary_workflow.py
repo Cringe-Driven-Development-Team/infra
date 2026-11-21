@@ -38,13 +38,70 @@ class WorkflowChecks(unittest.TestCase):
         self.assertIn('validate --request',steps[1]['run'])
         self.assertNotIn('secrets.',str(auxiliary['jobs']['validate']))
         self.assertNotIn('pulumi',str(auxiliary).lower())
-        apply=next(s['run'] for s in steps if s.get('name')=='Check order and apply selected operation')
-        self.assertLess(apply.index('check-order'),apply.index('deploy-auxiliary.yml'))
-        self.assertIn('inventory/ci.yml',apply)
+        step_indexes = {step.get('id'): index for index, step in enumerate(steps)}
+        prepare = step_indexes['prepare']
+        deploy = step_indexes['deploy']
+        self.assertIn('start', step_indexes)
+        self.assertLess(prepare, step_indexes['start'])
+        self.assertLess(step_indexes['start'], deploy)
+        self.assertIn('check-order', steps[prepare]['run'])
+        self.assertIn('deploy-auxiliary.yml', steps[deploy]['run'])
+        self.assertIn('inventory/ci.yml', steps[deploy]['run'])
         self.assertIn('initialize-auxiliary-releases.yml',infra['jobs']['checks']['steps'][-2]['run'])
         self.assertIn('AUXILIARY_INITIAL_RELEASES', str(infra['jobs']['preview']))
         self.assertNotIn('AUXILIARY_INITIAL_RELEASES', str(infra['jobs']['apply']))
         self.assertNotIn('AUXILIARY_INITIAL_RELEASES', str(auxiliary))
+
+    def test_deployment_write_permissions_and_production_job_names(self):
+        for name, production, job_name in [('infra', 'apply', 'Выкатка на прод'),
+                                           ('auxiliary-deploy', 'production', 'production')]:
+            with self.subTest(workflow=name):
+                workflow = yaml.safe_load((ROOT / f'.github/workflows/{name}.yml').read_text())
+                self.assertNotIn('deployments', workflow['permissions'])
+                for key, job in workflow['jobs'].items():
+                    permissions = job.get('permissions', {})
+                    if key == production:
+                        self.assertEqual(permissions.get('deployments'), 'write')
+                        self.assertEqual(job.get('name', key), job_name)
+                    else:
+                        self.assertNotIn('deployments', permissions)
+        steps = yaml.safe_load((ROOT / '.github/workflows/infra.yml').read_text())['jobs']['apply']['steps']
+        step_indexes = {step.get('id'): index for index, step in enumerate(steps)}
+        self.assertIn('start', step_indexes)
+        self.assertLess(step_indexes['start'], step_indexes['pulumi_up'])
+        self.assertEqual(steps[step_indexes['verify']]['name'], 'verify.yml')
+
+    def test_deployment_publication_failure_warns_and_does_not_fail_workflow(self):
+        stubs = r"""
+bun() {
+    printf '%s\n' "$*"
+    if [[ "$2" == start ]]; then
+        echo 'deployment_id=42' >> "$GITHUB_OUTPUT"
+    fi
+    return 1
+}
+npx() {
+    shift 2
+    bun "$@"
+}
+"""
+        for workflow, job, kind in [('infra', 'apply', 'infra'), ('auxiliary-deploy', 'production', 'auxiliary')]:
+            with self.subTest(workflow=workflow), tempfile.TemporaryDirectory() as directory:
+                config = yaml.safe_load((ROOT / f'.github/workflows/{workflow}.yml').read_text())
+                steps = {step.get('id'): step for step in config['jobs'][job]['steps']}
+                self.assertIn('start', steps.keys())
+                self.assertIn('finish', steps.keys())
+                self.assertEqual(steps['finish']['if'], "always() && steps.start.outputs.deployment_id != ''")
+                output = Path(directory) / 'output'
+                env = os.environ | {
+                    'GITHUB_OUTPUT': str(output), 'DEPLOYMENT_ID': '42', 'DEPLOY_STATUS': 'failure',
+                }
+                for step_id, args in [('start', f'start {kind}'), ('finish', 'finish 42 failure')]:
+                    result = subprocess.run(['bash', '-e', '-c', stubs + steps[step_id]['run']], cwd=directory,
+                                            env=env, capture_output=True, text=True, check=True)
+                    self.assertIn(f'scripts/deploy-event.ts {args}\n', result.stdout)
+                    self.assertIn('::warning::', result.stdout)
+                self.assertEqual(output.read_text(), 'deployment_id=42\n')
 
     def test_shared_secret_helper(self):
         with tempfile.TemporaryDirectory() as directory:
