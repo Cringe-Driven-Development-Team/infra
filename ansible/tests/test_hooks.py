@@ -295,12 +295,15 @@ class HooksChecks(unittest.TestCase):
                                  "dest": str(env_path), "mode": "0600"},
                              "no_log": True}], variables)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotRegex(env_path.read_text(), r"(?m)^(?:TELEGRAM_)?APIDOG_")
         result = subprocess.run([*shlex.split(os.environ.get("COMPOSE_CLI", "docker compose")),
                                  "-f", str(self.root / "compose.yml"), "config", "--format", "json"],
                                 capture_output=True, text=True, check=True)
         services = json.loads(result.stdout)["services"]
         service = services["hooks"]
+        self.assertEqual(set(service["environment"]), set(variables["vault_hooks_env"]) | {
+            "DATABASE_PATH", "PORT", "WEBHOOK_ALERTS_SEND_ENABLED", "TELEGRAM_PROXY_URL",
+            "TELEGRAM_INFRA_ALERTS_TOPIC_ID",
+        })
         proxy = services["telegram-proxy"]
         self.assertFalse(proxy.get("ports"))
         self.assertEqual(proxy["command"], ["run", "-c", "/etc/xray/config.json"])
