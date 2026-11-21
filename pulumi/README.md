@@ -321,7 +321,7 @@ IP, наружу через SNAT роутера.
 | Ресурс | Что это |
 |---|---|
 | сервисный пользователь `infra:runtimeUserName` (`cellestialRuntimeProvisioner`) | роль `member` на проект; от него Go API ходит в Nova/Cinder/Neutron. Отдельно от пользователя стека: отзыв одного не ломает другое |
-| security group `runtime` | ingress только с `backendPrivateIp/32`: TCP 22 (Ansible) и 8443 (TLS-прокси агента); ICMP из подсети. Egress — по умолчанию Neutron: трафик kernel фильтрует nftables на VPS (`ansible/runtime`) |
+| security group `runtime` | ingress только с `backendPrivateIp/32`: TCP 22 (Ansible), 8443 (TLS-прокси агента) и ICMP; runtime-VPS друг до друга не достучатся (infra#169). Egress — по умолчанию Neutron: трафик kernel фильтрует nftables на VPS (`ansible/runtime`) |
 | `tls.PrivateKey` ed25519 + keypair `runtime-provisioner` | SSH-ключ provisioner; keypair принадлежит пользователю runtime — Nova видит его только этим пользователем |
 | `tls` CA (ECDSA P-256, 10 лет) + клиентский сертификат `cellestial-backend` (`client_auth`, 2 года) | mTLS backend ↔ агент. Серверные сертификаты VPS выпускает backend этим CA, поэтому ключ CA тоже уходит в backend |
 | `random.RandomBytes` 32 байта | `RUNTIME_SECRETS_KEY`: шифрует токены агентов в БД |
