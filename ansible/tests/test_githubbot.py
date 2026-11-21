@@ -48,8 +48,7 @@ class GithubBotChecks(unittest.TestCase):
             "hooks_githubbot_image": IMAGE, "hooks_githubbot_image_source_tag": SOURCE,
             "hooks_githubbot_env": ENV.copy(), "hooks_domain": "hooks.example.invalid", "caddy_image": "caddy:test",
             "hooks_env": {"DATABASE_PATH": "/data/queue.sqlite", "PORT": "8080",
-                          "TELEGRAM_PROXY_URL": "http://telegram-proxy:2080", "GITHUB_WEBHOOK_SECRET": "fake",
-                          "APIDOG_SIGNATURE_KEY": "fake", "APIDOG_SIGNATURE_HEADER": "X-Test"},
+                          "TELEGRAM_PROXY_URL": "http://telegram-proxy:2080", "GITHUB_WEBHOOK_SECRET": "fake"},
             "vault_hooks_proxy_config": {
                 "inbounds": [{"listen": "0.0.0.0", "port": 2080, "protocol": "http", "settings": {}}],
                 "outbounds": [{"tag": "blocked", "protocol": "blackhole"}, {

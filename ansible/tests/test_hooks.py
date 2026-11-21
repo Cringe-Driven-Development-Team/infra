@@ -63,9 +63,7 @@ class HooksChecks(unittest.TestCase):
                 "domain": ["full:api.telegram.org"], "outboundTag": "telegram-vless"}]}}
         self.variables["vault_hooks_env"] = {
             "TELEGRAM_BOT_TOKEN": "fake-bot-token",
-            "GITHUB_WEBHOOK_SECRET": "fake-github-secret",
-            "APIDOG_SIGNATURE_KEY": "fake-apidog-secret",
-            "APIDOG_SIGNATURE_HEADER": "X-Test-Signature"}
+            "GITHUB_WEBHOOK_SECRET": "fake-github-secret"}
 
     def play(self, tasks, variables=None, check=False):
         playbook = self.root / "test.yml"
@@ -126,14 +124,12 @@ class HooksChecks(unittest.TestCase):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
         result = self.play(tasks)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for key in ["GITHUB_WEBHOOK_SECRET", "APIDOG_SIGNATURE_KEY", "APIDOG_SIGNATURE_HEADER"]:
-            with self.subTest(missing=key):
-                variables = self.variables | {"vault_hooks_env": self.variables["vault_hooks_env"].copy()}
-                del variables["vault_hooks_env"][key]
-                result = self.play(tasks, variables)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(key, result.stdout + result.stderr)
-                self.assertNotIn("fake-github-secret", result.stdout + result.stderr)
+        env = self.variables["vault_hooks_env"].copy()
+        del env["GITHUB_WEBHOOK_SECRET"]
+        result = self.play(tasks, self.variables | {"vault_hooks_env": env})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("GITHUB_WEBHOOK_SECRET", result.stdout + result.stderr)
+        self.assertNotIn("fake-bot-token", result.stdout + result.stderr)
         for key, value in [("DATABASE_PATH", "/data/wrong.sqlite"), ("PORT", "9000"),
                            ("WEBHOOK_ALERTS_SEND_ENABLED", False)]:
             with self.subTest(invalid=key):
@@ -141,27 +137,17 @@ class HooksChecks(unittest.TestCase):
                 result = self.play(tasks, variables)
                 self.assertNotEqual(result.returncode, 0)
 
-    def test_sender_preflight_requires_separate_apidog_bot_token(self):
+    def test_sender_preflight_requires_github_secret_and_telegram_settings(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
         env = self.variables["vault_hooks_env"] | {
             "WEBHOOK_ALERTS_SEND_ENABLED": "true",
-            "TELEGRAM_BOT_TOKEN": "fake-github-bot",
             "TELEGRAM_CHAT_ID": "-1001",
-            "TELEGRAM_APIDOG_TOPIC_ID": "88",
-            "TELEGRAM_APIDOG_BOT_TOKEN": "fake-apidog-bot",
-            "APIDOG_ACCESS_TOKEN": "fake-access-token",
-            "APIDOG_TELEGRAM_USER_MAP": json.dumps({"1066826": {"name": "Test person", "telegramId": "123"}}),
-            "APIDOG_MR_REVIEWERS": json.dumps([
-                {"name": "Test reviewer one", "telegramId": "123"},
-                {"name": "Test reviewer two", "telegramId": "456"},
-            ]),
         }
         variables = self.variables | {"vault_hooks_env": env}
         result = self.play(tasks, variables)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        for key in ["TELEGRAM_APIDOG_BOT_TOKEN", "APIDOG_ACCESS_TOKEN", "APIDOG_TELEGRAM_USER_MAP",
-                    "APIDOG_MR_REVIEWERS"]:
+        for key in ["GITHUB_WEBHOOK_SECRET", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]:
             with self.subTest(missing=key):
                 missing_env = env.copy()
                 del missing_env[key]
@@ -169,16 +155,8 @@ class HooksChecks(unittest.TestCase):
                 output = result.stdout + result.stderr
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(key, output)
-                for value in ["fake-apidog-bot", "fake-access-token", "Test person"]:
+                for value in ["fake-github-secret", "fake-bot-token"]:
                     self.assertNotIn(value, output)
-
-        for key, value in [("APIDOG_PROJECT_ID", "1junk"), ("APIDOG_TARGET_BRANCH_ID", "0"),
-                           ("APIDOG_PROJECT_NAME", " "), ("APIDOG_CONTRACT_URL", "javascript:bad")]:
-            with self.subTest(invalid=key):
-                result = self.play(tasks, self.variables | {"vault_hooks_env": env | {key: value}})
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(key, result.stdout + result.stderr)
-                self.assertNotIn("fake-access-token", result.stdout + result.stderr)
 
     def test_proxy_preflight_rejects_missing_and_unsafe_config_without_disclosure(self):
         tasks = self.import_task("roles/hooks/tasks/validate.yml")
@@ -273,16 +251,21 @@ class HooksChecks(unittest.TestCase):
     def test_compose_uses_image_entrypoint_and_preserves_webhook_secrets(self):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
-        variables = self.variables | {"hooks_env": {
-            "TELEGRAM_PROXY_URL": "http://telegram-proxy:2080",
+        variables = self.variables | {"vault_hooks_env": self.variables["vault_hooks_env"] | {
             "GITHUB_WEBHOOK_SECRET": "space # dollar${FOO}'quote\\slash",
             "TELEGRAM_RELEASES_TOPIC_ID": "88",
             "TELEGRAM_BACKEND_RELEASES_TOPIC_ID": "3377"}}
         (self.root / "compose.yml").write_text(templates.from_string(
             (ANSIBLE / "roles/hooks/templates/compose.yml.j2").read_text()).render(variables))
         (self.root / "githubbot.env").write_text("GITHUB_TOKEN=fake-github-token\n")
-        (self.root / ".env").write_text(templates.from_string(
-            (ANSIBLE / "roles/hooks/templates/env.j2").read_text()).render(variables))
+        env_path = self.root / ".env"
+        result = self.play([{"name": "Render production webhook environment",
+                             "ansible.builtin.template": {
+                                 "src": str(ANSIBLE / "roles/hooks/templates/env.j2"),
+                                 "dest": str(env_path), "mode": "0600"},
+                             "no_log": True}], variables)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotRegex(env_path.read_text(), r"(?m)^(?:TELEGRAM_)?APIDOG_")
         result = subprocess.run([*shlex.split(os.environ.get("COMPOSE_CLI", "docker compose")),
                                  "-f", str(self.root / "compose.yml"), "config", "--format", "json"],
                                 capture_output=True, text=True, check=True)
