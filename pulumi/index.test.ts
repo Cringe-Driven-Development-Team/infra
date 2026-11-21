@@ -174,13 +174,13 @@ describe("runtime-VPS", () => {
     expect(user.inputs.roles).toEqual([{ roleName: "member", scope: "project", projectId: "release-id" }]);
   });
 
-  test("security group: SSH и 8443 только с VPS2, ICMP из подсети, другого ingress нет", () => {
+  test("security group: SSH, 8443 и ICMP только с VPS2, другого ingress нет", () => {
     const rules = [...created.entries()]
       .filter(([key]) => key.startsWith("openstack:networking/secGroupRule:SecGroupRule::runtime-"))
       .map(([, r]) => [r.inputs.protocol, r.inputs.portRangeMin ?? null, r.inputs.remoteIpPrefix, r.inputs.direction])
       .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     expect(rules).toEqual([
-      ["icmp", null, "192.168.199.0/24", "ingress"],
+      ["icmp", null, "192.168.199.10/32", "ingress"],
       ["tcp", 22, "192.168.199.10/32", "ingress"],
       ["tcp", 8443, "192.168.199.10/32", "ingress"],
     ]);

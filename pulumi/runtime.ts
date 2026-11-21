@@ -60,7 +60,8 @@ export function createRuntime(
     ],
   });
 
-  // Ingress — только с VPS2: SSH (Ansible из Go API) и 8443 (TLS-прокси API агента); ICMP — из подсети.
+  // Ingress — только с VPS2: SSH (Ansible из Go API), 8443 (TLS-прокси API агента) и ICMP. Из остальной
+  // подсети, в том числе с других runtime-VPS, не проходит ничего (infra#169).
   // Egress — правила Neutron по умолчанию: трафик kernel фильтрует nftables на самой VPS
   // (ansible/runtime, контракт docs/runtime-agent-network.md в backend).
   const backendAddress = backend.port.allFixedIps.apply((ips) => `${ips[0]}/32`);
@@ -71,7 +72,7 @@ export function createRuntime(
   const ingress: [string, string, number | undefined, pulumi.Input<string>][] = [
     ["ssh", "tcp", 22, backendAddress],
     ["agent-tls", "tcp", 8443, backendAddress],
-    ["icmp", "icmp", undefined, f.subnet.cidr],
+    ["icmp", "icmp", undefined, backendAddress],
   ];
   for (const [ruleName, protocol, port, remoteIpPrefix] of ingress) {
     new openstack.networking.SecGroupRule(`runtime-${ruleName}`, {
