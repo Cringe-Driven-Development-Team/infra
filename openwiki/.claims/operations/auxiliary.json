@@ -1,46 +1,58 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:2aaf6d3a65ca0364159972ce2aa3b34e64fedef2710a657f15f3de5de061abaf",
+  "pageVersion": "sha256:8a12a3e29c7d797d86ed01fbdd2d8f56afbe754a12806a99018bbd80e0505c3d",
   "claims": [
     {
       "id": "claim_2588229bb5b140a7ae6080c361444841",
       "statement": "auxiliary.yml ограничен группой auxiliary и выполняет проверку параметров hooks до базовых ролей, hooks и restic_backup.",
       "evidence": [
         {
-          "resource": "repo://ansible/auxiliary.yml#L4-L27",
-          "version": "repo-lines-v1:sha256:12c01e052749eb18168dd48ee52a705752a2bd99204b90fafb23c0d77bb833df:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwOTEzNWRiMDU3NDUzYWYxMGI4ZDA3OGIyMDA0NTIxZjI4MGM2MDQ0MmY5Mjg2Y2Q1N2NjMjk0MDA5ZjgzOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyN2VlNDVhYjNkYjZkYjkxMTA2NDEyNmNlNWVjMWE5MTYwNTBlNDUyYzlmYjg4NTcyZWNjYTMzZDI0Y2RhOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmNGQ2NmFkYTc4MmZiYWI2ODhhOWE0MTlmNTAyM2Y5Y2JjZDlkMjA1ZWIxNDk3MzM3YjgyNjg5NTA3MWQzOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://ansible/auxiliary.yml#L4-L30",
+          "version": "repo-lines-v1:sha256:c4ae1c94029963770ba3b08cdea3c003796b43c1df4304fa20b4cbc4d1f8c6bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwOTEzNWRiMDU3NDUzYWYxMGI4ZDA3OGIyMDA0NTIxZjI4MGM2MDQ0MmY5Mjg2Y2Q1N2NjMjk0MDA5ZjgzOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyN2VlNDVhYjNkYjZkYjkxMTA2NDEyNmNlNWVjMWE5MTYwNTBlNDUyYzlmYjg4NTcyZWNjYTMzZDI0Y2RhOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNmNGQ2NmFkYTc4MmZiYWI2ODhhOWE0MTlmNTAyM2Y5Y2JjZDlkMjA1ZWIxNDk3MzM3YjgyNjg5NTA3MWQzOWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
     {
       "id": "claim_b9e6683497b142f49aa72c06b4747165",
-      "statement": "Роль hooks проверяет закреплённый образ и параметры отправки, а env и конфигурацию proxy записывает с ограниченными правами без логирования содержимого.",
+      "statement": "Роль hooks проверяет закреплённый образ и подпись GitHub. При включённой отправке требуется токен Telegram и ID чата. Env и конфигурация proxy записываются с ограниченными правами и без логирования содержимого.",
       "evidence": [
         {
-          "resource": "repo://ansible/roles/hooks/tasks/main.yml#L18-L42",
-          "version": "repo-lines-v1:sha256:81ed138e02ac4ea7e58d03c637afa1bdf0f4e512cf9abf589f8cbf072c2926db:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5M2Q3YTE4MWEyNTZlZDk1NTM5MDdjYWEyMmUwNzcwOGUyZWMzZDdiZDM4ZTg1YWVjYzQxODVmNzUyOGQxMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmYzY5NjRlNzA1ZDA5M2JhYjgwMzEyZDgwNDVjNDBjZjQwNDMzYzQxNjg1NjI5M2RjYmNmNGM1YWY0ODkzNjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIzNWQxY2E2ZTliZWQzMTYxNmJhNTE3ZWJlYjQ4NTdiYmZlMjUzZTY5MDU2MTZiYmRhOTYxNDY0NzEwOTZiNjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4ZTgwNGFmYmVmOWRiY2JlODQ1ZjNlY2NkNmI2Y2M1NjlkMWM1MDJjMDcwYmJiOTgwZmY1MDlkNzBmZDY3NTYifQ"
+          "resource": "repo://ansible/roles/hooks/tasks/main.yml#L28-L60",
+          "version": "repo-lines-v1:sha256:d3537e9829b98b03a66fcf900cb0f00129c7e3634d5faec22fddb8f316fc3052:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMzA5ZGI2ZjI2YjIyOWVkNWMyYTAyNzI4ZDA3NTQzNmE2MThjMjM4MmFiYjA3MmFiYjBiYzJhY2Q3YmU5NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1ZWI1ODU4Nzk1OGQ0YTZlODVkMjc5Y2IzMjAwNDg4ZjBmYjUyZTk4Y2UwZjA4ZDczOWU3ZTI5YTU3NTViMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI2ZGM1MWI5MmQxZmM5ZTYwMzc0OTczYjRlOTlmY2JkMjc5ZmRhY2VjNjFiYmM0NjZmNzAxYjg1NDYwOTc1NGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg4ZmNkMzIzYjQzMzFhNDBkMWM2NDQ5NWQzMGExOTgzZTkyZTNiNjNiYWIxZmYzY2IxNDg3Yzg4M2ZiNmYxMTYifQ"
         },
         {
-          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L2-L70",
-          "version": "repo-lines-v1:sha256:2065cde7f4df75d98d3ce4f5ee0bc94cae2c0d6e68743f758f88e196faefe2c6:eyJzZWxlY3RlZExpbmVDb3VudCI6NjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyYzU5NTEzNjA1ODM4ZTU2MDM1NDlhNDgzM2IzNTc3NzE4MGVkNGMyODJmMTI3M2Q0NDAyMjk5ZDhhNDRiMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5ODc0NTkwNzNjZDQ0YTNlMDA5NGI2ODczYjZkMzM0ODIxM2QyNmQ5MDMxYjhhYzg2ZmUzNDIwNjA3OGRmZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxMWM2YzI5NmZlZGNjZGQwMGQ2ZmNkZTdmMGQ4ZWEwNGQ0MTAzZDIyMjJjN2ZiYzg0ZWY0MDU2NzcwMDU0YmMifQ"
+          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L2-L18",
+          "version": "repo-lines-v1:sha256:71ab85bcf1effbb1782f0d50082ff784cd188a8e30efef469d1f3b5951f79deb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyYzU5NTEzNjA1ODM4ZTU2MDM1NDlhNDgzM2IzNTc3NzE4MGVkNGMyODJmMTI3M2Q0NDAyMjk5ZDhhNDRiMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhYmNkNWE2M2JkN2NkNzQwOTgwYTYwNGI0MmQ3ZTg4YTRkZTRhMjNmNGE1MzY5YzJiNzVjYTFhYmU4NjczNjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkYjA1MDZkYzJjZGE2ZDI1Y2IyOThlODljYTZlM2I5ODg5ODQ4MGQ1MzdkNTEwNjlkNmI5N2NjMjkzYmQxODMifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L53-L74",
+          "version": "repo-lines-v1:sha256:f77d3a511098f2d20c09a94dfa298d9ec2c4c32ce798d9cdbc17d34176a59400:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxNzgxZTA5ZmFmOTE3YWRjNTI5NGMwNGVlM2ZlMWNjNmJlNzQ5MmI2MzkzYTVlMzEwNWJlNTE2NTBiMmVlNTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNzE2NWZhOTgwMDM5MGVmNzdjZWE4OWRkMTM0ZjNiZDQ4Y2RlOTBkNDg4ZmI2ZmJjZWQzNTFmZjQ5MjQ3M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5MGU3MmMyYzU2YTU1ZmQ1YzkwMTVmZTM4M2RiMWVlZDQ5ZmM4YzY5YzdmYzI1MjhhZTBhOTE3NjFlMWEyOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5NDdmNTI1ZDM0NjdhOTc3ZGZjMzc4Y2JmMzAwZWExNjkwOTE1MWQwMDYzYmQwZDE4N2VhNzVhY2M5MGQ1MTAifQ"
         }
       ]
     },
     {
       "id": "claim_8f33e5d5972f4965b6a6266b531a2375",
-      "statement": "Hooks останавливает выкатку при неудачном анонимном pull, готовит права тома перед Compose и проверяет HTTPS health с контроллера после запуска.",
+      "statement": "Роль hooks прерывает выкатку при неудачном анонимном pull, готовит права тома перед Compose и проверяет HTTPS health после запуска. Точечная выкладка подтверждает только выбранный сервис.",
       "evidence": [
         {
-          "resource": "repo://ansible/roles/hooks/tasks/main.yml#L67-L92",
-          "version": "repo-lines-v1:sha256:d7212f61e804f6dcd4255fc95630d21df7f196047307a43278c74c2e0b9dc9a4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyYmIwY2MyZmNhYzJkYzAyZTYxZmQwMjE2MTcyODYyMTUzNmQzNmUxZWE4MjBlMDdjMzhiMTkyZDlhYTFkNmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1MjU5ZThmODQ4YWRiNmM3MmRkYWZhYmZhMDMyMTk5ZjJlYTU0NTMzNmJmYWY4MzBjMjgyZGYwYTg4ZWQ3YmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjliOTdkZTEwNTRlNGZkZTFmMTRmMDBhYjdhYmE2MDM1ZjcxOWRlZWJhMGJmNWExZWRhNzAzODcyMjgwYzY1ZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://ansible/roles/hooks/tasks/deploy.yml#L106-L144",
+          "version": "repo-lines-v1:sha256:d665878150b0f21689b0df70dbb8b406e0f22a0831f68aef82baf5c3511bb2fb:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyMjc4YjFjMmFkZGZiNzFhMGRjM2JmODAwM2VlYzUyOTkxZjk0NGExNDJhODVmYTU1NDAwMjlmZTIzMWViNGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdmZTlmZWZhMWE2N2JjNTE5ZjQ3MDZjNWI4ODU2NWZjOGM1OTljMjgwYjdlZGI2ZGM3Y2I1MTc5N2Y5ZDJiZjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiM2RmMjZjZWNlZDNkMDFlZDBkMDhkMDUxNzM5ODc2ZTZjMTdkZWNiNGZmYWJhODViNjAyM2I4NGNkOTZlYmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://ansible/roles/hooks/tasks/prepare-data.yml#L4-L22",
-          "version": "repo-lines-v1:sha256:4ec8330f48a6f5cacbba933d0bf94c5c2407264d355d9325b2d08df36e393339:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyZTQwMDMwNDdiNzZhNzNlYTQ0OTA0MzRmYmQxYTY2NDI0Njc0MTNjZDc0ODFlMjFiM2JjODBjMjBjOWFlOGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkNDE4MGJmN2JhYjYwODMyNGI0Mjg0NTU0YzJhMzQyOTlmYjNiYWY0YWNiOWM4ZjdjYWYxMTIyMzdmMWJhM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjZGRhMWMwOTU3NmY4MWEyOTNhNWEzNzIzZGFmNTdiZDY1MTEzMjkyZmY5MmJiOWQ5ZDc3ZTA3ODA0ZTFhOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://ansible/roles/hooks/tasks/main.yml#L62-L107",
+          "version": "repo-lines-v1:sha256:27d618dd7f17c12cf26b7be66d40b6f055dc3c163e1ace28a3cf58f30a71be32:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMmVhNDgxNWEzNzkyMDA3MjVlYWFjNWIzOWExMWFjY2QzMzczMTgxNDBlNGVjYWJmOGNjMWQyYTgwOTI4M2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwOWMyNWQyZmY0M2U1OTA2YmMzZTg4Y2E4MmMwODVlNDU0ZGIwYjY2ZmI4OTExNGU0OTZiNDI0YmNiZjk3MDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzYzZjYTBlNzQ0OWU2MzE5MWExZTRmMDkxNmYzNGRhOWQyZjZiYzhlOWNmMDFiOTZkZTAxMDY1OTIzNjI5YTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://ansible/roles/hooks/tasks/pull-image.yml#L2-L17",
-          "version": "repo-lines-v1:sha256:447f175c1940d123935110ee0a072096202fd6bb200a4d9f23ce08f0a6b89304:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlMjczMmU0ZTI4NzVmZTIzODBlYzM5YzAzZmUxYjFjNmQ3MDdjNTdlMzlkMjYyNGVlZjI5ZDhmMGZmNGZlZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzODMzNTE2MjM3ZTNhMTQzNGVjOWZhMDJmMWNjNGJhZjI3NGVkMzBmYWE0NWVkOWVhYjI4ZjVlNTU4ZDc0ZTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://ansible/roles/hooks/tasks/prepare-data.yml#L2-L22",
+          "version": "repo-lines-v1:sha256:8aeea2404d68fa57f6be19802a61ce500dcf9a69b9efcd2924ab0ebe21095625:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE2NjJjMmFkYzY5OThlOTc4NjViYzJiMDg5ZDlkN2U4NjQ2YTg4NDMwNDhiOWYxOWEzNWE3ZWMyODNkYWUzZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNzZmYWJlNzQxOGQwNzliOTZjNjlkNzU2NjQ0MjhiZjBlODc1NzMxMTBhMDQxZTg0MGRmZDA2NTlhOGMwOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoxLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViYjNiOGE5ODBkZDRjNTlkMzg0ZDk4YjUzZDUyYzZkNmEzNjU4NDY3ZGQ0Zjc4OTlkMDJlZGRkMWVjZGI1M2QifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/validate-candidate.yml#L8-L55",
+          "version": "repo-lines-v1:sha256:05a4f53d0d02da8f7790a373f09824f270c1ee882d9af88babcfccd610fdb6c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyMmM5OGU4YzU5Nzk0YTMzYWQzZTU4M2JjZmFhNjU5ZjI1ODQxOGJlZjJhMGM0YTBjZDlmMDhiNzY1ODExNmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjOTkwMzBiMTM3Y2U4NGVjYmZkNmJkNzU5YmFmMGMyZmQxNzNiYmVmZjNmNTJhYmUzOTIwYmE4YzE2MzJhZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxZGIwY2QwN2M4N2ZmMmM1YzE1ZDBlMTVkNTRiZDM4NGFhMWEwYWIwMjk3YjUwNGQ4Nzg5MDBlYWJhZGFkZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ1MWIwNDA3YjQ0NTU1NjZlYjdkOTVkNzI5MTg1M2Q4YzNhOTg4MDZhZmQ3N2ZkYjZiMWQ2MTgyMDc5YWNhZTgifQ"
+        },
+        {
+          "resource": "repo://ansible/roles/hooks/tasks/verify-service.yml#L49-L63",
+          "version": "repo-lines-v1:sha256:e1edd014fde562261a70b4e8a536ee5fea55e0e7c46be06ca5a13482eb17fade:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNzE2NWZhOTgwMDM5MGVmNzdjZWE4OWRkMTM0ZjNiZDQ4Y2RlOTBkNDg4ZmI2ZmJjZWQzNTFmZjQ5MjQ3M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhZjE0YTg2NmVlMmIxNjc1ZTc4MGY4MmE5NjRiYWJiZmZjZDA2NjUwMTRjYzUzM2FkMzM5ZGE0OTJiOWQxNzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM2NTEzYWJjNDhiYmFhNWNkYTUwMGViOTdhYTNiZmNhYjA4Yzc1ZTcyNzZhNjc4NGNkOWQ4NGQyZTQ1ZmM4YTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -73,28 +85,24 @@
       "statement": "При наличии TELEGRAM_RELEASES_TOPIC_ID в hooks_env preflight независимо от WEBHOOK_ALERTS_SEND_ENABLED требует положительное десятичное целое без ведущих нулей до 9007199254740991 и непустой после trim GITHUB_API_TOKEN; задача скрывает содержимое через no_log.",
       "evidence": [
         {
-          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L24-L33",
+          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L20-L29",
           "version": "repo-lines-v1:sha256:bc2f0a0aa30b0a386d7249b6500822c3b9b318475cee3c3681a44ef56eb56c17:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1Y2I0MGU5MjVmZjVmMDJlNmUxNWI2ZWJkNGZmNDgzOTE0Yjg3YmZkYmZiMWJlZGVmZGU4NzI2YzI1NGZhZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNzE2NWZhOTgwMDM5MGVmNzdjZWE4OWRkMTM0ZjNiZDQ4Y2RlOTBkNDg4ZmI2ZmJjZWQzNTFmZjQ5MjQ3M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxYWMyMzhmMjNjYmQ0ZjU0YWQ2ZDI0YzYyNjc2MDBkNTIxMjBhNjM2NGMzN2FjNTI3YWUxODMxNDY3OWRlYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjOGRjMTMxZmM4NWYzMzJkZDRkNWM5NzE5OWIwMTZhYmY1ZjEzZDFlNTA5ZDBiOWJhMTQ4ZGJlNjQ2MmQxNDEifQ"
         }
       ]
     },
     {
       "id": "claim_d462609451f142c2a174300f44a717db",
-      "statement": "При строковом значении WEBHOOK_ALERTS_SEND_ENABLED=true preflight требует непустой APIDOG_MR_REVIEWERS среди параметров Telegram/Apidog, не проверяя JSON-структуру списка ревьюеров; отдельно все значения hooks_env проверяются как однострочные строки с допустимыми именами переменных.",
+      "statement": "Заданные темы выпусков фронтенда и backend, а также непустая тема выкаток инфраструктуры требуют положительного целого ID в диапазоне JavaScript safe integer и GitHub API token независимо от флага отправки.",
       "evidence": [
         {
-          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L35-L49",
-          "version": "repo-lines-v1:sha256:10eebe06e4b8f5250c098f188a10f09da3f6eabb30f7443d29d8da4d9beac3c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmNjdjMDdjZDM5NTdmNjMyOGY2YWQ3MWMxOGFmZjBjM2RiNWI2YWJkMjkzZGNhODNmYzIzMzQ2ZWI3NmE5MzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ5ODc0NTkwNzNjZDQ0YTNlMDA5NGI2ODczYjZkMzM0ODIxM2QyNmQ5MDMxYjhhYzg2ZmUzNDIwNjA3OGRmZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5Yjc2Y2RiN2UyOThiMWVlYTc4NDU0MDFkMjAzN2JjMDg4NzIwZjAzNzE3MDZlMDM2OWU3ZTE1ZmRjNzBkNGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5YzdkNzA3ZTA1ZjM4ODMyNjJhMTM4NTM5NjkwZDEwMzcwOGJiNjNmZDllZjkzYTNkNzhlNzUyODg1ZDgwNmEifQ"
-        },
-        {
-          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L72-L80",
-          "version": "repo-lines-v1:sha256:4f2a559e0e744d22f7f06a04554d1c6daa911d0f0376ea342f7e671182e76c8b:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjg2NWExNjhmZDExMzJjOTJjZjk4YzZlMDAzYTdkOWZiOTFjZjRhYmQ5YTVkZjEzYjlkNjVkYTc2ZDI2MmY1ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2M3MTY1ZmE5ODAwMzkwZWY3N2NlYTg5ZGQxMzRmM2JkNDhjZGU5MGQ0ODhmYjZmYmNlZDM1MWZmNDkyNDczZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2UzNDhhMDE4OTExY2Y2OTkzOWI2MjJhODAxNDFjNmM1ZTMzMGMyN2U1YzM1ODVlYWM2ODZmMGU3YTg3YzE0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTk0N2Y1MjVkMzQ2N2E5NzdkZmMzNzhjYmYzMDBlYTE2OTA5MTUxZDAwNjNiZDBkMTg3ZWE3NWFjYzkwZDUxMCJ9"
+          "resource": "repo://ansible/roles/hooks/tasks/validate.yml#L20-L51",
+          "version": "repo-lines-v1:sha256:35dbd716d71cebd50659d58f975bb2360dc1e0cbed090c3626339b7c99286e83:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1Y2I0MGU5MjVmZjVmMDJlNmUxNWI2ZWJkNGZmNDgzOTE0Yjg3YmZkYmZiMWJlZGVmZGU4NzI2YzI1NGZhZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNzE2NWZhOTgwMDM5MGVmNzdjZWE4OWRkMTM0ZjNiZDQ4Y2RlOTBkNDg4ZmI2ZmJjZWQzNTFmZjQ5MjQ3M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBlZDg1ZjFmYTRjZjMwMTQzNmMxYTYzZWI3YjU3YTg0YzYyYjZhOTczYmI5ODBhM2QyZmVmZGM0NjIwOWEzZDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5MjFhMjg5YjI5NjE5OWQ2M2Y2NTExZjg1Yzg0ZWVkYmIwYTQ2NDQyNjg2MTU5NWY1M2FhMzJkOTYyODM1ZjYifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.7.2",
-    "at": "2026-11-02T22:08:22.574Z"
+    "at": "2026-11-21T16:58:46.168Z"
   }
 }

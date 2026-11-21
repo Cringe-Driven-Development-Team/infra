@@ -3,60 +3,60 @@ type: operations
 title: Вебхуки и резервные копии
 description: Изоляция auxiliary, проверка конфигурации hooks и резервирование очереди через snapshot.
 tags: [infra, operations]
-verified:
-  - by: openwiki/0.7.2
-    at: 2026-11-02T22:08:22.574Z
 sources:
   - id: openwiki-source-9f9915f890b2de275d85922a
     resource: repo://ansible/auxiliary.yml
+  - id: openwiki-source-3d8956538a9600ded637cca8
+    resource: repo://ansible/roles/hooks/tasks/deploy.yml
   - id: openwiki-source-a7c5b73745c56676960ac831
     resource: repo://ansible/roles/hooks/tasks/main.yml
   - id: openwiki-source-ed9d0f5d6cfb125eb17fe4c7
     resource: repo://ansible/roles/hooks/tasks/prepare-data.yml
-  - id: openwiki-source-21b3efa0248b003636803c30
-    resource: repo://ansible/roles/hooks/tasks/pull-image.yml
+  - id: openwiki-source-bfe0c7d639da9f03984f5403
+    resource: repo://ansible/roles/hooks/tasks/validate-candidate.yml
   - id: openwiki-source-0d838e9255be9db6396b747b
     resource: repo://ansible/roles/hooks/tasks/validate.yml
+  - id: openwiki-source-363c7d448c2e37aeb20d0600
+    resource: repo://ansible/roles/hooks/tasks/verify-service.yml
   - id: openwiki-source-2143ad1cf9f8ecf21dbb6613
     resource: repo://ansible/roles/restic_backup/defaults/main.yml
   - id: openwiki-source-7c5b9b5db4ec449784cb6198
     resource: repo://ansible/roles/restic_backup/templates/restic-backup.service.j2
   - id: openwiki-source-25b272f502e9dde6483cc924
     resource: repo://ansible/tasks/verify-hooks-snapshot.yml
-generated: { by: "codex", at: "2026-11-02T22:08:22.574Z" }
+generated: { by: "codex", at: "2026-11-21T16:58:46.168Z" }
+verified:
+  - by: openwiki/0.7.2
+    at: 2026-11-21T16:58:46.168Z
 ---
 
 # Вебхуки и резервные копии
 
-Описание декларативного кода на SHA `ac02542b4d522e67ebedb666af09f2a4d0e02cfd`; фактическое состояние Selectel и выкатку проверяют отдельно.
+Описание декларативного кода. Фактическое состояние инфраструктуры и выкатку проверяют отдельно.
 
 ## Отдельная цель настройки
 
 `auxiliary.yml` нацелен на группу auxiliary и проверяет параметры hooks до изменения пользователей, firewall и конфигурации. Затем применяются базовые роли, hooks и restic. Это отдельный путь от gateway/backend в `site.yml`.
 
-[Источник: ansible/auxiliary.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/auxiliary.yml#L4-L27)
+[Источник: ansible/auxiliary.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/auxiliary.yml#L4-L30)
 
 ## Контейнер и входные данные
 
-Hooks требует образ по registry digest, согласованные пути данных и пустой `hooks_command`. До запуска проверяются обязательные переменные, а при включённой отправке — параметры Telegram/Apidog. Env записывается с закрытыми правами и `no_log`; секретная конфигурация proxy также исключена из diff.
+Hooks требует образ по registry digest, согласованные пути данных, пустой `hooks_command` и секрет подписи webhook GitHub. При включённой отправке проверяются токен Telegram и ID чата. Env записывается с ограниченными правами и `no_log`. Для конфигурации proxy также отключён diff.
 
-[Источник: ansible/roles/hooks/tasks/validate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/validate.yml#L2-L70) · [Источник: ansible/roles/hooks/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/main.yml#L18-L42)
+[Источник: ansible/roles/hooks/tasks/validate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/validate.yml#L2-L18) · [Источник: ansible/roles/hooks/tasks/validate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/validate.yml#L53-L74) · [Источник: ansible/roles/hooks/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/main.yml#L28-L60)
 
-### Уведомления о выпусках и Apidog
+### Уведомления о выпусках и выкатках
 
-Если в `hooks_env` задан `TELEGRAM_RELEASES_TOPIC_ID`, preflight требует положительное десятичное целое без ведущих нулей, не превышающее `9007199254740991`, и непустой после обрезки пробелов `GITHUB_API_TOKEN`. Условие этой проверки — наличие ключа темы; от `WEBHOOK_ALERTS_SEND_ENABLED` она не зависит. Задача использует `no_log`.
+Заданные темы выпусков фронтенда и backend должны содержать положительный целый ID в диапазоне JavaScript safe integer. Непустая тема выкаток инфраструктуры проходит ту же проверку. В каждом из этих случаев требуется `GITHUB_API_TOKEN`. Проверки выполняются независимо от общего флага отправки.
 
-[Источник: ansible/roles/hooks/tasks/validate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/validate.yml#L24-L33)
-
-При `WEBHOOK_ALERTS_SEND_ENABLED`, преобразованном в строку `true`, список обязательных непустых параметров Telegram/Apidog включает `APIDOG_MR_REVIEWERS`. Эта проверка проверяет непустоту значения, а не структуру JSON списка ревьюеров. Все значения `hooks_env` отдельно проверяются как однострочные строки с допустимыми именами переменных.
-
-[Источник: ansible/roles/hooks/tasks/validate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/validate.yml#L35-L49) · [Источник: ansible/roles/hooks/tasks/validate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/validate.yml#L72-L80)
+[Источник: ansible/roles/hooks/tasks/validate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/validate.yml#L20-L51)
 
 ## Порядок запуска
 
-Роль скачивает публичный образ без login, при ошибке pull завершает выполнение. Затем подготавливает владельца тома для пользователя bun из образа, поднимает Compose с ожиданием healthcheck и проверяет публичный health с управляющей машины. Это описывает предусмотренную проверку, а не результат её запуска.
+Роль проверяет конфигурацию Compose и анонимно скачивает закреплённые образы до записи нового Compose. Неудачный pull прерывает выкатку. Роль приводит владельца тома очереди к пользователю bun, ждёт запуска проекта и проверяет публичный HTTPS health. Точечная выкладка меняет только образ выбранного сервиса и подтверждает его после проверки.
 
-[Источник: ansible/roles/hooks/tasks/pull-image.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/pull-image.yml#L2-L17) · [Источник: ansible/roles/hooks/tasks/prepare-data.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/prepare-data.yml#L4-L22) · [Источник: ansible/roles/hooks/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/ac02542b4d522e67ebedb666af09f2a4d0e02cfd/ansible/roles/hooks/tasks/main.yml#L67-L92)
+[Источник: ansible/roles/hooks/tasks/validate-candidate.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/validate-candidate.yml#L8-L55) · [Источник: ansible/roles/hooks/tasks/prepare-data.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/prepare-data.yml#L2-L22) · [Источник: ansible/roles/hooks/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/main.yml#L62-L107) · [Источник: ansible/roles/hooks/tasks/deploy.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/deploy.yml#L106-L144) · [Источник: ansible/roles/hooks/tasks/verify-service.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/hooks/tasks/verify-service.yml#L49-L63)
 
 ## Сначала snapshot, затем restic
 
