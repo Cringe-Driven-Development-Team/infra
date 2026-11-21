@@ -629,10 +629,12 @@ ansible-lint deploy-backend.yml roles/app roles/caddy verify.yml
 
 ## Webhook alerts на auxiliary (infra#76)
 
-`auxiliary.yml` не меняет прод-VPS. Перед его запуском нужны `vault_hooks_env`
-с `GITHUB_WEBHOOK_SECRET`, `APIDOG_SIGNATURE_KEY`, `APIDOG_SIGNATURE_HEADER`,
+`auxiliary.yml` не меняет прод-VPS. Для сервиса вебхуков GitHub в `vault_hooks_env`
+нужен `GITHUB_WEBHOOK_SECRET` при любом режиме отправки. При включённой отправке
+сервису нужны `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`. GitHubBot использует тот же
+`TELEGRAM_BOT_TOKEN` независимо от режима отправки вебхуков. Для выкатки нужны
 доверенный SSH host key и публичный GHCR package `webhook-alerts`. Роль закрепляет
-image по registry digest и оставляет `WEBHOOK_ALERTS_SEND_ENABLED=false`.
+image по registry digest и задаёт `WEBHOOK_ALERTS_SEND_ENABLED=false` по умолчанию.
 Preflight выполняется до изменения VPS; отсутствие обязательных webhook env
 останавливает playbook. Роль явно выполняет анонимный pull перед подготовкой
 тома и запуском контейнера; ошибка registry прекращает playbook. Auxiliary CI

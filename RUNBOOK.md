@@ -338,9 +338,10 @@ HTTP API BFF (`/api/auth/*`, `/api/notebooks/*` и др., frontend#254) и пу�
 
 ## Вспомогательная VPS (infra#54)
 
-Отдельная VPS под сервис вебхуков GitHub/Apidog → Telegram: `https://hooks.cellestial.ru`. Caddy и
-контейнер сервиса — проект Compose `/opt/hooks`; порт сервиса наружу не публикуется, снаружи открыты
-только 22/80/443 (security group). Прод-VPS её плейбук не трогает. Устройство — `pulumi/index.ts`
+Сервис вебхуков GitHub → Telegram работает на отдельной VPS по адресу `https://hooks.cellestial.ru`.
+Caddy и контейнер сервиса входят в проект Compose `/opt/hooks`. Порт сервиса доступен внутри
+сети Compose. Снаружи security group открывает только 22/80/443. Плейбук применяется к
+вспомогательной VPS. Устройство — `pulumi/index.ts`
 («Вспомогательная VPS»), `ansible/auxiliary.yml`, роли `hooks` и `restic_backup`.
 
 ### Создание
@@ -389,9 +390,8 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
 Перед первой выкаткой:
 
 1. Через `ansible-vault edit inventory/group_vars/all/vault.yml` добавить
-   `vault_hooks_env`: непустые `GITHUB_WEBHOOK_SECRET`, `APIDOG_SIGNATURE_KEY`,
-   `APIDOG_SIGNATURE_HEADER` (фактическое имя заголовка Apidog). Это обязательные
-   параметры даже при выключенном sender. `DATABASE_PATH=/data/queue.sqlite`,
+   непустой `GITHUB_WEBHOOK_SECRET` в `vault_hooks_env`. Секрет подписи обязателен
+   даже при выключенной отправке. `DATABASE_PATH=/data/queue.sqlite`,
    `PORT=8080`, `WEBHOOK_ALERTS_SEND_ENABLED=false` заданы ролью. Значения env в
    Vault хранить строками; не включать worker до приёмки Task 10. Его дополнительные
    переменные и переключение описаны в [runbook сервиса](https://github.com/Cringe-Driven-Development-Team/.github/blob/main/services/webhook-alerts/README.md).
@@ -402,35 +402,9 @@ curl -sI https://cellestial.ru | head -1                          # прод о�
    После применения сверяйте карту в Vault, `/opt/hooks/.env` и окружении hooks
    без вывода значений; неизвестный аккаунт отображается обычным ником.
 
-   Для включённого sender также нужны `TELEGRAM_BOT_TOKEN`,
-   `TELEGRAM_APIDOG_BOT_TOKEN` (отдельный бот Apidog), `TELEGRAM_CHAT_ID`,
-   `TELEGRAM_APIDOG_TOPIC_ID`, `APIDOG_ACCESS_TOKEN`, `APIDOG_TELEGRAM_USER_MAP`
-   и `APIDOG_MR_REVIEWERS`.
-   Токен чтения MR и карту хранить только в `vault_hooks_env`. Карта — строка JSON:
-   `{"1066826":{"name":"Имя участника","telegramId":"123"}}` (пример с вымышленным
-   Telegram ID). Ключ — Apidog user ID, `name` — проверенное отображаемое имя,
-   `telegramId` — строка с положительным числовым Telegram ID. Начальные записи:
-   `1066826` — Валентин Кунев (`MrDuckVC`), `1067537` — Александр Батовкин
-   (`blackHATred`); Telegram IDs копировать из проверенной `TELEGRAM_USER_MAP`
-   организации без вывода значений. При добавлении участников обновлять карту;
-   неизвестный ID отображается без пинга, пустая карта `{}` допустима.
-   Не передавать токен в argv, URL, логи или комментарии GitHub.
-
-   Постоянную пару ревьюверов MR менять через `ansible-vault edit` в
-   `vault_hooks_env.APIDOG_MR_REVIEWERS`: строка JSON с ровно двумя объектами
-   `{ "name": "…", "telegramId": "…" }`, сначала Александр Батовкин, затем
-   Ярослав Михалев. Имена непустые, Telegram ID — разные положительные числовые
-   строки из проверенного источника; значения не выводить в логи. Порядок массива
-   задаёт порядок упоминаний при открытии MR и не зависит от `reviewerIds` Apidog.
-
-   Публичные defaults роли: `APIDOG_PROJECT_ID=1382426`,
-   `APIDOG_TARGET_BRANCH_ID=1388508` (main),
-   `APIDOG_PROJECT_NAME=2026_2_Cringe_Driven_Development`,
-   `APIDOG_CONTRACT_URL=https://vb78fyael1.apidog.io/`.
-   Preflight включённого sender проверяет наличие токена/карты, положительные
-   числовые IDs, непустое имя и HTTP/HTTPS URL; сервис проверяет структуру JSON.
-   При недоступном Apidog исходный merge-алерт отправляется с кнопкой контракта;
-   однозначный MR добавляет упоминания и точную кнопку «Открыть MR».
+   Для включённой отправки также нужны `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`.
+   GitHubBot использует тот же `TELEGRAM_BOT_TOKEN` независимо от режима отправки
+   вебхуков.
 2. Проверить, что package `webhook-alerts` опубликован как **public**, и
    анонимный pull закреплённого digest с VPS проходит с чистым Docker config.
    Публичность исходного `.github` репозитория сама по себе не делает GHCR package
@@ -736,9 +710,9 @@ snapshot в `_data/queue.sqlite`, убрать прежние WAL/SHM после
   первый тестовый snapshot содержит синтетическую строку `pending`.
 
 На момент проверки 2026-10-24 GitHub organization webhook и настоящий Apidog
-target ещё не были подключены. На 2026-10-25 оба настроены; доставка от настоящего
-Apidog target ещё не подтверждена. Worker остаётся выключенным
-(`WEBHOOK_ALERTS_SEND_ENABLED=false`), cutover ожидает отдельной приёмки Task 10.
+target ещё не были подключены. К 2026-10-25 оба настроили, доставка от настоящего
+Apidog target оставалась неподтверждённой. Worker на тот момент был выключен
+(`WEBHOOK_ALERTS_SEND_ENABLED=false`), cutover ожидал отдельной приёмки Task 10.
 
 ## Telegram proxy на auxiliary
 
@@ -1023,7 +997,7 @@ GITHUB_API_TOKEN через действующий Vault; бот, чат, proxy 
    CD/Rollback send steps. Не отменять неизвестную доставку без проверки Telegram.
 3. Снять существующий verified SQLite snapshot и обновить вспомогательную VPS
    существующим auxiliary.yml. Это обновление webhook-сервиса, не CD фронта.
-   /health должен ответить 200; обычные GitHub/Apidog алерты продолжают работать.
+   Проверить ответ 200 на `/health` и доставку обычных алертов GitHub.
 4. У org hook 702764072 добавить deployment_status и workflow_job к текущему набору
    events, сохранив URL, secret, SSL verification и остальные подписки.
 5. Зафиксировать текущую UTC-границу, затем в /opt/hooks выполнить:
