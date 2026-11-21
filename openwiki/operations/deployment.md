@@ -3,9 +3,6 @@ type: operations
 title: Подготовка хостов и выкатка API/BFF
 description: Точки входа Ansible, выбор сервисов, проверка BFF и ограниченное восстановление при сбое.
 tags: [infra, operations]
-verified:
-  - by: openwiki/0.7.2
-    at: 2026-10-31T14:36:53.458Z
 sources:
   - id: openwiki-source-d76f6aaea685257d0d950e8d
     resource: repo://ansible/bootstrap.yml
@@ -23,12 +20,15 @@ sources:
     resource: repo://ansible/roles/app/tasks/tags.yml
   - id: openwiki-source-3c00005662a2894d1caf8947
     resource: repo://ansible/site.yml
-generated: { by: "codex", at: "2026-10-31T14:36:53.458Z" }
+generated: { by: "codex", at: "2026-11-21T16:58:46.168Z" }
+verified:
+  - by: openwiki/0.7.2
+    at: 2026-11-21T16:58:46.168Z
 ---
 
 # Подготовка хостов и выкатка API/BFF
 
-Описание декларативного кода на SHA `1e7bc4e5946c69065c04393efb015eb7c9b5101f`; фактическое состояние Selectel и выкатку проверяют отдельно.
+Описание декларативного кода. Фактическое состояние инфраструктуры и выкатку проверяют отдельно.
 
 ## Первый контакт и базовая настройка
 
@@ -38,9 +38,9 @@ generated: { by: "codex", at: "2026-10-31T14:36:53.458Z" }
 
 ## Два входа для релизов
 
-`deploy-backend.yml` выбирает хост API по `app_backend_split`; `deploy-bff.yml` работает на единственном gateway. Роль app читает существующие теги/ссылки из env и использует их для компонента, которому не передан новый образ. В раздельной раскладке gateway содержит Caddy/BFF, backend — API/Postgres/Redis; BFF перед выкаткой проверяет health API.
+`deploy-backend.yml` требует по одному хосту в группах gateway и backend и выкатывает API на backend. `deploy-bff.yml` работает на gateway. Роль app использует записанный digest для компонента, которому не передан новый образ. Перед выкаткой BFF проверяется доступность Go API с gateway.
 
-[Источник: ansible/deploy-backend.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/1e7bc4e5946c69065c04393efb015eb7c9b5101f/ansible/deploy-backend.yml#L6-L31) · [Источник: ansible/deploy-bff.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/1e7bc4e5946c69065c04393efb015eb7c9b5101f/ansible/deploy-bff.yml#L5-L27) · [Источник: ansible/roles/app/tasks/tags.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/1e7bc4e5946c69065c04393efb015eb7c9b5101f/ansible/roles/app/tasks/tags.yml#L4-L68)
+[Источник: ansible/deploy-backend.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/deploy-backend.yml#L5-L37) · [Источник: ansible/deploy-bff.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/deploy-bff.yml#L5-L31) · [Источник: ansible/roles/app/tasks/tags.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/app/tasks/tags.yml#L4-L54)
 
 ## BFF проверяется до изменения файлов
 
@@ -52,13 +52,13 @@ BFF задаётся digest и полным SHA релиза. Pull выполн�
 
 App запускает Compose с `wait: true`, `pull: never` и удалением orphan-контейнеров. Rescue восстанавливает сохранённые env/Compose-файлы, либо убирает файлы неудачной первой установки, после чего явно падает. Контейнеры автоматически не откатываются: восстановление файлов не является завершённым rollback, нужен повторный деплой рабочего образа.
 
-[Источник: ansible/roles/app/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/1e7bc4e5946c69065c04393efb015eb7c9b5101f/ansible/roles/app/tasks/main.yml#L148-L193)
+[Источник: ansible/roles/app/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/app/tasks/main.yml#L143-L188)
 
 ## Публичный путь после запуска
 
-После healthcheck роль применяет Caddy route. `deploy-bff.yml` затем сверяет работающий контейнер и запускает внешний probe: гостевой HTML с release/bootstrap и защитными заголовками, отказ защищённого RPC без сессии и недоступность внутренних API/health. Эти задачи становятся свидетельством стенда только после реального успешного запуска.
+После healthcheck роль применяет Caddy route. `deploy-bff.yml` затем сверяет работающий контейнер и запускает внешний probe: гостевой HTML с release/bootstrap и защитными заголовками, отказ при входе с неверными данными, отказ защищённого RPC без сессии и недоступность внутренних API/health. Эти задачи становятся свидетельством стенда только после реального успешного запуска.
 
-[Источник: ansible/roles/app/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/1e7bc4e5946c69065c04393efb015eb7c9b5101f/ansible/roles/app/tasks/main.yml#L195-L216) · [Источник: ansible/deploy-bff.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/1e7bc4e5946c69065c04393efb015eb7c9b5101f/ansible/deploy-bff.yml#L34-L43) · [Источник: ansible/roles/app/tasks/probe-bff.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/1e7bc4e5946c69065c04393efb015eb7c9b5101f/ansible/roles/app/tasks/probe-bff.yml#L5-L60)
+[Источник: ansible/roles/app/tasks/main.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/app/tasks/main.yml#L194-L211) · [Источник: ansible/deploy-bff.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/deploy-bff.yml#L34-L43) · [Источник: ansible/roles/app/tasks/probe-bff.yml](https://github.com/Cringe-Driven-Development-Team/infra/blob/430053a157dcd6d9660f8da1285b37482384b256/ansible/roles/app/tasks/probe-bff.yml#L5-L103)
 
 ## Где менять и проверять
 
