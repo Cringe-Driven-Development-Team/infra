@@ -728,6 +728,7 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertNotIn("header_up -Cookie", rendered)
                 self.assertIn("handle /health {\n\t\trespond 404\n\t}", rendered)
                 self.assertIn("\tX-Content-Type-Options nosniff\n", rendered)
+                self.assertIn('\tStrict-Transport-Security "max-age=31536000"\n', rendered)
                 self.assertEqual(
                     f'header_down Content-Security-Policy-Report-Only "{csp}"' in rendered, deployed)
                 # блок с политикой не съедает перевод строки перед адресом сайта

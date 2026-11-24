@@ -267,7 +267,8 @@ BFF сам разбирает остальное: маршруты своего 
   каталога своего релиза `releases/{sha}/` (`frontend_cdn_domain`), через Caddy они не идут.
 - До первой выкатки BFF (в `.env` на VPS нет `BFF_IMAGE_REF`) Caddy на всех путях, кроме `/health`,
   отвечает `503` с телом `BFF is not deployed`.
-- Все ответы Caddy несут `X-Content-Type-Options: nosniff`, ответы BFF — ещё и
+- Все ответы Caddy несут `X-Content-Type-Options: nosniff` и `Strict-Transport-Security: max-age=31536000`
+  (HSTS только для `app_domain`, без `includeSubDomains` и `preload`), ответы BFF — ещё и
   `Content-Security-Policy`, и браузер её применяет: скрипты — только с `frontend_cdn_domain`, стили не ограничены
   (`style-src * data: blob: 'unsafe-inline'`: HTML-вывод ячеек в `iframe srcdoc` наследует политику
   и несёт встроенные `<style>` и `style`-атрибуты), картинки — со своего домена, с него, `frontend_static_domain`,
@@ -295,7 +296,7 @@ BFF сам разбирает остальное: маршруты своего 
   `healthy` (`roles/app/tasks/check-bff-image.yml`); снаружи (`roles/app/tasks/probe-bff.yml`) —
   гостевой HTML `/login` с ровно одним `<script id="bootstrap">` и `{"user":null}`,
   `<meta name="release">` с полным `BFF_RELEASE_SHA`, `Cache-Control: private, no-store`,
-  `nosniff` и CSP; `GET /api/users/me` без сессии — `UNAUTHORIZED` (401); `/api/v1/users/me`,
+  `nosniff`, HSTS `max-age=31536000` и CSP; `GET /api/users/me` без сессии — `UNAUTHORIZED` (401); `/api/v1/users/me`,
   `/api/unknown` и `/health` — `404` и не HTML;
 - сертификат от Let's Encrypt;
 - после выкатки бэка с Redis (есть `redis/redis.conf`) Redis отвечает `PONG` на `redis-cli -h redis ping` из сети `app` (одноразовый

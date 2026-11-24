@@ -57,6 +57,7 @@ class BackendProbes(unittest.TestCase):
                     status, value = 200, ('<html><meta name="release" content="' + RELEASE + '">'
                         '<script id="bootstrap" type="application/json">{"user":null}</script></html>')
                     headers = {'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
+                               'Strict-Transport-Security': 'max-age=31536000',
                                'Content-Security-Policy-Report-Only': "default-src 'none'"}
                 elif self.path == '/api/users/me':
                     status, value = 401, {'error': {'code': 'UNAUTHORIZED', 'message': 'Нет сессии'}}
