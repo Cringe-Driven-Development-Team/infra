@@ -200,8 +200,8 @@
       register: sshd_effective
       changed_when: false
 
-    # Пересылка запрещена, кроме gateway при VPS2: ровно VPS2:22 (jump, infra#59) и VPS2:8080 (Go API, infra#155)
-    - name: "Hardening активен: root/пароли выключены, форвардинг — только VPS2:22 и VPS2:8080"
+    # Пересылка запрещена, кроме gateway при VPS2: ровно VPS2:22 (jump, infra#59) и VPS2:8443 (mTLS Go API, infra#155, infra#160)
+    - name: "Hardening активен: root/пароли выключены, форвардинг — только VPS2:22 и VPS2:8443"
       ansible.builtin.assert:
         that:
           - sshd_effective.stdout is search('(?m)^permitrootlogin no$')
@@ -211,7 +211,7 @@
             sshd_effective.stdout is search('(?m)^allowtcpforwarding no$')
             if (ssh_hardening_jump_targets | default([])) | length == 0
             else (ssh_hardening_jump_targets | sort
-                  == [app_backend_address ~ ':22', app_backend_address ~ ':8080'] | sort
+                  == [app_backend_address ~ ':22', app_backend_address ~ ':8443'] | sort
                   and sshd_effective.stdout is search('(?m)^allowtcpforwarding local$')
                   and sshd_effective.stdout is search('(?m)^permitopen ' ~ (ssh_hardening_jump_targets | join(' ') | regex_escape) ~ '$'))
         fail_msg: "sshd -T: {{ sshd_effective.stdout }}"
@@ -321,9 +321,20 @@
 
 # Go на приватной VPS2 (infra#59): с gateway он отвечает только с верным S2S-ключом (backend#41).
 # Требуется выкаченный Go с проверкой S2S-ключа (backend#41).
+# Go доступен только через mTLS-прокси 8443 с сертификатом BFF (infra#160).
 - name: "Go на VPS2 и S2S-ключ"
   hosts: gateway
   gather_facts: false
+  vars_files:
+    - roles/app/defaults/main.yml
+  # клиентский ключ BFF на gateway читают только root и пользователь BFF
+  become: true
+  module_defaults:
+    ansible.builtin.uri:
+      ca_path: "{{ app_mtls_dir }}/ca.crt"
+      client_cert: "{{ app_mtls_dir }}/client.crt"
+      client_key: "{{ app_mtls_dir }}/client.key"
+      validate_certs: true
   tasks:
     - name: VPS2 — приватный адрес, без публичного IP
       ansible.builtin.assert:
@@ -333,7 +344,7 @@
 
     - name: Неверный и отсутствующий S2S-ключ — 403 s2s_forbidden
       ansible.builtin.uri:
-        url: "http://{{ app_backend_address }}:8080/api/v1/users/me"
+        url: "https://{{ app_backend_address }}:8443/api/v1/users/me"
         headers: "{{ {'X-BFF-Key': item} if item else {} }}"
         status_code: 403
         return_content: true
@@ -348,8 +359,22 @@
     # с верным ключом S2S-проверка пройдена, дальше Go требует Bearer: 401, а не 403
     - name: Верный S2S-ключ пропускает к Go
       ansible.builtin.uri:
-        url: "http://{{ app_backend_address }}:8080/api/v1/users/me"
+        url: "https://{{ app_backend_address }}:8443/api/v1/users/me"
         headers:
           X-BFF-Key: "{{ bff_api_key }}"
         status_code: 401
       no_log: true
+
+    - name: Прямой HTTP к Go с gateway закрыт
+      ansible.builtin.wait_for:
+        host: "{{ app_backend_address }}"
+        port: 8080
+        state: stopped
+        connect_timeout: 3
+        timeout: 10
+        msg: "С gateway открыт {{ app_backend_address }}:8080 — Go доступен мимо mTLS-прокси"
+
+    - name: Go отвечает по mTLS и отвергает клиента без сертификата
+      ansible.builtin.import_tasks: roles/app/tasks/probe-backend.yml
+      vars:
+        backend_probe_address: "{{ app_backend_address }}"

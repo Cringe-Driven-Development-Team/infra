@@ -1,0 +1,65 @@
+---
+# Обновление сертификатов mTLS BFF → Go (infra#160): .github/workflows/mtls.yml раз в сутки и вручную.
+# Перевыпускает сертификат, если он истекает раньше app_mtls_renew_days, не от текущего CA или
+# app_mtls_force=true; пересоздаёт прокси/BFF с новыми файлами. Затем проверяет канал gateway → Go и
+# падает, если клиентский сертификат BFF или выданный прокси истекает раньше app_mtls_alert_days.
+# Образы и .env не меняются. Порядок аварийной замены — RUNBOOK.md, «mTLS BFF → Go».
+- name: Validate the mTLS inventory
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Require one gateway and one backend VPS
+      ansible.builtin.assert:
+        that:
+          - groups.get('gateway', []) | length == 1
+          - groups.get('backend', []) | length == 1
+        fail_msg: An inventory with one gateway and one backend VPS is required.
+
+- name: Renew the mTLS certificates
+  hosts: backend:gateway
+  become: true
+  gather_facts: false
+  vars_files:
+    - roles/app/defaults/main.yml
+  tasks:
+    - name: Issue or renew the certificate of this host
+      ansible.builtin.include_tasks: roles/app/tasks/mtls-cert.yml
+  handlers:
+    - name: Load the application handlers
+      ansible.builtin.import_tasks: roles/app/handlers/main.yml
+
+- name: Check the mTLS channel and expiry
+  hosts: backend
+  become: true
+  gather_facts: false
+  vars_files:
+    - roles/app/defaults/main.yml
+  tasks:
+    - name: Remember the private backend address before delegation
+      ansible.builtin.set_fact:
+        backend_probe_address: "{{ app_backend_address }}"
+
+    - name: Check the Go API from the gateway
+      ansible.builtin.import_tasks: roles/app/tasks/probe-backend.yml
+
+    - name: The BFF client certificate outlives the alert threshold
+      ansible.builtin.command:
+        cmd: openssl x509 -in {{ app_mtls_dir }}/client.crt -noout -enddate -checkend {{ app_mtls_alert_days | int * 86400 }}
+      delegate_to: "{{ groups['gateway'][0] }}"
+      changed_when: false
+
+    # Прокси мог не перечитать файлы: проверяется сертификат, который он реально выдаёт
+    - name: The API proxy serves a certificate that outlives the alert threshold
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          openssl s_client -connect {{ backend_probe_address }}:8443 -verify_return_error
+          -CAfile {{ app_mtls_dir }}/ca.crt -cert {{ app_mtls_dir }}/client.crt -key {{ app_mtls_dir }}/client.key
+          </dev/null 2>/dev/null
+          | openssl x509 -noout -enddate -checkend {{ app_mtls_alert_days | int * 86400 }}
+        executable: /bin/bash
+      delegate_to: "{{ groups['gateway'][0] }}"
+      register: app_mtls_served
+      changed_when: false

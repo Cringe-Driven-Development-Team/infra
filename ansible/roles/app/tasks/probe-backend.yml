@@ -1,13 +1,20 @@
 ---
-# Адрес VPS2 вычисляется вызывающим task до делегирования; runner приватный HTTP не вызывает.
-- name: Backend internal HTTP check
+# Адрес VPS2 вычисляется вызывающим task до делегирования; runner приватный HTTPS не вызывает.
+# Gateway предъявляет клиентский сертификат BFF (infra#160) и проверяет серверный по CA и IP SAN.
+- name: Backend internal mTLS check
   ansible.builtin.uri:
-    url: "http://{{ backend_probe_address }}:8080/health"
+    url: "https://{{ backend_probe_address }}:8443/health"
+    ca_path: "{{ app_mtls_dir }}/ca.crt"
+    client_cert: "{{ app_mtls_dir }}/client.crt"
+    client_key: "{{ app_mtls_dir }}/client.key"
+    validate_certs: true
     return_content: true
     follow_redirects: none
     use_proxy: false
     timeout: 5
   delegate_to: "{{ groups['gateway'][0] }}"
+  # клиентский ключ читают только root и пользователь BFF
+  become: true
   register: app_backend_health
   failed_when: >-
     app_backend_health.status | default(0) != 200
@@ -16,3 +23,17 @@
   # retries — дополнительные попытки: 1 + 5 = не более шести запросов.
   retries: 5
   delay: 5
+
+# Без клиентского сертификата прокси не пропускает к Go: обрыв TLS или 400 nginx
+- name: Backend rejects a client without a certificate
+  ansible.builtin.uri:
+    url: "https://{{ backend_probe_address }}:8443/health"
+    ca_path: "{{ app_mtls_dir }}/ca.crt"
+    validate_certs: true
+    follow_redirects: none
+    use_proxy: false
+    timeout: 5
+  delegate_to: "{{ groups['gateway'][0] }}"
+  become: true
+  register: app_backend_anonymous
+  failed_when: app_backend_anonymous.status | default(-1) not in [-1, 400]

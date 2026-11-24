@@ -17,6 +17,20 @@
           Supply backend_image_ref=<image>@sha256:<digest> and an inventory with one gateway and one backend VPS.
       tags: validation
 
+# Проверки Go идут с gateway сертификатом BFF (infra#160): он должен быть выпущен до них
+- name: BFF client certificate on the gateway
+  hosts: gateway
+  become: true
+  gather_facts: false
+  vars_files:
+    - roles/app/defaults/main.yml
+  tasks:
+    - name: Issue or renew the BFF client certificate
+      ansible.builtin.include_tasks: roles/app/tasks/mtls-cert.yml
+  handlers:
+    - name: Load the application handlers
+      ansible.builtin.import_tasks: roles/app/handlers/main.yml
+
 - name: Deploy backend
   hosts: backend
   become: true

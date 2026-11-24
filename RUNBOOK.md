@@ -316,7 +316,7 @@ healthy у API и Postgres, сохранность данных после от�
 
 ## Выкатка BFF (infra#58)
 
-Схема: браузер → Caddy → BFF (`bff:3000`) → Go (`api:8080`, только сеть `app`). Снаружи — HTML,
+Схема: браузер → Caddy → BFF (`bff:3000`) → mTLS-прокси Go на VPS2 (`https://<VPS2>:8443`, раздел «mTLS BFF → Go») → Go (`api:8080`, только сеть `app`). Снаружи — HTML,
 HTTP API BFF (`/api/auth/*`, `/api/notebooks/*` и др., frontend#254) и публичные файлы через BFF; `/api/v1/*` и прочие `/api/*` — `404` от BFF (не HTML),
 `/health` — `404` от Caddy. Чанки JS и CSS — с CDN каталога своего релиза. До первой выкатки BFF
 домен отвечает `503 BFF is not deployed`. Подробно — [ansible/README.md](ansible/README.md#клиент-и-bff).
@@ -761,8 +761,8 @@ ansible-lint auxiliary.yml roles/hooks roles/restic_backup tasks/verify-hooks-sn
 ## Go и Postgres на VPS2 (infra#59)
 
 Раскладка закреплена: Caddy и BFF работают на gateway, Go API, PostgreSQL и Redis —
-на приватной VPS2. BFF обращается к Go по `http://<backendPrivateIp>:8080/api/v1`.
-У VPS2 нет публичного IP; security group и ufw пускают SSH и 8080 только с приватного
+на приватной VPS2. BFF обращается к Go по mTLS: `https://<backendPrivateIp>:8443/api/v1` (раздел «mTLS BFF → Go»).
+У VPS2 нет публичного IP; security group и ufw пускают SSH и 8443 только с приватного
 адреса gateway. На gateway Go API и базы не запускаются.
 
 Ansible подключается к VPS2 через gateway: `ProxyCommand` задан в `group_vars/backend`,
@@ -778,7 +778,8 @@ sshd gateway разрешает пересылку только на `VPS2:22`. 
    VPS2 playbook завершается на проверке inventory, без выкатки на gateway.
 2. После добавления VPS2 или смены её адреса сначала выполнить
    `ansible-playbook -i inventory/ci.yml site.yml --limit gateway`: это обновляет
-   разрешённый SSH jump-путь и `PermitOpen` до нового `VPS2:22` и `VPS2:8080` (туннель локального BFF, infra#155).
+   разрешённый SSH jump-путь и `PermitOpen` до нового `VPS2:22` и `VPS2:8443` (туннель локального BFF, infra#155). Смена адреса
+   VPS2 меняет IP SAN серверного сертификата: `deploy-backend.yml` перевыпустит его сам.
    Затем для новой VPS2 один раз выполнить `bootstrap.yml --limit backend` и
    `site.yml --limit backend` для пользователей, SSH-hardening, ufw и Docker.
    Полная команда выбора inventory и ключей — в [Ansible README](ansible/README.md).
@@ -803,8 +804,8 @@ sshd gateway разрешает пересылку только на `VPS2:22`. 
    API, Postgres и Redis на VPS2 с ожиданием healthy. При отказе pull конфигурация и
    контейнеры остаются прежними. Секреты из Vault не выводятся в лог.
 5. После запуска playbook сверяет локальный image ID контейнера `api` с `.Id` образа
-   по выбранному digest и состояние running/healthy; затем с gateway проверяет
-   `/health` VPS2 (`200`, `status: alive`) и с runner — отрицательный login через BFF
+   по выбранному digest и состояние running/healthy; затем с gateway по mTLS проверяет
+   `/health` VPS2 (`200`, `status: alive`) и отказ без клиентского сертификата и с runner — отрицательный login через BFF
    (`400`, `BAD_REQUEST`, `invalid_credentials`). Это контракт неверных логина/пароля;
    `401` у login относится к неверному TOTP. Проверки API/health снаружи требуют
    `404` без HTML. Ошибка любого обязательного этапа означает неуспех выкатки.
@@ -831,6 +832,99 @@ backend#42. Выполнить тот же `deploy-backend.yml`, заменив 
 не выполняет `goose Down` или `docker compose down -v`. Автоматического отката нет.
 Если после переключения проверки не прошли, текущее состояние нельзя объявлять
 подтверждённым: изучить этап ошибки и повторить выкатку проверенного рабочего digest.
+
+
+## mTLS BFF → Go (infra#160)
+
+Схема: BFF на gateway → `https://<backendPrivateIp>:8443/api/v1` → `api-proxy` (nginx, Compose VPS2) →
+`api:8080` внутри сети `app`. Порт Go не публикуется; 8443 открыт только приватному адресу gateway
+(security group, ufw), на публичном домене Go нет. `X-BFF-Key` и Bearer проверяет Go, как раньше.
+
+| Что | Где | Срок |
+|---|---|---|
+| CA `Cellestial BFF-Go CA` (ECDSA P-256), отдельный от runtime | `vault_bff_mtls_ca_cert`, `vault_bff_mtls_ca_key`; ключ — только у controller при подписи | 5 лет, до 2031-11-22 |
+| серверный `cellestial-go-api`: serverAuth, IP SAN приватного адреса VPS2 | VPS2 `/opt/cellestial/mtls/{ca.crt,server.crt,server.key}`, root, 0400; монтируется read-only только в `api-proxy` | 30 дней |
+| клиентский `cellestial-bff`: clientAuth | gateway `/opt/cellestial/mtls/{ca.crt,client.crt,client.key}`, uid 1000 (`bun`), 0400; read-only только в `bff` (`GO_API_TLS_CA_FILE`, `GO_API_TLS_CERT_FILE`, `GO_API_TLS_KEY_FILE`) | 30 дней |
+
+Прокси принимает только цепочку до CA (глубина 1), действующий срок, назначение clientAuth и
+`CN=cellestial-bff`: сертификат другого сервиса от того же CA получает `403`, без сертификата, с чужим,
+просроченным или серверным — `400`. BFF проверяет серверный по CA, сроку и IP SAN (frontend#257).
+
+Выпуск — `roles/app/tasks/mtls-cert.yml`: ключ создаётся на хосте и его не покидает, CSR подписывает
+controller (runner или машина оператора) ключом CA из Vault во временном каталоге. Перевыпуск с новым
+ключом — если сертификата нет, он не от текущего CA, не того имени/назначения/адреса, истекает раньше
+порога или задан `app_mtls_force=true`. Изменённые файлы применяет пересоздание `api-proxy`/`bff`
+(сервисы читают их при старте). `deploy-backend.yml` выпускает оба сертификата, `deploy-bff.yml` — клиентский.
+
+**Пороги.** Срок 30 дней (`app_mtls_cert_days`), перевыпуск при остатке < 10 дней (`app_mtls_renew_days`),
+тревога при остатке < 7 дней (`app_mtls_alert_days`).
+
+**Обновление и сигнал.** `.github/workflows/mtls.yml` раз в сутки (04:17 UTC) запускает
+`ansible/renew-mtls.yml`: перевыпуск по порогам, проверка канала с gateway (`200` с сертификатом BFF,
+отказ без него), срок файлов на обоих хостах и сертификата, который реально выдаёт прокси, — не меньше
+7 дней. Любой сбой валит запуск, и он пишет в Telegram-топик команды (`TELEGRAM_CHAT_ID`,
+`TELEGRAM_TOPIC_ID`, `TELEGRAM_BOT_TOKEN`). При постоянном сбое перевыпуска сигнал приходит каждый день,
+начиная за 10 дней до истечения.
+
+**Владелец процедуры** — исполнитель DevOps-направления (сейчас Денис Истратов, iRedTea); он разбирает
+сигналы из Telegram и выполняет замену.
+
+### Проверка
+
+```bash
+# Сроки и выдача: обновление по порогам + все проверки (то же делает плановый запуск)
+gh workflow run mtls.yml -R Cringe-Driven-Development-Team/infra && gh run watch -R Cringe-Driven-Development-Team/infra
+# Вручную из ansible/ с ключами, как в «Подготовка и выкатка» выше
+ansible-playbook -i inventory/ci.yml renew-mtls.yml \
+  -e "deploy_key_path=$HOME/.ssh/selectel_release" -e "jump_known_hosts=$HOME/.ssh/known_hosts" \
+  --ssh-common-args="-o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+# Срок на хосте (gateway; на VPS2 — server.crt)
+sudo openssl x509 -in /opt/cellestial/mtls/client.crt -noout -subject -enddate
+```
+
+Автообновление на короткоживущих сертификатах: `gh workflow run mtls.yml -f short_lived=true` выпускает оба
+на 3 дня и пересоздаёт сервисы; обычный запуск (`gh workflow run mtls.yml` или плановый) перевыпускает их
+на 30 дней, запросы проходят. Сигнал о сбое: `-f simulate_failure=true` поднимает порог тревоги до 31 дня —
+проверка срока валит запуск, приходит сообщение в Telegram; сертификаты не меняются.
+
+### Аварийная замена
+
+Прокси доверяет любому действующему `cellestial-bff` от CA, BFF — любому серверному от CA с адресом VPS2.
+Поэтому при компрометации **любого** ключа — клиентского (gateway или локальный, `local-mtls.yml`),
+серверного или CA — меняется CA: только так прежние сертификаты перестают приниматься сразу, а не через
+оставшиеся до 30 дней.
+
+1. Новый CA (на машине оператора, во временном каталоге):
+
+   ```bash
+   d=$(mktemp -d) && cd "$d" && umask 077
+   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ca.key
+   openssl req -x509 -new -key ca.key -subj "/CN=Cellestial BFF-Go CA" -days 1825 -out ca.crt \
+     -addext "basicConstraints=critical,CA:TRUE,pathlen:0" -addext "keyUsage=critical,keyCertSign,cRLSign"
+   ```
+
+2. Заменить `vault_bff_mtls_ca_cert` и `vault_bff_mtls_ca_key` содержимым `ca.crt` и `ca.key`
+   (`ansible-vault edit inventory/group_vars/all/vault.yml`, блочные скаляры `|`), удалить `$d`.
+3. Сразу применить из этой ветки: `renew-mtls.yml` (команда выше). CA на хостах меняется, оба сертификата
+   перевыпускаются с новыми ключами, `api-proxy` и `bff` пересоздаются, канал проверяется.
+4. Влить PR с новым Vault в main — иначе следующая выкатка и плановое обновление вернут прежний CA.
+5. Проверить, что прежние credentials отвергаются: с прежним клиентским сертификатом `curl --cert` к
+   `https://<VPS2>:8443/health` с gateway получает `400`, `verify.yml` проходит. Разработчикам —
+   перевыпустить локальный сертификат (`local-mtls.yml`).
+
+Плановая замена ключей без компрометации — `gh workflow run mtls.yml -f force=true`. Замена CA до
+истечения (до 2031-11-22) — те же шаги 1–4 за 1–2 месяца.
+
+### Первая выкладка
+
+1. Влит frontend#257, BFF с поддержкой TLS опубликован. Его CD до шага 2 может не пройти — это ожидаемо:
+   прежний `deploy-bff.yml` передаёт HTTP-адрес.
+2. Влит PR infra: `pulumi up` заменяет правило security group 8080 → 8443, `site.yml` — ufw и `PermitOpen`.
+   Канал BFF → Go не работает до шага 4; `verify.yml` этого запуска падает на проверках Go.
+3. `deploy-backend.yml` с текущим digest backend: сертификаты, `api-proxy`, Go без опубликованного 8080.
+   Его последняя проверка через BFF падает, пока BFF на прежней конфигурации.
+4. `deploy-bff.yml` с опубликованным digest BFF из frontend#257: HTTPS-адрес и файлы mTLS, проверка через BFF.
+5. `verify.yml` проходит; вход, refresh и защищённый запрос в браузере работают (браузер → BFF → Go).
 
 ## Runtime-VPS сессий (infra#89)
 

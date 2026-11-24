@@ -23,6 +23,18 @@
     src: "{{ item.src | default(omit) }}"
   loop: "{{ firewall_rules }}"
 
+# Снятые правила удаляются явно: ufw сам не забывает правило, исчезнувшее из firewall_rules
+- name: Удалить снятые правила (см. firewall_removed_rules в group_vars)
+  community.general.ufw:
+    rule: allow
+    delete: true
+    port: "{{ item.port | default(omit) }}"
+    proto: "{{ item.proto | default(omit) }}"
+    src: "{{ item.src | default(omit) }}"
+  loop: "{{ firewall_removed_rules | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+
 - name: Включить ufw
   community.general.ufw:
     state: enabled

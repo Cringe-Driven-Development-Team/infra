@@ -100,7 +100,7 @@ pulumi config set infra:avatarsBucket <имя-бакета>
 ```
 
 Приватная VPS2 под Go API, Postgres и Redis (infra#59) — без публичного IP, в той же приватной сети;
-security group пускает SSH и 8080 только с приватного адреса gateway:
+security group пускает SSH и mTLS-прокси Go API 8443 (infra#160) только с приватного адреса gateway:
 
 ```bash
 pulumi config set infra:backend true

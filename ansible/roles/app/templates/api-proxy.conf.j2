@@ -1,0 +1,42 @@
+# Managed by Ansible (role app). mTLS-прокси Go API (infra#160): только клиент с сертификатом
+# BFF-Go CA и именем {{ app_mtls_certs.client.cn }}; Go — api:8080 внутри сети app.
+map $http_upgrade $cellestial_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 8443 ssl;
+
+    ssl_certificate /etc/nginx/mtls/server.crt;
+    ssl_certificate_key /etc/nginx/mtls/server.key;
+    ssl_client_certificate /etc/nginx/mtls/ca.crt;
+    ssl_verify_client on;
+    ssl_verify_depth 1;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+
+    # Тот же CA выпускает и серверный сертификат: клиентом принимается только BFF
+    if ($ssl_client_s_dn !~ "^CN={{ app_mtls_certs.client.cn }}$") {
+        return 403;
+    }
+
+    # Лимиты тела и таймауты задаёт Go
+    client_max_body_size 0;
+
+    # DNS Docker: новый адрес api после пересоздания контейнера, а не тот, что был при старте nginx
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $cellestial_api http://api:8080;
+
+    location / {
+        proxy_pass $cellestial_api;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $cellestial_connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+}

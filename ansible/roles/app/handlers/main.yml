@@ -9,6 +9,21 @@
     chdir: "{{ app_compose_dir }}"
   changed_when: true
 
+# mTLS BFF → Go (infra#160): nginx и BFF читают сертификаты при старте. Пересоздаётся сервис хоста
+# (app_mtls_name), если он есть в compose.yml: на свежем хосте его поднимет сама выкатка.
+- name: Apply new mTLS files
+  ansible.builtin.shell:
+    cmd: >-
+      set -eu;
+      services=$(docker compose config --services);
+      if grep -qx {{ app_mtls_certs[app_mtls_name].service }} <<<"$services"; then
+      docker compose up -d --no-deps --force-recreate --pull never
+      --wait --wait-timeout {{ app_wait_timeout }} {{ app_mtls_certs[app_mtls_name].service }};
+      fi
+    chdir: "{{ app_compose_dir }}"
+    executable: /bin/bash
+  changed_when: true
+
 # Go API читает ключи и сертификаты runtime при старте: новые файлы видит только новый контейнер
 - name: Recreate the API with the new runtime files
   ansible.builtin.command:

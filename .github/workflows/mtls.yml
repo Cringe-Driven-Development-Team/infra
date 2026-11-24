@@ -1,0 +1,96 @@
+name: mTLS BFF → Go
+
+# Обновление сертификатов канала BFF → Go (infra#160): ansible/renew-mtls.yml раз в сутки. Перевыпуск —
+# когда до истечения меньше app_mtls_renew_days; сбой (в том числе срок меньше app_mtls_alert_days)
+# валит запуск и отправляет сообщение в Telegram-топик команды. Ручной запуск — аварийная замена (force),
+# проверка короткоживущими сертификатами (short_lived) и сигнала о сбое (simulate_failure).
+# Порядок — RUNBOOK.md, «mTLS BFF → Go».
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Перевыпустить оба сертификата с новыми ключами
+        type: boolean
+        default: false
+      short_lived:
+        description: 'Проверка: выпустить сертификаты на 3 дня (перевыпуск ≤ 2, тревога ≤ 1); следующий плановый запуск вернёт 30 дней'
+        type: boolean
+        default: false
+      simulate_failure:
+        description: 'Проверка сигнала: порог тревоги 31 день — проверка срока 30-дневного сертификата валит запуск'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  ANSIBLE_HOST_KEY_CHECKING: "True"
+  ANSIBLE_FORCE_COLOR: "1"
+
+jobs:
+  renew:
+    name: Обновить сертификаты
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    # Одна очередь с выкаткой инфры: site.yml и обновление не меняют VPS одновременно
+    concurrency:
+      group: infra-production
+      cancel-in-progress: false
+      queue: max
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Ansible
+        working-directory: ansible
+        run: python -m pip install -r deploy-requirements.txt
+      - name: Секреты в файлы
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.INFRA_DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: bash scripts/ansible-ci-secrets.sh cellestial.ru
+      - name: renew-mtls.yml
+        working-directory: ansible
+        env:
+          FORCE: ${{ inputs.force || false }}
+          SHORT_LIVED: ${{ inputs.short_lived || false }}
+          SIMULATE_FAILURE: ${{ inputs.simulate_failure || false }}
+        run: |
+          args=(-e "app_mtls_force=$FORCE")
+          if [[ "$SHORT_LIVED" == true ]]; then
+            args+=(-e app_mtls_cert_days=3 -e app_mtls_renew_days=2 -e app_mtls_alert_days=1 -e app_mtls_force=true)
+          fi
+          if [[ "$SIMULATE_FAILURE" == true ]]; then
+            args+=(-e app_mtls_alert_days=31)
+          fi
+          ansible-playbook -i inventory/ci.yml renew-mtls.yml "${args[@]}" \
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" -e "jump_known_hosts=$RUNNER_TEMP/infra/known_hosts" \
+            --ssh-common-args="$INFRA_SSH_ARGS"
+      - name: Удалить секреты
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/infra"
+      - name: Сигнал о сбое в Telegram
+        if: failure()
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ vars.TELEGRAM_CHAT_ID }}
+          TOPIC: ${{ vars.TELEGRAM_TOPIC_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [[ -n "$TOKEN" && -n "$CHAT" ]] || { echo '::error::Нет TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID'; exit 1; }
+          text=$(printf '🔴 Сбой обновления mTLS BFF → Go\nСертификат не обновлён или канал не прошёл проверку. Порядок — RUNBOOK.md, «mTLS BFF → Go».\n%s' "$RUN_URL")
+          curl -fsS -o /dev/null -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$CHAT" ${TOPIC:+--data-urlencode "message_thread_id=$TOPIC"} \
+            --data-urlencode "text=$text"

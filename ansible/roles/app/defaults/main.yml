@@ -3,8 +3,31 @@ app_backend_image: ghcr.io/cringe-driven-development-team/backend
 # BFF (infra#58): публичный образ публикует CI фронта (frontend#4), выкатывается по digest —
 # bff_image_ref (infra#74)
 app_bff_image: ghcr.io/cringe-driven-development-team/bff
-# BFF всегда обращается с gateway к приватной VPS2.
-app_bff_go_api_url: "http://{{ app_backend_address }}:8080/api/v1"
+# BFF всегда обращается с gateway к приватной VPS2: mTLS-прокси перед Go (infra#160)
+app_bff_go_api_url: "https://{{ app_backend_address }}:8443/api/v1"
+# mTLS BFF → Go (infra#160): TLS-прокси перед Go на VPS2, Go доступен ему только по сети app
+app_api_proxy_image: nginx:1.30-alpine
+# CA, сертификат и ключ хоста: на VPS2 — серверные (читает только прокси), на gateway — клиентские BFF
+app_mtls_dir: "{{ app_compose_dir }}/mtls"
+# Сроки leaf-сертификатов в днях: срок, порог перевыпуска и порог тревоги renew-mtls.yml (RUNBOOK, «mTLS BFF → Go»)
+app_mtls_cert_days: 30
+app_mtls_renew_days: 10
+app_mtls_alert_days: 7
+# true — перевыпустить с новым ключом, даже если сертификат действителен (аварийная замена)
+app_mtls_force: false
+# Пользователь bun образа BFF (oven/bun) читает клиентский ключ; nginx читает серверный от root
+app_bff_uid: 1000
+app_mtls_certs:
+  server:
+    cn: cellestial-go-api
+    usage: serverAuth
+    owner: 0
+    service: api-proxy
+  client:
+    cn: cellestial-bff
+    usage: clientAuth
+    owner: "{{ app_bff_uid }}"
+    service: bff
 app_postgres_image: postgres:18-alpine
 # Redis — refresh-сессии бэка (infra#46): только сеть app, данные в volume redis_data (AOF)
 app_redis_image: redis:8-alpine

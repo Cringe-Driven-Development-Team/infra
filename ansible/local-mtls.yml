@@ -1,0 +1,28 @@
+---
+# Клиентский сертификат BFF для локального BFF через SSH-туннель (infra#160, README, «SSH-туннель
+# локального BFF к Go API»): ~/.config/cellestial/mtls/{ca.crt,client.crt,client.key}, владелец — текущий
+# пользователь. Те же правила выпуска, что на gateway: ключ создаётся локально, срок app_mtls_cert_days;
+# повторный запуск перевыпускает истекающий сертификат. Нужен пароль Vault (ключ CA).
+- name: Local BFF client certificate
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  vars_files:
+    - roles/app/defaults/main.yml
+  vars:
+    app_mtls_name: client
+  tasks:
+    # set_fact: значения роли из vars_files иначе не переопределить
+    - name: Use the local directory and the current user
+      ansible.builtin.set_fact:
+        app_compose_dir: "{{ lookup('env', 'HOME') }}/.config/cellestial"
+        app_mtls_certs:
+          client: "{{ app_mtls_certs.client | combine({'owner': lookup('pipe', 'id -u'), 'group': lookup('pipe', 'id -g')}) }}"
+
+    - name: Issue or renew the local BFF client certificate
+      ansible.builtin.include_tasks: roles/app/tasks/mtls-cert.yml
+  handlers:
+    - name: Apply new mTLS files
+      ansible.builtin.debug:
+        msg: "Новый сертификат в {{ app_mtls_dir }}: перезапустите локальный BFF"

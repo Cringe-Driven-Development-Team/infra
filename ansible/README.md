@@ -87,8 +87,9 @@ ansible-playbook verify.yml      # проверки из DoD (см. ниже)
 значения из `pulumi stack output`; `avatars_public_domain` — свой домен бакета аватарок (выход
 `avatarsCustomDomain`), сертификат к нему выпускается в панели.
 
-`app_cors_allowed_origins` там же — origin'ы, которым Go API подтверждает CORS (`CORS_ALLOWED_ORIGINS`
-в `.env`): на проде только `https://cellestial.ru`, без `localhost`. Не секрет, в vault не кладётся.
+`bff_mtls_ca_cert` и `bff_mtls_ca_key` — CA канала BFF → Go (`vault_bff_mtls_*`, infra#160), отдельный
+от runtime. Ключ CA нужен только controller (runner или машина оператора) для подписи сертификатов; на
+VPS и в контейнеры он не попадает. Выпуск CA, сроки и замена — RUNBOOK, «mTLS BFF → Go».
 
 `session_key` — ключ AES-256-GCM сессии BFF (`SESSION_KEY`): base64 ровно 32 байт
 (`openssl rand -base64 32`). Он один для выпуска и отката: смена ключа сбрасывает все сессии.
@@ -206,8 +207,8 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 |---|---|---|
 | users | все | пользователь `deploy`, authorized_keys из `files/authorized_keys/*.pub` (exclusive, с проверкой ключа запускающего), sudo NOPASSWD — в bootstrap и в каждом site.yml |
 | common | все | базовые пакеты |
-| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей; gateway разрешает пересылку только к приватной VPS2: `:22` (SSH jump) и `:8080` (Go API для туннеля локального BFF) — `PermitOpen`; на остальных хостах, включая VPS2, forwarding запрещён; Ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
-| firewall | все | ufw: deny incoming; публичный gateway — 22/80/443, приватная VPS2 — 22/8080 только с gateway |
+| ssh_hardening | все | `00-hardening.conf` (validate через `sshd -t`): без root-логина и паролей; gateway разрешает пересылку только к приватной VPS2: `:22` (SSH jump) и `:8443` (mTLS-прокси Go API для туннеля локального BFF) — `PermitOpen`; на остальных хостах, включая VPS2, forwarding запрещён; Ubuntu 24.04 — socket activation, рестарт `ssh.socket` + `ssh.service` |
+| firewall | все | ufw: deny incoming; публичный gateway — 22/80/443, приватная VPS2 — 22/8443 только с gateway; снятые правила (`firewall_removed_rules`, на VPS2 — прежний 8080) удаляются |
 | docker | все | Docker Engine + Compose plugin, `deploy` в группе docker (про порты — ниже) |
 | caddy | gateway | Проект Compose `/opt/cellestial` (`compose.yml`, сеть `app`), Caddy в контейнере (`caddy:2.11-alpine`, 80/443), Caddyfile с доменом `app_domain`: все пути, кроме закрытого `/health`, — BFF (до его первой выкатки — `503 BFF is not deployed`), раздел «Клиент и BFF»; сертификаты Let's Encrypt — в volume `caddy_data`. Caddy, ранее поставленный из apt, удаляется |
 
@@ -215,17 +216,18 @@ mv ~/.config/cdd-vault-pass.new ~/.config/cdd-vault-pass
 | restic_backup | auxiliary | ночной CLI snapshot очереди перед `restic backup`; только snapshot, тома Caddy и `/opt/hooks` в бакет бэкапов, `forget` 7 дневных / 4 недельных; ключи — из Vault |
 
 Плейбуки: `site.yml` и `verify.yml` обслуживают gateway и приватную VPS2;
-`deploy-backend.yml` выкатывает Go API только на `backend`, `deploy-bff.yml` — BFF только
-на `gateway`. `auxiliary.yml` обслуживает вспомогательную VPS (группа `auxiliary`,
+`deploy-backend.yml` выкатывает Go API только на `backend` (на gateway — только сертификат BFF для проверок),
+`deploy-bff.yml` — BFF только на `gateway`. `renew-mtls.yml` обновляет сертификаты mTLS BFF → Go,
+`local-mtls.yml` выпускает клиентский сертификат локальному BFF. `auxiliary.yml` обслуживает вспомогательную VPS (группа `auxiliary`,
 RUNBOOK, «Вспомогательная VPS»).
 
 ## Проект Compose
 
 На каждом хосте свой проект Compose в `/opt/cellestial` и своя сеть `app`:
-на gateway — Caddy и BFF, на VPS2 — Go API, Postgres и Redis. Caddy обращается к BFF
-по имени сервиса (`reverse_proxy bff:3000`), BFF — к приватному адресу VPS2
-(`http://<private-IP-VPS2>:8080/api/v1`). Базы и BFF не публикуют порты; Go публикует
-8080 только на приватном адресе VPS2 с доступом с gateway.
+на gateway — Caddy и BFF, на VPS2 — Go API, его mTLS-прокси `api-proxy`, Postgres и Redis. Caddy обращается
+к BFF по имени сервиса (`reverse_proxy bff:3000`), BFF — по mTLS к приватному адресу VPS2
+(`https://<private-IP-VPS2>:8443/api/v1`, раздел «mTLS BFF → Go»). Базы, Go и BFF не публикуют порты;
+`api-proxy` публикует 8443 только на приватном адресе VPS2 с доступом с gateway.
 Смена Caddyfile применяется `caddy reload` внутри контейнера, без рестарта.
 
 ## Порты контейнеров и ufw
@@ -234,8 +236,8 @@ Docker публикует порты контейнеров (`-p 8080:80`) св�
 `nat`/`DOCKER`, которые обрабатываются **до** ufw: опубликованный порт откроется наружу,
 даже при `deny incoming`. Правила на стенде:
 
-- **Postgres, Redis и BFF не публикуют порты**. Go API публикует
-  `<private-IP-VPS2>:8080:8080`; security group и ufw разрешают доступ только с gateway.
+- **Postgres, Redis, Go API и BFF не публикуют порты**. mTLS-прокси Go публикует
+  `<private-IP-VPS2>:8443:8443`; security group и ufw разрешают доступ только с gateway.
   Loopback хоста VPS2 не заменяет этот приватный адрес. Проверка loopback внутри контейнера
   остаётся частью его healthcheck;
 - наружу смотрит **только Caddy** (80/443) и ssh (22); floating IP — 1:1 DNAT на адрес
@@ -301,7 +303,9 @@ BFF сам разбирает остальное: маршруты своего 
 - после выкатки бэка с Redis (есть `redis/redis.conf`) Redis отвечает `PONG` на `redis-cli -h redis ping` из сети `app` (одноразовый
   контейнер, пароль — через окружение);
 - на публичном IP открыты 22/80/443 и закрыты 5432, 6379, 8080, 2375, 2376 (ловит порты Docker
-  в обход ufw; Go API при переезде в Compose добавит свой порт в этот список закрытых);
+  в обход ufw);
+- с gateway: Go отвечает через `https://<VPS2>:8443` с сертификатом BFF (`X-BFF-Key` проверяется), без
+  клиентского сертификата — отказ, прямой `VPS2:8080` закрыт;
 - вспомогательная VPS (группа `auxiliary`, если она есть в inventory): `https://<hooks_domain>/health` — 200 с
   действительным сертификатом Let's Encrypt на этот домен; снаружи закрыты внутренний порт сервиса
   (`hooks_port`) и Docker API 2375/2376;
@@ -419,7 +423,7 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
   retention фронта). Откат BFF не откатывает Go и БД.
 - `SESSION_KEY` — из Vault и одинаков у выпуска и отката: действительные cookie сессии остаются
   читаемыми. `GO_API_URL` — `app_bff_go_api_url` (`roles/app/defaults/main.yml`,
-  `http://<private-IP-VPS2>:8080/api/v1`); адрес берётся из inventory.
+  `https://<private-IP-VPS2>:8443/api/v1`); адрес берётся из inventory. Файлы mTLS — раздел «mTLS BFF → Go».
 - `site.yml` образ BFF не меняет: `compose.yml` и `.env` после первой выкатки ведёт только роль `app`.
 
 ## Приватная VPS2: Go API, Postgres, Redis (infra#59)
@@ -427,11 +431,11 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
 Группа `backend` — сервер Pulumi с `metadata.role: backend`, без публичного IP; `ansible_host` — его
 приватный адрес. Ansible ходит на неё через gateway: `ansible_ssh_extra_args` в `group_vars/backend`
 задаёт `ProxyCommand` с ключом `deploy_key_path` (known_hosts gateway — `jump_known_hosts`), а sshd на
-gateway пускает пересылку только на `VPS2:22` и `VPS2:8080` (`ssh_hardening_jump_targets`; 8080 — [туннель локального BFF](#ssh-туннель-локального-bff-к-go-api-infra155)). `site.yml` настраивает VPS2 так же,
-как gateway, без Caddy; ufw на ней пускает 22 и 8080 только с `app_gateway_address`.
+gateway пускает пересылку только на `VPS2:22` и `VPS2:8443` (`ssh_hardening_jump_targets`; 8443 — [туннель локального BFF](#ssh-туннель-локального-bff-к-go-api-infra155)). `site.yml` настраивает VPS2 так же,
+как gateway, без Caddy; ufw на ней пускает 22 и 8443 только с `app_gateway_address`.
 
 Раскладка фиксирована: Caddy и BFF работают на gateway, Go API, Postgres и Redis — на
-приватной VPS2. Порт API опубликован только на приватном адресе VPS2. В `.env` каждой
+приватной VPS2. Порт mTLS-прокси API опубликован только на приватном адресе VPS2. В `.env` каждой
 машины — только секреты её сервисов; `BFF_API_KEY` нужен обеим сторонам. `deploy-backend.yml`
 выкатывает приложение только на группу `backend`; отсутствие или несколько VPS2 приводят
 к ошибке предварительной проверки inventory. Gateway участвует в делегированных проверках.
@@ -441,45 +445,61 @@ gateway пускает пересылку только на `VPS2:22` и `VPS2:8
 
 ## SSH-туннель локального BFF к Go API (infra#155)
 
-Локальные клиент и BFF разработчика ходят в действующий Go на VPS2 через обычный SSH-туннель:
-`локальный клиент → локальный BFF → 127.0.0.1:18080 → SSH gateway → приватный адрес VPS2:8080`.
+Локальные клиент и BFF разработчика ходят в действующий Go на VPS2 через обычный SSH-туннель к его
+mTLS-прокси (infra#160):
+`локальный клиент → локальный BFF → 127.0.0.1:18443 → SSH gateway → приватный адрес VPS2:8443 → Go`.
 Go API в интернет не публикуется, у VPS2 нет публичного IP. На gateway sshd пускает local forwarding
-только на `VPS2:22` и `VPS2:8080` (`PermitOpen`); остальные назначения отклоняются. На VPS2 и других
-хостах `AllowTcpForwarding no`. ufw VPS2 пускает 8080 только с gateway — туннель приходит именно оттуда.
+только на `VPS2:22` и `VPS2:8443` (`PermitOpen`); остальные назначения отклоняются. На VPS2 и других
+хостах `AllowTcpForwarding no`. ufw VPS2 пускает 8443 только с gateway — туннель приходит именно оттуда.
+Прямого HTTP к Go (`8080`) больше нет.
 
 > **Production.** Через туннель идут запросы к production Go: production-данные и общий пул runtime
 > VPS. Режим согласован владельцем; используйте тестовый аккаунт и завершайте запущенные окружения.
 
 Нужен SSH-доступ к gateway под своим пользователем — его выдаёт и описывает
 [командный справочник подключения](https://github.com/Cringe-Driven-Development-Team/agent-plugins-private/blob/main/plugins/cellestial-ops/skills/cellestial-ops/SKILL.md) (приватный репозиторий команды). Там же — адрес
-gateway и приватный адрес VPS2 (`pulumi stack output backendPrivateIp`). В отдельном терминале:
+gateway и приватный адрес VPS2 (`pulumi stack output backendPrivateIp`).
+
+Прокси пускает только клиента с сертификатом `cellestial-bff` от CA канала. Свой сертификат на 30 дней
+выпускает `local-mtls.yml` (нужен пароль Vault, ключ создаётся на вашей машине и её не покидает):
+
+```sh
+cd ansible
+export ANSIBLE_VAULT_PASSWORD_FILE="$HOME/.config/cdd-vault-pass"
+ansible-playbook -i inventory/ci.yml local-mtls.yml
+# ~/.config/cellestial/mtls/{ca.crt,client.crt,client.key}, права 0400
+```
+
+Повторный запуск перевыпускает сертификат, которому осталось меньше 10 дней. После замены CA
+(RUNBOOK, «mTLS BFF → Go») локальный сертификат перестаёт приниматься — выпустите его заново. Файлы — только
+локально: не в Git, примерах и отчётах.
+
+Туннель в отдельном терминале:
 
 ```sh
 ssh -N -o ExitOnForwardFailure=yes \
-  -L 127.0.0.1:18080:<PRIVATE_IP_VPS2>:8080 <USER>@<GATEWAY>
+  -L 127.0.0.1:18443:<PRIVATE_IP_VPS2>:8443 <USER>@<GATEWAY>
 ```
 
 Локальный порт слушает только loopback: не используйте `-g` и адрес привязки `0.0.0.0`/`*`.
-Остановка — Ctrl+C, после неё порт 18080 закрыт. `ExitOnForwardFailure` завершает ssh только при ошибке
-локального bind (порт 18080 занят). Отказ gateway (`PermitOpen` не применён, неверный адрес VPS2)
+Остановка — Ctrl+C, после неё порт 18443 закрыт. `ExitOnForwardFailure` завершает ssh только при ошибке
+локального bind (порт 18443 занят). Отказ gateway (`PermitOpen` не применён, неверный адрес VPS2)
 виден лишь при первом соединении через туннель: ssh пишет `open failed: administratively prohibited`
-и продолжает работать. Поэтому после запуска проверьте туннель запросом — ответ `{"status": "alive"}`:
+и продолжает работать. Поэтому после запуска проверьте туннель запросом — ответ `{"status": "alive"}`.
+Серверный сертификат выписан на приватный адрес VPS2 (IP SAN), поэтому запрос идёт на этот адрес, а
+`--connect-to` направляет соединение в туннель; проверка TLS не отключается:
 
 ```sh
-curl -s http://127.0.0.1:18080/health
+m=~/.config/cellestial/mtls
+curl -s --cacert $m/ca.crt --cert $m/client.crt --key $m/client.key \
+  --connect-to <PRIVATE_IP_VPS2>:8443:127.0.0.1:18443 https://<PRIVATE_IP_VPS2>:8443/health
 ```
 
-Локальному BFF (frontend, корневой `.env` — в Git не попадает, или окружение запуска):
-
-```dotenv
-GO_API_URL=http://127.0.0.1:18080/api/v1
-BFF_KEY=<S2S-ключ выбранного Go>
-```
-
+Без клиентского сертификата прокси отвечает `400`. Настройка локального BFF — пути к трём файлам,
+`GO_API_URL`, проверка серверной идентичности через туннель — по документации frontend (frontend#257,
+[реальный Go](https://github.com/Cringe-Driven-Development-Team/frontend/blob/main/docs/api-contract.md#реальный-go)).
 `BFF_KEY` — действующий `bff_api_key` production (раздел «Секреты»), берётся через выданный доступ к
-секретам; значение хранится только локально, не в Git, примерах и отчётах. Без ключа или с неверным Go
-отвечает `403 s2s_forbidden`. Запуск клиента и BFF — по документации frontend
-([реальный Go](https://github.com/Cringe-Driven-Development-Team/frontend/blob/main/docs/api-contract.md#реальный-go)).
+секретам; значение хранится только локально. Без ключа или с неверным Go отвечает `403 s2s_forbidden`.
 
 Изменение `PermitOpen` применяется `ansible-playbook -i inventory/ci.yml site.yml --limit gateway`
 и проверяется `verify.yml` (`sshd -T`: ровно два назначения).
@@ -487,7 +507,7 @@ BFF_KEY=<S2S-ключ выбранного Go>
 ## Go API: первая выкатка и откат
 
 На приватной VPS2 роль `app` управляет API, PostgreSQL 18 и Redis 8 в Compose-проекте
-`/opt/cellestial`. Порт Go 8080 опубликован только на приватном адресе VPS2 для gateway;
+`/opt/cellestial`. Порт mTLS-прокси Go 8443 опубликован только на приватном адресе VPS2 для gateway;
 Postgres и Redis доступны внутри сети `app`. На gateway находятся BFF и Caddy; роль `caddy`
 управляет общим Caddyfile. Данные Postgres сохраняются в `cellestial_postgres_data`, Redis —
 в `cellestial_redis_data` (AOF), сертификаты — в существующих `cellestial_caddy_data` и
@@ -528,7 +548,7 @@ ansible-playbook -i inventory/ci.yml deploy-backend.yml \
 
 Перед запуском замените `REPLACE_WITH_64_HEX` на 64 строчных hex-символа реального digest.
 Выкатка требует один gateway и ровно одну приватную VPS2 в группе `backend`.
-Go, PostgreSQL и Redis работают на VPS2, опубликованный порт 8080 привязан только к приватному
+Go, PostgreSQL и Redis работают на VPS2, опубликованный порт mTLS-прокси 8443 привязан только к приватному
 адресу; Caddy и BFF работают на gateway. SSH к VPS2 идёт существующим jump-путём через gateway,
 проверка host key сохраняется. Адреса берутся из inventory.
 
@@ -549,8 +569,9 @@ Docker config. Login/logout не выполняются; сохранённые 
 1. `Backend image check`: ровно один работающий контейнер `api`, его локальный `.Image` совпадает
    с `.Id` локального образа, найденного по `backend_image_ref`; контейнер running и healthy.
    Registry digest и локальный image ID напрямую не сравниваются.
-2. `Backend internal HTTP check`: запрос с gateway к приватному адресу VPS2 `:8080/health`,
-   одновременно HTTP 200 и JSON `status: alive`. Runner не обращается к приватному HTTP напрямую.
+2. `Backend internal mTLS check`: запрос с gateway к приватному адресу VPS2 `https://…:8443/health` с
+   сертификатом BFF и проверкой серверного по CA и IP SAN, одновременно HTTP 200 и JSON `status: alive`;
+   затем запрос без клиентского сертификата должен быть отвергнут. Runner не обращается к VPS2 напрямую.
    Redirects и proxy запрещены; timeout 5 секунд, максимум шесть запросов с интервалом 5 секунд.
 3. `Backend external BFF check`: runner выполняет HTTPS POST `/api/auth/login`, отправляя
    `Origin`, `X-CSRF: 1`, JSON с новым случайным login из 32 hex-символов и паролем
