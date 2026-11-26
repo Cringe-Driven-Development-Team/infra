@@ -78,6 +78,7 @@ class DeploymentChecks(unittest.TestCase):
             'avatars_s3_access_key: fake-key\navatars_s3_secret_key: fake-secret\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'avatars_bucket: avatars\n'
+            'private_files_bucket: private-files\n'
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
             'app_backend_address: "127.0.0.1"\n'
@@ -517,6 +518,7 @@ class DeploymentChecks(unittest.TestCase):
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
             s3_endpoint="https://s3.example.org",
             avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
+            private_files_bucket="private-files",
             app_cors_allowed_origins="https://app.example.org", postgres_password="pg-secret",
             jwt_secret="jwt-secret", csrf_secret="csrf-secret", redis_password="redis-secret",
             session_key="session-secret", bff_api_key="s2s-secret",
@@ -552,6 +554,7 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(api["AWS_REGION"], "ru-7")
         self.assertEqual(api["AWS_ENDPOINT_URL_S3"], "https://s3.example.org")
         self.assertEqual(api["S3_AVATARS_BUCKET"], "avatars")
+        self.assertEqual(api["S3_PRIVATE_FILES_BUCKET"], "private-files")
         self.assertEqual(api["S3_AVATARS_PUBLIC_URL"], "https://avatars.example.org")
         again, again_env = self.render_host(services)
         self.assertEqual(again_env, env)

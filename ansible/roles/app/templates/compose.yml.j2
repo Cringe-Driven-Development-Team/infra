@@ -42,6 +42,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?S3 configuration is required}
       AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3:?S3 configuration is required}
       S3_AVATARS_BUCKET: ${S3_AVATARS_BUCKET:?S3 configuration is required}
+      S3_PRIVATE_FILES_BUCKET: ${S3_PRIVATE_FILES_BUCKET:?S3 configuration is required}
       S3_AVATARS_PUBLIC_URL: ${S3_AVATARS_PUBLIC_URL:?S3 configuration is required}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}

@@ -56,6 +56,7 @@ export interface InfraConfig {
     public: boolean;
     publicRead: boolean;
     avatarsBucket: string;
+    privateFilesBucket: string;
     staticBucket?: string;
     // Задан ⇔ infra:cdn; CDN-ресурс статики — при infra:staticBucket
     cdnName?: string;
@@ -167,6 +168,10 @@ export function loadConfig(): InfraConfig {
   const s3Bucket = cfg.require("s3Bucket");
   // Публичный бакет аватарок пользователей — в том же пуле; пишет Go API, читают все.
   const avatarsBucket = cfg.require("avatarsBucket");
+  const privateFilesBucket = cfg.require("privateFilesBucket");
+  if (privateFilesBucket === avatarsBucket) {
+    throw new Error("infra:privateFilesBucket must differ from infra:avatarsBucket");
+  }
   // Публичный бакет статики продукта (картинки, шрифты) — в том же пуле; пишет CI репозитория static
   // ключом пользователя стека, отдаётся через свой CDN-ресурс. Не задан — бакета и его CDN нет.
   const staticBucket = cfg.get("staticBucket");
@@ -258,6 +263,7 @@ export function loadConfig(): InfraConfig {
       public: cfg.getBoolean("s3Public") ?? true,
       publicRead: cfg.getBoolean("s3PublicRead") ?? false,
       avatarsBucket,
+      privateFilesBucket,
       staticBucket,
       cdnName: cdnEnabled ? checkCdnName(cfg.get("cdnName") ?? `${name}-cdn`) : undefined,
       staticCdnName: staticBucket ? checkCdnName(cfg.get("staticCdnName") ?? `${name}-static-cdn`) : undefined,
