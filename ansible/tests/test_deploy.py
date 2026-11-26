@@ -712,7 +712,7 @@ class DeploymentChecks(unittest.TestCase):
                "https://avatars.example.org data:; "
                "font-src 'self' https://static.example.org; connect-src 'self'; manifest-src 'self'; "
                "worker-src 'self'; base-uri 'none'; "
-               "form-action 'self'; frame-ancestors 'none'")
+               "form-action 'self'; frame-src 'self'; frame-ancestors 'none'")
         # caddy_bff_enabled — из роли app, caddy_bff_deployed — из .env в роли caddy
         for values, deployed in [({"caddy_bff_deployed": False}, False),
                                  ({"caddy_bff_deployed": True}, True),
@@ -739,7 +739,18 @@ class DeploymentChecks(unittest.TestCase):
             rendered = self.render_caddy(caddy_csp_report_only=report_only,
                                          caddy_bff_deployed=True)
             self.assertIn('header_down Content-Security-Policy "default-src ', rendered)
-            self.assertNotIn("Content-Security-Policy-Report-Only", rendered)
+            self.assertEqual(rendered.count("header_down -Content-Security-Policy-Report-Only"), 2)
+
+    def test_caddy_limits_same_origin_frames_to_embed_path(self):
+        rendered = self.render_caddy(caddy_bff_deployed=True)
+        self.assertIn("@embed {\n\t\tpath /embed/*\n\t\tpath_regexp ^/embed/\n\t}", rendered)
+        embed, fallback = rendered.split("handle @embed {", 1)[1].split("handle {", 1)
+        self.assertIn("frame-ancestors 'self'", embed)
+        self.assertIn("frame-ancestors 'none'", fallback)
+        for route in (embed, fallback):
+            self.assertEqual(route.count("frame-ancestors"), 1)
+            self.assertIn("frame-src 'self'", route)
+            self.assertIn("header_down -Content-Security-Policy\n", route)
 
     def runtime_values(self):
         """Значения runtime_* в формате выходов Pulumi; секреты — заглушки, не настоящие ключи."""
