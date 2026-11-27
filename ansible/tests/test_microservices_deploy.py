@@ -61,6 +61,64 @@ class PreflightTests(TestCase):
             with self.assertRaisesRegex(ValueError, 'restore'):
                 module.Deployment(root, inputs).first_cutover()
 
+    def test_clean_start_refuses_monolith_database_and_redis_index(self):
+        module = load_driver()
+        for database, redis_db in (('app_db', 1), ('app_db_services', 0)):
+            with tempfile.TemporaryDirectory() as temp:
+                deployment = self.clean_deployment(module, Path(temp), database, redis_db)
+                with patch.object(deployment, 'psql') as sql:
+                    with self.assertRaisesRegex(ValueError, 'separate'):
+                        deployment.clean_start()
+                    sql.assert_not_called()
+
+    def test_clean_start_resumes_same_target_without_recreating_it(self):
+        module = load_driver()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'roles.sql').write_text('fixture role provisioning')
+            deployment = self.clean_deployment(module, root)
+            with (patch.object(deployment, 'check_cutover_evidence'),
+                  patch.object(deployment, 'require_empty_redis'),
+                  patch.object(deployment, 'psql', side_effect=[b'', b'', b'']) as sql):
+                deployment.clean_start()
+                self.assertTrue((root / 'v2-active').is_file())
+                self.assertIn('CREATE DATABASE "app_db_services"', str(sql.call_args_list))
+            with (patch.object(deployment, 'check_cutover_evidence'),
+                  patch.object(deployment, 'require_empty_redis') as redis,
+                  patch.object(deployment, 'psql', side_effect=[b'1', b'']) as sql):
+                deployment.clean_start()
+                self.assertNotIn('CREATE DATABASE', str(sql.call_args_list))
+                redis.assert_not_called()
+            incompatible = self.clean_deployment(module, root, 'another_database')
+            with patch.object(incompatible, 'check_cutover_evidence'), self.assertRaisesRegex(ValueError, 'differs'):
+                incompatible.clean_start()
+            with (patch.object(deployment, 'check_cutover_evidence'),
+                  patch.object(deployment, 'psql', return_value=b'') as sql,
+                  self.assertRaisesRegex(ValueError, 'missing')):
+                deployment.clean_start()
+                sql.assert_called_once()
+
+    def test_clean_start_refuses_an_existing_unrecorded_target(self):
+        module = load_driver()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            deployment = self.clean_deployment(module, root)
+            with (patch.object(deployment, 'check_cutover_evidence'),
+                  patch.object(deployment, 'psql', return_value=b'1') as sql,
+                  self.assertRaisesRegex(ValueError, 'already exists')):
+                deployment.clean_start()
+                sql.assert_called_once()
+            self.assertFalse((root / 'clean-start.json').exists())
+
+    @staticmethod
+    def clean_deployment(module, root, database='app_db_services', redis_db=1):
+        return module.Deployment(root, {
+            'selected': list(module.SERVICES), 'before': {},
+            'desired': {service: version(service) for service in module.SERVICES},
+            'cutover': True, 'clean_start': True, 'action': 'deploy',
+            'database': database, 'legacy_database': 'app_db', 'redis_db': redis_db,
+        })
+
     def test_partial_switch_records_failed_readiness_and_keeps_neighbours(self):
         module = load_driver()
         before = {service: version(service) for service in module.SERVICES}
