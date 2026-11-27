@@ -46,9 +46,50 @@
     fail_msg: No backend is deployed on the VPS. Run deploy-backend.yml with backend_image_ref first.
   when: "'api' in app_services"
 
-# BFF до переключения использует ту же проверку gateway → Go, что backend после переключения.
+- name: Read the VPS2 cutover marker before deploying BFF
+  ansible.builtin.stat:
+    path: "{{ app_compose_dir }}/microservices/v2-active"
+  delegate_to: "{{ groups['backend'][0] }}"
+  register: app_bff_cutover
+  when: app_deploy_service == 'bff'
+
 - name: Require the Go API on VPS2
   ansible.builtin.include_tasks: probe-backend.yml
   vars:
     backend_probe_address: "{{ app_backend_address }}"
-  when: app_deploy_service == 'bff'
+  when: app_deploy_service == 'bff' and not app_bff_cutover.stat.exists
+
+- name: Require the Identity and Workspace HTTPS APIs from gateway
+  ansible.builtin.command:
+    argv:
+      - curl
+      - --silent
+      - --show-error
+      - --noproxy
+      - "*"
+      - --max-time
+      - "5"
+      - --cacert
+      - "{{ app_mtls_dir }}/ca.crt"
+      - --cert
+      - "{{ app_mtls_dir }}/client.crt"
+      - --key
+      - "{{ app_mtls_dir }}/client.key"
+      - --resolve
+      - "{{ item.url | urlsplit('hostname') }}:{{ item.url | urlsplit('port') }}:{{ app_backend_address }}"
+      - --header
+      - "@-"
+      - --output
+      - /dev/null
+      - --write-out
+      - "%{http_code}"
+      - "{{ item.url }}{{ item.path }}"
+    stdin: "X-BFF-Key: {{ bff_api_key }}"
+  loop:
+    - { url: "{{ app_bff_identity_api_url }}", path: /users/me }
+    - { url: "{{ app_bff_workspace_api_url }}", path: /notebooks }
+  register: app_bff_api_probe
+  changed_when: false
+  failed_when: app_bff_api_probe.rc != 0 or app_bff_api_probe.stdout != '401'
+  no_log: true
+  when: app_deploy_service == 'bff' and app_bff_cutover.stat.exists

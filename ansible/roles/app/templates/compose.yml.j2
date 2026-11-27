@@ -103,6 +103,8 @@ services:
       SESSION_KEY: ${SESSION_KEY:?session key is required}
       APP_ORIGIN: ${APP_ORIGIN:?app origin is required}
       GO_API_URL: {{ app_bff_go_api_url }}
+      IDENTITY_API_URL: {{ app_bff_identity_api_url }}
+      WORKSPACE_API_URL: {{ app_bff_workspace_api_url }}
       BFF_KEY: ${BFF_API_KEY:?bff api key is required}
       # mTLS к Go (infra#160, frontend#257): CA, клиентские сертификат и ключ (0400, пользователь bun)
       GO_API_TLS_CA_FILE: /run/secrets/go-api/ca.crt
@@ -111,8 +113,8 @@ services:
     volumes:
       - {{ app_mtls_dir }}:/run/secrets/go-api:ro
     extra_hosts:
-      - "identity.internal.cellestial.ru:{{ app_backend_address }}"
-      - "workspace.internal.cellestial.ru:{{ app_backend_address }}"
+      - "{{ app_bff_identity_api_url | urlsplit('hostname') }}:{{ app_backend_address }}"
+      - "{{ app_bff_workspace_api_url | urlsplit('hostname') }}:{{ app_backend_address }}"
     # BFF дожидается текущих запросов до 10 с (frontend#2)
     stop_grace_period: 15s
     healthcheck:
