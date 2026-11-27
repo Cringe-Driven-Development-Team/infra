@@ -17,6 +17,7 @@ import unittest
 
 from ansible.parsing.vault import VaultLib, VaultSecret
 from ansible.plugins.filter.core import to_bool, to_json
+from ansible.plugins.filter.urlsplit import split_url
 from jinja2 import Environment, StrictUndefined, UndefinedError
 import yaml
 
@@ -539,6 +540,7 @@ class DeploymentChecks(unittest.TestCase):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
         templates.filters["bool"] = to_bool
+        templates.filters["urlsplit"] = split_url
         compose = templates.from_string(
             (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text()).render(variables)
         env = templates.from_string((ANSIBLE / "roles/app/templates/env.j2").read_text()).render(variables)
@@ -584,6 +586,8 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(set(config["volumes"]), {"caddy_data", "caddy_config"})
         bff = config["services"]["bff"]
         self.assertEqual(bff["environment"]["GO_API_URL"], "https://192.168.199.10:8443/api/v1")
+        self.assertEqual(bff["environment"]["IDENTITY_API_URL"], "https://identity.internal.cellestial.ru:8444/api/v1")
+        self.assertEqual(bff["environment"]["WORKSPACE_API_URL"], "https://workspace.internal.cellestial.ru:8445/api/v1")
 
         self.assertEqual(bff["extra_hosts"], [
             "identity.internal.cellestial.ru=192.168.199.10",
