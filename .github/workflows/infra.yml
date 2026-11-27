@@ -75,7 +75,7 @@ jobs:
       - name: Ansible — синтаксис и тесты
         working-directory: ansible
         run: |
-          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-microservices.yml deploy-bff.yml renew-mtls.yml local-mtls.yml auxiliary.yml deploy-auxiliary.yml initialize-auxiliary-releases.yml
+          ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-microservices.yml deploy-bff.yml renew-mtls.yml local-mtls.yml auxiliary.yml deploy-auxiliary.yml initialize-auxiliary-releases.yml monitoring.yml
           COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
       # Плейбук runtime-VPS (infra#138) запускает Go API на VPS2; vars — заглушка формата backend без данных сессии
       - name: Ansible — плейбук runtime-VPS
@@ -162,6 +162,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          monitoring_ip=$(python -c 'import yaml; print(yaml.safe_load(open("../pulumi/Pulumi.prod.yaml"))["config"].get("infra:monitoringPrivateIp", ""))')
           initial_args=()
           if [[ -n "$AUXILIARY_INITIAL_RELEASES" ]]; then
             python - <<'PYTHON'
@@ -176,7 +177,7 @@ jobs:
             initial_args=(-e "@$RUNNER_TEMP/initial-vars.json")
           fi
           ansible-playbook -i inventory/ci.yml auxiliary.yml --check --diff \
-            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" "${initial_args[@]}" \
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" -e "monitoring_private_ip=$monitoring_ip" "${initial_args[@]}" \
             | tee "$RUNNER_TEMP/auxiliary-check.txt"
       - name: Сводка
         if: always()
@@ -270,8 +271,9 @@ jobs:
         id: auxiliary
         working-directory: ansible
         run: |
+          monitoring_ip=$(python -c 'import yaml; print(yaml.safe_load(open("../pulumi/Pulumi.prod.yaml"))["config"].get("infra:monitoringPrivateIp", ""))')
           ansible-playbook -i inventory/ci.yml auxiliary.yml \
-            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS"
+            -e "deploy_key_path=$INFRA_DEPLOY_KEY" --ssh-common-args="$INFRA_SSH_ARGS" -e "monitoring_private_ip=$monitoring_ip"
       # verify.yml — последним: проверяет итоговое состояние обеих VPS после выкатки
       - name: verify.yml
         id: verify

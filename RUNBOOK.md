@@ -1443,3 +1443,103 @@ SAN. Проверьте ротацию на стенде полной повто
 переключение прервалось, сначала проверьте `result.json` на VPS2, состояние
 goose по каждой схеме и фактические Docker digest. Целевые образы не следует
 принимать за состояние контейнеров.
+
+## VPS4 для мониторинга (infra#181)
+
+Выкатывайте infra#181 после успешной выкатки микросервисов infra#163.
+Перед выкаткой VPS4 убедитесь, что выкатка infra#163 завершилась и проверки
+микросервисов на VPS2 прошли.
+
+### Ресурсы и адреса
+
+В окружении Selectel проверьте занятые адреса через `openstack port list --network private-network`
+и доступность флейвора 4 vCPU, 8192 МиБ RAM без локального диска через
+`pulumi/scripts/list-flavors.sh`. Закрепите свободный адрес из `192.168.199.0/24`
+в `infra:monitoringPrivateIp` конфигурации стека. Для prod уже задан
+`infra:grafanaDomain: grafana.cellestial.ru`. Выполните `pulumi preview --stack prod --diff`
+и проверьте, что изменение порта VPS1 ограничивается security groups, а действующие VPS
+и диски сохраняются. Сверьте текущие разрешения VPS1 и правила 9100 перед `pulumi up`.
+После применения проверьте, что VPS4 загрузилась с единственного тома 125 ГБ.
+Для расширения увеличьте `infra:monitoringVolumeSize` и после применения проверьте
+размер раздела и файловой системы внутри гостевой ОС.
+
+Из каталога `pulumi/` выгрузите только необходимые значения для Ansible:
+
+```sh
+pulumi stack output --stack prod --json | python3 -c '
+import json, sys
+outputs = json.load(sys.stdin)
+keys = dict(monitoring_private_ip="monitoringPrivateIp",
+            auxiliary_private_ip="auxiliaryPrivateIp",
+            grafana_domain="grafanaDomain")
+json.dump({name: outputs[key] for name, key in keys.items()}, sys.stdout)
+' > /tmp/cellestial-monitoring-vars.json
+```
+
+### SSH и настройка
+
+Добавьте в клиентский `~/.ssh/config` два хоста. Подставьте адреса из
+`auxiliaryPublicIp` и `monitoringPrivateIp`. До первого подключения добавьте в
+`known_hosts` проверенные ключи обоих адресов. Отпечаток нового VPS4 сверяйте через
+консоль Selectel, откуда можно прочитать публичный ключ sshd.
+
+```sshconfig
+Host cellestial-vps3
+    HostName <auxiliaryPublicIp>
+    User deploy
+    IdentityFile ~/.ssh/selectel_release
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    ForwardAgent no
+
+Host cellestial-vps4
+    HostName <monitoringPrivateIp>
+    User deploy
+    IdentityFile ~/.ssh/selectel_release
+    IdentitiesOnly yes
+    StrictHostKeyChecking yes
+    ForwardAgent no
+    ProxyJump cellestial-vps3
+```
+
+Из `ansible/` сначала настройте VPS3, затем выполните bootstrap VPS4 и полный плейбук.
+При ручном запуске `auxiliary.yml` передавайте тот же файл переменных, чтобы сохранить
+разрешение SSH-перехода. CI получает адрес назначения из конфигурации prod.
+
+```sh
+ansible-playbook monitoring.yml --limit auxiliary -e @/tmp/cellestial-monitoring-vars.json
+ansible-playbook bootstrap.yml --limit monitoring -e @/tmp/cellestial-monitoring-vars.json
+ansible-playbook monitoring.yml -e @/tmp/cellestial-monitoring-vars.json
+```
+
+### Приёмка на стенде
+
+- Убедитесь, что `ssh cellestial-vps4` и `ansible monitoring -m ping -e @/tmp/cellestial-monitoring-vars.json`
+  проходят с клиента, у которого нет SSH-маршрута через VPS1. Проверьте из интернета отказ
+  соединения на `<monitoringPublicIp>:22`.
+- До установки Grafana на стенде запустите временный HTTP-контейнер на
+  `cellestial-monitoring` с сетевым алиасом `grafana` и слушателем на 3000:
+
+  ```sh
+  docker run -d --rm --name monitoring-upstream-check --network cellestial-monitoring \
+    --network-alias grafana caddy:2.11-alpine caddy file-server --listen :3000 --root /usr/share/caddy
+  ```
+
+  Проверьте `curl -I http://grafana.cellestial.ru` на перенаправление и
+  `curl -fsSI https://grafana.cellestial.ru` на валидный TLS и HSTS
+  `max-age=31536000`. Из `/opt/cellestial-monitoring` пересоздайте Caddy через
+  `docker compose up -d --force-recreate caddy` и повторите проверку.
+  Убедитесь, что Compose-тома `caddy_data` и `caddy_config` сохранились,
+  затем остановите его командой `docker stop monitoring-upstream-check`. Для #164 подключите Grafana к той же сети
+  с алиасом `grafana` и внутренним портом 3000.
+- На VPS4 запросите `http://<gatewayPrivateIp>:9100/metrics` и
+  `http://<auxiliaryPrivateIp>:9100/metrics`. Проверьте наличие `node_cpu_seconds_total`,
+  `node_memory_MemAvailable_bytes`, `node_filesystem_avail_bytes` и
+  `node_network_receive_bytes_total`. Повторите попытку с другой VPS и из интернета.
+  Соединение должно быть недоступно.
+- Обновите `runtime_blocked_public_ips` в `ansible/inventory/group_vars/all/vars.yml`
+  полным выходом `pulumi stack output runtimeBlockedPublicIps --stack prod` и выкатите
+  конфигурацию backend штатным способом. На уже подготовленных runtime-ВМ примените
+  обновлённый список через роль `runtime_host` с параметрами этого окружения или
+  штатно пересоздайте окружения. Проверьте из нового и ранее активного пользовательского
+  kernel, что запрос к публичному IP VPS4 на 443 не проходит.

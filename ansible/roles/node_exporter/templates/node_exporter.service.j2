@@ -1,0 +1,13 @@
+[Unit]
+Description=Prometheus Node Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=node_exporter
+ExecStart=/opt/{{ node_exporter_archive }}/node_exporter --web.listen-address={{ node_exporter_bind_ip }}:9100
+Restart=on-failure
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

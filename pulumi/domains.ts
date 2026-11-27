@@ -1,3 +1,4 @@
+import type * as openstack from "@pulumi/openstack";
 import * as pulumi from "@pulumi/pulumi";
 import * as selectel from "@pulumi/selectel";
 import { Auxiliary } from "./auxiliary";
@@ -11,6 +12,7 @@ const withDot = (d: string) => (d.endsWith(".") ? d : `${d}.`);
 
 export function createDomains(
   c: InfraConfig, f: Foundation, gateway: Gateway, storage: Storage, auxiliary: Auxiliary | undefined,
+  monitoring?: openstack.networking.FloatingIp,
 ): void {
   const dns = c.dns;
   const projectId = f.project.id;
@@ -52,6 +54,10 @@ export function createDomains(
   // Сервис вебхуков — A-запись в infra:dnsZone; сертификат выпускает Caddy на VPS.
   if (dns.hooksDomain && auxiliary) {
     record("hooks", { name: withDot(dns.hooksDomain), type: "A", records: [{ content: auxiliary.floatingIp.address }] });
+  }
+
+  if (c.monitoring && monitoring && parentZone) {
+    record("grafana", { name: withDot(c.monitoring.domain), type: "A", records: [{ content: monitoring.address }] });
   }
 
   // Свой домен CDN-ресурса (infra:cdnDomain) и CDN статики (infra:staticDomain). Запись внутри зоны, не

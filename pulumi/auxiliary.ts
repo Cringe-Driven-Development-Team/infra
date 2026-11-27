@@ -9,6 +9,8 @@ import { Foundation } from "./foundation";
 import { BucketAccess } from "./selectel-storage";
 
 export interface Auxiliary {
+  port: openstack.networking.Port;
+  securityGroup: openstack.networking.SecGroup;
   floatingIp: openstack.networking.FloatingIp;
   backupBucket: aws.s3.Bucket;
   backupCredentials: selectel.IamS3CredentialsV1;
@@ -162,5 +164,5 @@ export function createAuxiliary(c: InfraConfig, f: Foundation): Auxiliary | unde
       })),
   }, { provider: backupS3 });
 
-  return { floatingIp, backupBucket, backupCredentials };
+  return { port, securityGroup: secGroup, floatingIp, backupBucket, backupCredentials };
 }

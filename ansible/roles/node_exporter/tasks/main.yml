@@ -1,0 +1,54 @@
+---
+- name: Проверить параметры экспортёра
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] == 'x86_64'
+      - monitoring_private_ip is defined and monitoring_private_ip | length > 0
+      - node_exporter_bind_ip | length > 0
+
+- name: Создать системного пользователя экспортёра
+  ansible.builtin.user:
+    name: node_exporter
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Скачать архив экспортёра и проверить SHA256
+  ansible.builtin.get_url:
+    url: "{{ node_exporter_release_url }}/{{ node_exporter_archive }}.tar.gz"
+    checksum: "sha256:{{ node_exporter_sha256 }}"
+    dest: "/opt/{{ node_exporter_archive }}.tar.gz"
+    mode: "0644"
+  vars:
+    node_exporter_release_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}"
+
+- name: Распаковать архив экспортёра
+  ansible.builtin.unarchive:
+    src: "/opt/{{ node_exporter_archive }}.tar.gz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/{{ node_exporter_archive }}/node_exporter"
+
+- name: Установить системный сервис экспортёра
+  ansible.builtin.template:
+    src: node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Перезапустить экспортёр метрик хоста
+
+- name: Разрешить сбор метрик с VPS4
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "9100"
+    src: "{{ monitoring_private_ip }}/32"
+    comment: Prometheus VPS4
+
+- name: Включить и запустить экспортёр
+  ansible.builtin.systemd_service:
+    name: node_exporter
+    daemon_reload: true
+    enabled: true
+    state: started

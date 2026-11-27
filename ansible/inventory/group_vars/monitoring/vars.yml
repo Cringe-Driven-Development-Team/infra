@@ -1,0 +1,12 @@
+---
+ansible_host: "{{ monitoring_private_ip }}"
+ansible_ssh_args: >-
+  -C -o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes
+  -o StrictHostKeyChecking=yes -o ForwardAgent=no
+ansible_ssh_common_args: "-o ProxyJump=cellestial-vps3"
+firewall_rules:
+  - { name: SSH с VPS3, port: "22", proto: tcp, src: "{{ auxiliary_private_ip }}/32" }
+  - { name: HTTP, port: "80", proto: tcp }
+  - { name: HTTPS, port: "443", proto: tcp }
+monitoring_compose_dir: /opt/cellestial-monitoring
+caddy_image: caddy:2.11-alpine

@@ -10,3 +10,5 @@ firewall_rules:
 app_mtls_name: client
 
 ssh_hardening_jump_targets: "{{ [app_backend_address ~ ':22', app_backend_address ~ ':8443'] if app_backend_address else [] }}"
+
+node_exporter_bind_ip: "{{ app_gateway_address }}"

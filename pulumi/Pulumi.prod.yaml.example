@@ -76,3 +76,8 @@ config:
   infra:privateFilesBucket: "<глобально-уникальное-имя-приватного-бакета>"
   # Публичный бакет статики продукта (тот же пул) и CDN-ресурс перед ним; пишет ключ стека
   # infra:staticBucket: "<глобально-уникальное-имя-бакета>"
+
+  # VPS4 (infra#181). Сначала выберите свободный адрес в private-subnet.
+  # infra:monitoringPrivateIp: 192.168.199.40
+  # infra:grafanaDomain: grafana.cellestial.ru
+  # infra:monitoringVolumeSize: 125

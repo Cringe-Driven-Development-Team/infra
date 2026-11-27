@@ -1,0 +1,5 @@
+---
+- name: Перезапустить экспортёр метрик хоста
+  ansible.builtin.systemd_service:
+    name: node_exporter
+    state: restarted
