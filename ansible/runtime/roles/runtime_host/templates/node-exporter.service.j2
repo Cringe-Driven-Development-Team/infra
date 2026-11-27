@@ -1,0 +1,17 @@
+[Unit]
+Description=Prometheus node exporter for Cellestial runtime
+Requires=cellestial-firewall.service
+After=cellestial-firewall.service network-online.target
+Wants=network-online.target
+
+[Service]
+User=node_exporter
+ExecStart=/opt/{{ node_exporter_archive }}/node_exporter --web.listen-address={{ private_ip }}:9100
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

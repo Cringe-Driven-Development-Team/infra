@@ -78,7 +78,7 @@ static=(
 # user-data: shebang, состав, статические файлы и шаги сборки
 {
   echo '#!/bin/bash'
-  grep -E '^[A-Z_][A-Z_0-9]*=' "$dir/versions.env" | sed 's/^/export /'
+  grep -E '^[A-Z_]+=' "$dir/versions.env" | sed 's/^/export /'
   echo 'mkdir -p /root/static'
   for pair in "${static[@]}"; do
     src=${pair%%:*}

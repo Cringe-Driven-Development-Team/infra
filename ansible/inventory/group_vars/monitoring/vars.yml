@@ -16,6 +16,6 @@ monitoring_data_dir: /var/lib/cellestial-monitoring
 monitoring_tsdb_limit: 30GB
 monitoring_bridge_subnet: 172.31.164.0/24
 monitoring_bridge_gateway: 172.31.164.1
-monitoring_environment: prod
+monitoring_environment: "{{ runtime_env_name }}"
 monitoring_optional_targets: []
 node_exporter_bind_ip: 127.0.0.1

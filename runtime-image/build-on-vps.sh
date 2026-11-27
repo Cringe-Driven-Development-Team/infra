@@ -74,33 +74,6 @@ python3 -m venv /opt/cellestial-agent/venv
 install -m 0644 -o root -g root /root/agent/cellestial-agent.service /etc/systemd/system/cellestial-agent.service
 log "agent installed"
 
-exporter_archive="node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64"
-curl -fsSL "https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VERSION}/${exporter_archive}.tar.gz" \
-  -o "/tmp/${exporter_archive}.tar.gz"
-echo "$NODE_EXPORTER_SHA256  /tmp/${exporter_archive}.tar.gz" | sha256sum -c -
-tar -xzf "/tmp/${exporter_archive}.tar.gz" -C /opt
-rm "/tmp/${exporter_archive}.tar.gz"
-useradd --system --no-create-home --shell /usr/sbin/nologin node_exporter
-cat > /etc/systemd/system/node_exporter.service <<EOF
-[Unit]
-Description=Prometheus node exporter
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=node_exporter
-ExecStart=/opt/${exporter_archive}/node_exporter --web.listen-address=:9100
-Restart=on-failure
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl enable node_exporter.service
-
 # Настройки, не зависящие от сессии — файлы ролей runtime как есть (плейбук сессии видит их без изменений)
 install -d -m 0755 /etc/cellestial /etc/systemd/system/nginx.service.d /etc/systemd/system/cellestial-agent.service.d
 install -d -m 0700 /etc/nginx/cellestial
