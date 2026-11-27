@@ -48,6 +48,10 @@ table inet cellestial {
 		type filter hook input priority filter - 10; policy accept;
 		iifname "{{ runtime_host_bridge }}" ct state established,related accept
 		iifname "{{ runtime_host_bridge }}" drop
+{% if runtime_monitoring is defined %}
+		ip saddr {{ runtime_monitoring.scraper_ip }} tcp dport { 9100, 9443 } accept
+{% endif %}
+		tcp dport { 9100, 9443 } drop
 	}
 
 	# Хост → контейнер: только Jupyter TCP {{ runtime_host_jupyter_port }} (агент)

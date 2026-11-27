@@ -18,10 +18,19 @@
     - ssh_hardening
     - firewall
     - docker
+    - node_exporter
     - monitoring_caddy
 
 - name: Установить экспортёры на VPS1 и VPS3
   hosts: gateway:auxiliary
   become: true
+  roles:
+    - node_exporter
+
+- name: Установить экспортёр на VPS2
+  hosts: backend
+  become: true
+  vars:
+    node_exporter_bind_ip: "{{ app_backend_address }}"
   roles:
     - node_exporter

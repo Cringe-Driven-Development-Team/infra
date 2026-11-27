@@ -1,0 +1,116 @@
+---
+- name: Проверить параметры мониторинга
+  ansible.builtin.assert:
+    that:
+      - vault_monitoring_grafana_admin | default('') | length > 0
+      - vault_monitoring_openstack is defined
+      - vault_monitoring_prometheus_cert | default('') | length > 0
+      - vault_monitoring_prometheus_key | default('') | length > 0
+      - monitoring_runtime_network | default('') | length > 0
+      - monitoring_runtime_server_ca | default('') | length > 0
+      - monitoring_runtime_server_name | default('') | length > 0
+  no_log: true
+
+- name: Создать каталоги конфигурации
+  ansible.builtin.file:
+    path: "{{ monitoring_compose_dir }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - prometheus
+    - grafana/datasources
+    - grafana/dashboards
+    - dashboards
+
+- name: Создать каталоги постоянных данных
+  ansible.builtin.file:
+    path: "{{ monitoring_data_dir }}/{{ item.name }}"
+    state: directory
+    owner: "{{ item.uid }}"
+    mode: "0750"
+  loop:
+    - { name: prometheus, uid: "65534" }
+    - { name: grafana, uid: "472" }
+
+- name: Создать закрытый каталог секретов Compose
+  ansible.builtin.file:
+    path: "{{ monitoring_compose_dir }}/secrets"
+    state: directory
+    owner: root
+    mode: "0700"
+
+- name: Записать пароль Grafana
+  ansible.builtin.copy:
+    content: "{{ vault_monitoring_grafana_admin }}"
+    dest: "{{ monitoring_compose_dir }}/secrets/grafana_admin"
+    owner: "472"
+    mode: "0400"
+  no_log: true
+
+- name: Записать материалы TLS для Prometheus
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ monitoring_compose_dir }}/prometheus/{{ item.name }}"
+    owner: "65534"
+    mode: "0400"
+  no_log: true
+  loop:
+    - { name: runtime-ca.pem, content: "{{ monitoring_runtime_server_ca }}" }
+    - { name: client.pem, content: "{{ vault_monitoring_prometheus_cert }}" }
+    - { name: client-key.pem, content: "{{ vault_monitoring_prometheus_key }}" }
+
+- name: Записать правила Prometheus
+  ansible.builtin.copy:
+    src: rules.yml
+    dest: "{{ monitoring_compose_dir }}/prometheus/rules.yml"
+    mode: "0644"
+
+- name: Записать конфигурацию Prometheus
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ monitoring_compose_dir }}/prometheus/prometheus.yml"
+    owner: "65534"
+    mode: "0400"
+  notify: Перечитать конфигурацию Prometheus
+  no_log: true
+
+- name: Подготовить provisioning Grafana
+  ansible.builtin.template:
+    src: "{{ item }}.yml.j2"
+    dest: "{{ monitoring_compose_dir }}/grafana/{{ item }}.yml"
+    mode: "0644"
+  loop:
+    - datasources/prometheus
+    - dashboards/cellestial
+
+- name: Установить дашборд Cellestial
+  ansible.builtin.copy:
+    src: cellestial.json
+    dest: "{{ monitoring_compose_dir }}/dashboards/cellestial.json"
+    mode: "0644"
+
+- name: Проверить конфигурацию перед запуском
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --entrypoint
+      - /bin/promtool
+      - -v
+      - "{{ monitoring_compose_dir }}/prometheus:/etc/prometheus:ro"
+      - "{{ prometheus_image }}"
+      - check
+      - config
+      - /etc/prometheus/prometheus.yml
+  changed_when: false
+  no_log: true
+
+- name: Разрешить Grafana обращаться к Prometheus внутри Compose
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "9090"
+    src: "{{ monitoring_bridge_subnet }}"
+    dest: "{{ monitoring_bridge_gateway }}"
+    comment: Grafana monitoring network

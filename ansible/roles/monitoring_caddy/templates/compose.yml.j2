@@ -5,6 +5,7 @@ services:
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
+      - "127.0.0.1:9180:9180/tcp"
     volumes:
       - ./caddy:/etc/caddy:ro
       - caddy_data:/data
@@ -12,9 +13,58 @@ services:
     networks:
       - monitoring
 
+  prometheus:
+    image: {{ prometheus_image }}
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    mem_limit: 2g
+    cpus: 2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.listen-address={{ monitoring_bridge_gateway }}:9090
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=14d
+      - --storage.tsdb.retention.size={{ monitoring_tsdb_limit }}
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - {{ monitoring_data_dir }}/prometheus:/prometheus
+
+  grafana:
+    image: {{ grafana_image }}
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1
+    environment:
+      GF_SERVER_ROOT_URL: https://{{ grafana_domain }}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin
+    secrets:
+      - grafana_admin
+    volumes:
+      - ./grafana:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/cellestial-dashboards:ro
+      - {{ monitoring_data_dir }}/grafana:/var/lib/grafana
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+secrets:
+  grafana_admin:
+    file: ./secrets/grafana_admin
+
 networks:
   monitoring:
     name: cellestial-monitoring
+    ipam:
+      config:
+        - subnet: {{ monitoring_bridge_subnet }}
+          gateway: {{ monitoring_bridge_gateway }}
 
 volumes:
   caddy_data:

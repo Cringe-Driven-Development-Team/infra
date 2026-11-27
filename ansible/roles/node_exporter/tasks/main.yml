@@ -39,6 +39,7 @@
   notify: Перезапустить экспортёр метрик хоста
 
 - name: Разрешить сбор метрик с VPS4
+  when: node_exporter_bind_ip != "127.0.0.1"
   community.general.ufw:
     rule: allow
     proto: tcp

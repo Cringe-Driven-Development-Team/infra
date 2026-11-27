@@ -1,0 +1,13 @@
+groups:
+  - name: cellestial-monitoring
+    rules:
+      - record: cellestial:node_cpu_busy:percent
+        expr: 100 * (1 - avg by (environment, instance, host_role) (rate(node_cpu_seconds_total{mode="idle"}[5m])))
+      - record: cellestial:node_memory_used:bytes
+        expr: node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes
+      - record: cellestial:runtime_expected_missing
+        expr: |
+          (
+            label_replace(cellestial_runtime_target_info{state=~"warm|claimed|active"}, "instance", "$1", "server_id", "(.+)")
+            unless on (environment, instance) up{job="runtime-runtime-agent"}
+          ) and on (environment) (cellestial_runtime_inventory_available == 1)

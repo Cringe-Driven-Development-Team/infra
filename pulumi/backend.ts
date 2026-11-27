@@ -31,8 +31,12 @@ export function createBackend(c: InfraConfig, f: Foundation, gatewayPort: openst
     ["workspace-mtls", "tcp", 8445, gatewayAddress],
     ["icmp", "icmp", undefined, f.subnet.cidr],
   ];
-  if (backend.metricsScraperAddress) {
-    ingress.push(["service-metrics", "tcp", 9101, `${backend.metricsScraperAddress}/32`]);
+  const scraper = c.monitoring?.privateIp ?? backend.metricsScraperAddress;
+  if (scraper) {
+    ingress.push(["service-metrics", "tcp", 9101, `${scraper}/32`]);
+  }
+  if (c.monitoring) {
+    ingress.push(["node-metrics", "tcp", 9100, `${c.monitoring.privateIp}/32`]);
   }
   for (const [ruleName, protocol, port, remoteIpPrefix] of ingress) {
     new openstack.networking.SecGroupRule(`backend-${ruleName}`, {

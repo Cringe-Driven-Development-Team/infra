@@ -1,0 +1,11 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: cellestial-prometheus
+    type: prometheus
+    access: proxy
+    url: http://{{ monitoring_bridge_gateway }}:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

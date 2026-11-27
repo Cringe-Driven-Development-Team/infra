@@ -75,6 +75,10 @@ export function createRuntime(
     ["agent-grpc", "tcp", 9090, backendAddress],
     ["icmp", "icmp", undefined, backendAddress],
   ];
+  if (c.monitoring) {
+    const scraper = `${c.monitoring.privateIp}/32`;
+    ingress.push(["node-metrics", "tcp", 9100, scraper], ["agent-metrics", "tcp", 9443, scraper]);
+  }
   for (const [ruleName, protocol, port, remoteIpPrefix] of ingress) {
     new openstack.networking.SecGroupRule(`runtime-${ruleName}`, {
       securityGroupId: secGroup.id,
