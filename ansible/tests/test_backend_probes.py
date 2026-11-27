@@ -20,6 +20,22 @@ RELEASE = 'b' * 40
 VALID_LOGIN = {'error': {'code': 'BAD_REQUEST', 'message': 'Неверный логин или пароль', 'appCode': 'invalid_credentials'}}
 
 
+class VerifyBackendProbeScope(unittest.TestCase):
+    def test_verify_limits_client_certificate_to_s2s_checks(self):
+        plays = yaml.safe_load((ANSIBLE / 'verify.yml').read_text())
+        probe = 'roles/app/tasks/probe-backend.yml'
+        play = next(play for play in plays if any(
+            task.get('ansible.builtin.import_tasks') == probe for task in play.get('tasks', [])
+        ))
+        uri = 'ansible.builtin.uri'
+        certificate_args = {'client_cert', 'client_key'}
+        self.assertTrue(certificate_args.isdisjoint(play.get('module_defaults', {}).get(uri, {})))
+
+        s2s_check = next(task for task in play['tasks'] if 'block' in task)
+        self.assertTrue(certificate_args.issubset(s2s_check['module_defaults'][uri]))
+        self.assertEqual([task[uri]['status_code'] for task in s2s_check['block']], [403, 401])
+
+
 class BackendProbes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
