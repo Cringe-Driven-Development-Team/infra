@@ -172,6 +172,20 @@ describe("сборка модулей", () => {
     for (const [, policy] of others) expect(policy.inputs.policy).not.toContain("avatars-id");
   });
 
+  test("CORS приватного бакета разрешает только подписанный PUT с origin приложения", () => {
+    const type = "aws:s3/bucketCorsConfiguration:BucketCorsConfiguration";
+    const configurations = [...created.values()].filter((resource) => resource.type === type);
+    expect(configurations).toHaveLength(1);
+    expect(configurations[0].inputs).toMatchObject({
+      bucket: "private-files-id",
+      corsRules: [{
+        allowedOrigins: ["https://example.ru"],
+        allowedMethods: ["PUT"],
+        allowedHeaders: ["content-type"],
+      }],
+    });
+  });
+
   test("VPS4: фиксированный порт, загрузочный SSD и доступ к экспортёрам", async () => {
     expect(await value(stack.monitoringPublicIp)).toBe("203.0.113.4");
     expect(stack.monitoringPrivateIp).toBe("192.168.199.40");

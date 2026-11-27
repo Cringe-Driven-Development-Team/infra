@@ -747,14 +747,16 @@ class DeploymentChecks(unittest.TestCase):
         return template.render(dict(app_domain="cellestial.ru",
             frontend_cdn_domain="cdn.example.org",
             frontend_static_domain="static.example.org",
-            avatars_public_domain="avatars.example.org"), **values)
+            avatars_public_domain="avatars.example.org",
+            private_files_upload_origin="https://private-files.s3.ru-7.storage.selcloud.ru"), **values)
 
     def test_caddy_routes_to_bff_once_it_is_deployed(self):
         csp = ("default-src 'none'; script-src https://cdn.example.org; "
                "style-src * data: blob: 'unsafe-inline'; "
                "img-src 'self' https://cdn.example.org https://static.example.org "
                "https://avatars.example.org data:; "
-               "font-src 'self' https://static.example.org; connect-src 'self'; manifest-src 'self'; "
+               "font-src 'self' https://static.example.org; "
+               "connect-src 'self' https://private-files.s3.ru-7.storage.selcloud.ru; manifest-src 'self'; "
                "worker-src 'self'; base-uri 'none'; "
                "form-action 'self'; frame-src 'self'; frame-ancestors 'none'")
         # caddy_bff_enabled — из роли app, caddy_bff_deployed — из .env в роли caddy
@@ -784,6 +786,7 @@ class DeploymentChecks(unittest.TestCase):
             rendered = self.render_caddy(caddy_csp_report_only=report_only,
                                          caddy_bff_deployed=True)
             self.assertIn('header_down Content-Security-Policy "default-src ', rendered)
+            self.assertIn("connect-src 'self' https://private-files.s3.ru-7.storage.selcloud.ru;", rendered)
             self.assertEqual(rendered.count("header_down -Content-Security-Policy-Report-Only"), 2)
 
     def test_caddy_limits_same_origin_frames_to_embed_path(self):

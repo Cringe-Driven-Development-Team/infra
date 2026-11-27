@@ -250,6 +250,50 @@ Selectel хранит файлы в бакете `infra:privateFilesBucket` ти
 используя переменные окружения стенда. В PR достаточно указать совпадение байтов
 и HTTP 403. Тестовый объект удаляется ключом оператора.
 
+### Прямой PUT из браузера (infra#194)
+
+Бакет должен использовать [vHosted в Selectel](https://docs.selectel.ru/s3/buckets/addressing-types/).
+Если в панели для существующего бакета указан Path-Style, включите vHosted в его конфигурации
+перед применением CORS. Selectel не поддерживает обратное переключение. Pulumi добавляет CORS
+для `https://cellestial.ru`, метода `PUT` и заголовка `Content-Type`.
+Caddy разрешает этот HTTPS-хост S3 в `connect-src`. Для production это
+`https://cellestial-private-files-0.s3.ru-7.storage.selcloud.ru`.
+
+1. Получите на стенде краткоживущую ссылку PUT для нового тестового ключа на vHosted-хосте.
+   Подпишите её с `Content-Type: application/octet-stream`, если signer включает этот заголовок.
+   Храните подписанный URL локально. В отчёт переносите статусы и заголовки CORS без query string.
+2. Откройте `https://cellestial.ru` с включённым `Content-Security-Policy`. В консоли браузера
+   выполните запрос с нейтральным содержимым и введите свежую ссылку в диалоге.
+
+   ```js
+   const url = prompt("Подписанный PUT URL");
+   if (url) {
+     const response = await fetch(url, {
+       method: "PUT",
+       credentials: "omit",
+       headers: {"Content-Type": "application/octet-stream"},
+       body: new Uint8Array([0x74, 0x65, 0x73, 0x74]),
+     });
+     console.log("PUT", response.status);
+   }
+   ```
+
+   В Network у OPTIONS ожидаются разрешённый origin `https://cellestial.ru`, метод `PUT`
+   и заголовок `Content-Type`. PUT должен вернуть 2xx.
+3. Для того же объекта проверьте анонимный GET и preflight от постороннего origin.
+   В `object_url` укажите адрес без query string.
+
+   ```bash
+   curl -sS -o /dev/null -w 'GET без подписи: %{http_code}\n' "$object_url"
+   curl -sS -D - -o /dev/null -X OPTIONS \
+     -H 'Origin: https://unrelated.example' \
+     -H 'Access-Control-Request-Method: PUT' \
+     -H 'Access-Control-Request-Headers: content-type' "$object_url"
+   ```
+
+   GET должен вернуть 403, а OPTIONS не должен разрешать PUT для `https://unrelated.example`.
+   После проверки удалите тестовый объект ключом оператора.
+
 ## Свои домены
 
 `infra:cdnDomain`, `infra:staticDomain` и `infra:avatarsDomain` — свои домены CDN-ресурса релизов,
