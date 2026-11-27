@@ -10,6 +10,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
+{% if monitoring_private_ip | default('') %}
+      - "{{ app_gateway_address }}:9180:9180"
+{% endif %}
     volumes:
       - ./caddy:/etc/caddy:ro
       - caddy_data:/data

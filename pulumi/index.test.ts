@@ -188,6 +188,9 @@ describe("сборка модулей", () => {
     expect(rule("monitoring-ssh")).toMatchObject({ portRangeMin: 22, portRangeMax: 22, remoteIpPrefix: "192.168.199.30/32" });
     expect(rule("monitoring-http")).toMatchObject({ portRangeMin: 80, portRangeMax: 80, remoteIpPrefix: "0.0.0.0/0" });
     expect(rule("monitoring-https")).toMatchObject({ portRangeMin: 443, portRangeMax: 443, remoteIpPrefix: "0.0.0.0/0" });
+    expect(find("openstack:networking/secGroupRule:SecGroupRule", "gateway-tcp9180").inputs).toMatchObject({
+      portRangeMin: 9180, portRangeMax: 9180, remoteIpPrefix: "192.168.199.40/32", securityGroupId: "gateway-id",
+    });
     for (const [name, group] of [["gateway-tcp9100", "gateway-id"], ["auxiliary-metrics", "auxiliary-id"]]) {
       expect(rule(name)).toMatchObject({
         portRangeMin: 9100, portRangeMax: 9100, remoteIpPrefix: "192.168.199.40/32", securityGroupId: group,
