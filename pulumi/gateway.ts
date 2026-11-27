@@ -16,7 +16,7 @@ export function createGateway(c: InfraConfig, f: Foundation): Gateway {
     name: "gateway",
   }, withOs) : undefined;
   if (securityGroup && c.monitoring) {
-    for (const port of [22, 80, 443, 9100]) {
+    for (const port of [22, 80, 443, 9100, 9180]) {
       new openstack.networking.SecGroupRule(`gateway-tcp${port}`, {
         securityGroupId: securityGroup.id,
         direction: "ingress",
@@ -24,7 +24,7 @@ export function createGateway(c: InfraConfig, f: Foundation): Gateway {
         protocol: "tcp",
         portRangeMin: port,
         portRangeMax: port,
-        remoteIpPrefix: port === 9100 ? `${c.monitoring.privateIp}/32` : "0.0.0.0/0",
+        remoteIpPrefix: port === 9100 || port === 9180 ? `${c.monitoring.privateIp}/32` : "0.0.0.0/0",
       }, withOs);
     }
   }

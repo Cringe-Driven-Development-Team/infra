@@ -44,6 +44,15 @@
         - { path: "{{ microservices_runtime_dir }}", owner: 0, mode: "0755" }
         - { path: "{{ microservices_runtime_work_dir }}", owner: 10001, mode: "0700" }
 
+    - name: Установить публичный CA мониторинга для Environments
+      when: monitoring_private_ip | default('') | length > 0
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/files/monitoring/client-ca.pem"
+        dest: "{{ microservices_runtime_secrets_dir }}/monitoring-client-ca.pem"
+        owner: "10001"
+        group: "10001"
+        mode: "0400"
+
     - name: Install runtime SSH and certificate-signing private keys for Environments
       ansible.builtin.copy:
         content: "{{ item.value | trim }}\n"

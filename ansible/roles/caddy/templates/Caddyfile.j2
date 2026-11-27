@@ -23,6 +23,25 @@
 {% set report_only = caddy_csp_report_only | default(true) | bool %}
 {% set csp_header = 'Content-Security-Policy-Report-Only' if report_only else 'Content-Security-Policy' %}
 {% set other_csp_header = 'Content-Security-Policy' if report_only else 'Content-Security-Policy-Report-Only' %}
+{% if monitoring_private_ip | default('') %}
+{
+	metrics
+}
+
+http://:9180 {
+	@scrape {
+		remote_ip {{ monitoring_private_ip }}/32
+		method GET
+		path /metrics
+	}
+	handle @scrape {
+		metrics /metrics
+	}
+	handle {
+		respond 403
+	}
+}
+{% endif %}
 {{ app_domain }} {
 	# Браузер не угадывает тип ответа по содержимому и после первого ответа по HTTPS ходит на этот домен
 	# только по HTTPS (HSTS, без поддоменов и preload). defer — заголовок ставится при отправке ответа

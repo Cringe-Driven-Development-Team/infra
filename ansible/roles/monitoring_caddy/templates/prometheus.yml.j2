@@ -9,6 +9,10 @@ scrape_configs:
     static_configs:
       - targets: ["{{ monitoring_bridge_gateway }}:9090"]
         labels: {environment: "{{ monitoring_environment }}", service: prometheus, instance: vps4, host_role: monitoring}
+  - job_name: gateway-caddy
+    static_configs:
+      - targets: ["{{ app_gateway_address }}:9180"]
+        labels: {environment: "{{ monitoring_environment }}", service: caddy, instance: vps1, host_role: gateway}
   - job_name: monitoring-caddy
     static_configs:
       - targets: ["127.0.0.1:9180"]
