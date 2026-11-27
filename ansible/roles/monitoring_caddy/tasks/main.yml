@@ -22,6 +22,9 @@
       caddy validate --config /tmp/Caddyfile --adapter caddyfile
   notify: Перечитать конфигурацию Caddy мониторинга
 
+- name: Подготовить Prometheus и Grafana
+  ansible.builtin.import_tasks: stack.yml
+
 - name: Записать Compose-проект мониторинга
   ansible.builtin.template:
     src: compose.yml.j2
@@ -30,8 +33,16 @@
     group: root
     mode: "0644"
 
-- name: Запустить Caddy мониторинга
+- name: Запустить стек мониторинга
   community.docker.docker_compose_v2:
     project_src: "{{ monitoring_compose_dir }}"
     state: present
     pull: missing
+
+- name: Дождаться готовности Prometheus
+  ansible.builtin.uri:
+    url: "http://{{ monitoring_bridge_gateway }}:9090/-/ready"
+  register: monitoring_prometheus_ready
+  until: monitoring_prometheus_ready.status == 200
+  retries: 12
+  delay: 5

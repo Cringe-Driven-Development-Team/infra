@@ -1,0 +1,1613 @@
+{
+  "uid": "cellestial-services-infra",
+  "title": "Cellestial — Services & Infrastructure",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "type": "query",
+        "query": "label_values(up, environment)",
+        "definition": "label_values(up, environment)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "query": "label_values(up, service)",
+        "definition": "label_values(up, service)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "query": "label_values(up, instance)",
+        "definition": "label_values(up, instance)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "host_role",
+        "type": "query",
+        "query": "label_values(up, host_role)",
+        "definition": "label_values(up, host_role)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "route",
+        "type": "query",
+        "query": "label_values(cellestial_http_requests_total, route)",
+        "definition": "label_values(cellestial_http_requests_total, route)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "method",
+        "type": "query",
+        "query": "label_values(cellestial_http_requests_total, method)",
+        "definition": "label_values(cellestial_http_requests_total, method)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "status_code",
+        "type": "query",
+        "query": "label_values(cellestial_http_requests_total, status_code)",
+        "definition": "label_values(cellestial_http_requests_total, status_code)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "grpc_service",
+        "type": "query",
+        "query": "label_values(cellestial_grpc_calls_total, grpc_service)",
+        "definition": "label_values(cellestial_grpc_calls_total, grpc_service)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "grpc_method",
+        "type": "query",
+        "query": "label_values(cellestial_grpc_calls_total, grpc_method)",
+        "definition": "label_values(cellestial_grpc_calls_total, grpc_method)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      },
+      {
+        "name": "grpc_code",
+        "type": "query",
+        "query": "label_values(cellestial_grpc_calls_total, grpc_code)",
+        "definition": "label_values(cellestial_grpc_calls_total, grpc_code)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "cellestial-prometheus"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Состояние сбора",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 2,
+      "title": "Доступность targets",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Ошибки discovery",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (name) (increase(prometheus_sd_refresh_failures_total[5m]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Активные ряды TSDB",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_tsdb_head_series",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Данные TSDB",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "prometheus_tsdb_storage_blocks_bytes",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "prometheus_tsdb_wal_storage_size_bytes",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Ожидаемые runtime без scrape target",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cellestial:runtime_expected_missing",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Запросы",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 8,
+      "title": "HTTP server — hits",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, route, method, status_code) (increase(cellestial_http_requests_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "HTTP server — RPS и ошибки/с",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, route, method, status_code) (rate(cellestial_http_requests_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (environment, service, route, method, status_code) (rate(cellestial_http_requests_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\",status_code=~\"[45]..\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "HTTP server — среднее, p50, p95, p99",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, route, method, status_code) (rate(cellestial_http_request_duration_seconds_sum{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\"}[$__rate_interval])) / sum by (environment, service, route, method, status_code) (rate(cellestial_http_request_duration_seconds_count{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.5, sum by (environment, service, route, method, status_code, le) (rate(cellestial_http_request_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (environment, service, route, method, status_code, le) (rate(cellestial_http_request_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.99, sum by (environment, service, route, method, status_code, le) (rate(cellestial_http_request_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",route=~\"${route:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",route!~\"/livez|/readyz|/metrics\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "HTTP client — hits",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, method, status_code, dependency, operation) (increase(cellestial_http_client_requests_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "HTTP client — RPS и ошибки/с",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, method, status_code, dependency, operation) (rate(cellestial_http_client_requests_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (environment, service, method, status_code, dependency, operation) (rate(cellestial_http_client_requests_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\",status_code=~\"0|[45]..\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "HTTP client — среднее, p50, p95, p99",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, method, status_code, dependency, operation) (rate(cellestial_http_client_request_duration_seconds_sum{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\"}[$__rate_interval])) / sum by (environment, service, method, status_code, dependency, operation) (rate(cellestial_http_client_request_duration_seconds_count{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.5, sum by (environment, service, method, status_code, dependency, operation, le) (rate(cellestial_http_client_request_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (environment, service, method, status_code, dependency, operation, le) (rate(cellestial_http_client_request_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.99, sum by (environment, service, method, status_code, dependency, operation, le) (rate(cellestial_http_client_request_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",method=~\"${method:regex}\",status_code=~\"${status_code:regex}\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "gRPC — hits",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side) (increase(cellestial_grpc_calls_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "gRPC — RPS и ошибки/с",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side) (rate(cellestial_grpc_calls_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side) (rate(cellestial_grpc_calls_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\",grpc_code!=\"OK\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "gRPC — среднее, p50, p95, p99",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side) (rate(cellestial_grpc_call_duration_seconds_sum{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\"}[$__rate_interval])) / sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side) (rate(cellestial_grpc_call_duration_seconds_count{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.5, sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side, le) (rate(cellestial_grpc_call_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side, le) (rate(cellestial_grpc_call_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.99, sum by (environment, service, grpc_service, grpc_method, grpc_code, rpc_side, le) (rate(cellestial_grpc_call_duration_seconds_bucket{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\",grpc_service=~\"${grpc_service:regex}\",grpc_method=~\"${grpc_method:regex}\",grpc_code=~\"${grpc_code:regex}\",rpc_type=\"unary\"}[$__rate_interval])))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Ресурсы VPS",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 18,
+      "title": "CPU по режимам",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 88,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * avg by (instance, mode) (rate(node_cpu_seconds_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",mode!=\"idle\"}[$__rate_interval]))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "CPU, vCPU и load average",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 88,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cellestial:node_cpu_busy:percent{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "count by (instance) (node_cpu_seconds_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",mode=\"idle\"})",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "node_load1{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "expr": "node_load5{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "E",
+          "expr": "node_load15{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "Память и swap",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 96,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_memory_MemTotal_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "node_memory_MemAvailable_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "cellestial:node_memory_used:bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "expr": "node_memory_SwapTotal_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "E",
+          "expr": "node_memory_SwapFree_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "Занятая память",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 96,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * cellestial:node_memory_used:bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"} / node_memory_MemTotal_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "Размер, доступно и занято на файловых системах",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 104,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_filesystem_size_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "node_filesystem_avail_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "expr": "node_filesystem_size_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"} - node_filesystem_free_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "Занято на файловых системах",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 104,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"} / node_filesystem_size_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"})",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "title": "Доступные inode и read-only",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 112,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_filesystem_files_free{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "node_filesystem_readonly{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",fstype!~\"overlay|tmpfs|squashfs|ramfs\",device!~\"/dev/loop.*\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "title": "Дисковое чтение и запись",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 112,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_disk_read_bytes_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"loop.*|ram.*|zram.*|dm-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_disk_written_bytes_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"loop.*|ram.*|zram.*|dm-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "Дисковые IOPS",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "iops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 120,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_disk_reads_completed_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"loop.*|ram.*|zram.*|dm-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_disk_writes_completed_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"loop.*|ram.*|zram.*|dm-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "title": "Занятость диска",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 120,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(node_disk_io_time_seconds_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"loop.*|ram.*|zram.*|dm-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "title": "Сеть RX/TX",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 128,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_receive_bytes_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"lo|veth.*|docker.*|br-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_network_transmit_bytes_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"lo|veth.*|docker.*|br-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "title": "Ошибки интерфейсов",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 128,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(node_network_receive_errs_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"lo|veth.*|docker.*|br-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(node_network_transmit_errs_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",device!~\"lo|veth.*|docker.*|br-.*\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "title": "Uptime",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 136,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - node_boot_time_seconds{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "title": "Ресурсы процессов",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 144,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 32,
+      "title": "CPU процесса в ядрах",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 152,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(process_cpu_seconds_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "title": "RSS процесса",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 152,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "process_resident_memory_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "title": "Goroutines и открытые дескрипторы",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 160,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "go_goroutines{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "process_open_fds{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "title": "Задержка event loop агента",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 160,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "runtime_agent_event_loop_lag_seconds{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "title": "Runtime VPS и kernel",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 168,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 37,
+      "title": "Текущие состояния Environments",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 176,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cellestial_runtime_target_info and on (environment) (cellestial_runtime_inventory_available == 1)",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "title": "Машины по состояниям",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 176,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (environment, state) (cellestial_runtime_target_info and on (environment) (cellestial_runtime_inventory_available == 1))",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "title": "Kernel CPU и лимит",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 184,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(runtime_agent_kernel_cpu_seconds_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "runtime_agent_kernel_cpu_limit_cores{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "title": "Kernel память и лимит",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 184,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "runtime_agent_kernel_memory_usage_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "runtime_agent_kernel_memory_limit_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "title": "Kernel очередь и состояние",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 192,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "runtime_agent_kernel_queue_length{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "runtime_agent_kernel_state{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "title": "Kernel OOM",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 192,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(runtime_agent_kernel_oom_kills_total{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}[$__rate_interval])",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "title": "Workspace занят и квота",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 200,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "runtime_agent_workspace_used_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "expr": "runtime_agent_workspace_quota_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",service=~\"${service:regex}\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "title": "Runtime root disk",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cellestial-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 200,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_filesystem_avail_bytes{environment=~\"${environment:regex}\",instance=~\"${instance:regex}\",host_role=~\"${host_role:regex}\",mountpoint=\"/\",host_role=\"runtime\"}",
+          "instant": false,
+          "range": true,
+          "format": "time_series"
+        }
+      ]
+    }
+  ]
+}

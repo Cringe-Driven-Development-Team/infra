@@ -154,6 +154,44 @@
     group: root
     mode: "0644"
 
+- name: Подготовить приватный listener метрик агента
+  when: runtime_monitoring is defined
+  no_log: true
+  block:
+    - name: Проверить настройки метрик агента
+      ansible.builtin.assert:
+        that:
+          - runtime_agent_grpc | bool
+          - runtime_monitoring.scraper_ip is match('^([0-9]{1,3}[.]){3}[0-9]{1,3}$')
+          - runtime_monitoring.server_cert | length > 0
+          - runtime_monitoring.server_key | length > 0
+          - runtime_monitoring.client_ca | length > 0
+
+    - name: Установить материалы TLS слушателя
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "/etc/cellestial-agent/{{ item.name }}"
+        owner: root
+        group: cellestial-agent
+        mode: "0640"
+      loop:
+        - { name: monitoring-server.pem, content: "{{ runtime_monitoring.server_cert }}" }
+        - { name: monitoring-server-key.pem, content: "{{ runtime_monitoring.server_key }}" }
+        - { name: monitoring-client-ca.pem, content: "{{ runtime_monitoring.client_ca }}" }
+      register: runtime_agent_monitoring_tls
+
+    - name: Включить HTTPS для метрик
+      ansible.builtin.copy:
+        dest: /etc/cellestial-agent/monitoring.env
+        owner: root
+        mode: "0600"
+        content: |
+          METRICS_ADDR={{ private_ip }}:9443
+          METRICS_TLS_CERT_FILE=/etc/cellestial-agent/monitoring-server.pem
+          METRICS_TLS_KEY_FILE=/etc/cellestial-agent/monitoring-server-key.pem
+          METRICS_TLS_CA_FILE=/etc/cellestial-agent/monitoring-client-ca.pem
+      register: runtime_agent_monitoring_env
+
 # Плейбук идёт на свежей VPS до назначения сессии; при сбое Go API удаляет VPS, а не повторяет плейбук
 - name: Start the agent
   ansible.builtin.systemd_service:
@@ -164,7 +202,8 @@
     state: >-
       {{ 'restarted' if runtime_agent_account is changed or runtime_agent_settings is changed
          or runtime_agent_unit is changed or runtime_agent_tls is changed or runtime_agent_wheel_copy is changed
-         or runtime_agent_requirements is changed else 'started' }}
+         or runtime_agent_requirements is changed or runtime_agent_monitoring_tls is changed
+         or runtime_agent_monitoring_env is changed else 'started' }}
 
 - name: Wait for the configured legacy or gRPC agent listener
   ansible.builtin.wait_for:

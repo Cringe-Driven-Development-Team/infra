@@ -1,0 +1,79 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 5s
+rule_files:
+  - /etc/prometheus/rules.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["{{ monitoring_bridge_gateway }}:9090"]
+        labels: {environment: "{{ monitoring_environment }}", service: prometheus, instance: vps4, host_role: monitoring}
+  - job_name: monitoring-caddy
+    static_configs:
+      - targets: ["127.0.0.1:9180"]
+        labels: {environment: "{{ monitoring_environment }}", service: caddy, instance: vps4, host_role: monitoring}
+  - job_name: node
+    static_configs:
+{% for group, instance in [('gateway', 'vps1'), ('backend', 'vps2'), ('auxiliary', 'vps3'), ('monitoring', 'vps4')] %}
+{% set address = '127.0.0.1' if group == 'monitoring' else hostvars[groups[group][0]].node_exporter_bind_ip | default(app_backend_address) %}
+      - targets: ["{{ address }}:9100"]
+        labels: {environment: "{{ monitoring_environment }}", service: node_exporter, instance: "{{ instance }}", host_role: "{{ group }}"}
+{% endfor %}
+{% for service in ['identity', 'workspace', 'environments'] %}
+  - job_name: {{ service }}
+    metrics_path: /{{ service }}/metrics
+    static_configs:
+      - targets: ["{{ app_backend_address }}:9101"]
+        labels: {environment: "{{ monitoring_environment }}", service: "{{ service }}", instance: vps2, host_role: backend}
+{% endfor %}
+{% for target in monitoring_optional_targets %}
+  - job_name: {{ target.service | to_json }}
+    metrics_path: {{ target.path | default('/metrics') | to_json }}
+    static_configs:
+      - targets: [{{ target.address | to_json }}]
+        labels:
+          environment: {{ monitoring_environment | to_json }}
+          service: {{ target.service | to_json }}
+          instance: {{ target.instance | to_json }}
+          host_role: {{ target.host_role | to_json }}
+{% endfor %}
+{% for service, port in [('node_exporter', 9100), ('runtime-agent', 9443)] %}
+  - job_name: runtime-{{ service }}
+{% if port == 9443 %}
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/runtime-ca.pem
+      cert_file: /etc/prometheus/client.pem
+      key_file: /etc/prometheus/client-key.pem
+      server_name: {{ monitoring_runtime_server_name | to_json }}
+{% endif %}
+    openstack_sd_configs:
+      - role: instance
+        refresh_interval: 30s
+        port: {{ port }}
+{% for key in ['identity_endpoint', 'username', 'password', 'domain_name', 'project_id', 'region'] %}
+        {{ key }}: {{ vault_monitoring_openstack[key] | to_json }}
+{% endfor %}
+    relabel_configs:
+      - source_labels: [__meta_openstack_tag_cellestial_runtime]
+        regex: "1"
+        action: keep
+      - source_labels: [__meta_openstack_tag_cellestial_env]
+        regex: {{ monitoring_environment | regex_escape | to_json }}
+        action: keep
+      - source_labels: [__meta_openstack_private_ip, __meta_openstack_address_pool]
+        regex: {{ ('([^;]+);' ~ (monitoring_runtime_network | regex_escape)) | to_json }}
+        action: keep
+      - source_labels: [__meta_openstack_private_ip]
+        target_label: __address__
+        replacement: ${1}:{{ port }}
+      - source_labels: [__meta_openstack_instance_id]
+        target_label: instance
+      - target_label: service
+        replacement: {{ service }}
+      - target_label: host_role
+        replacement: runtime
+      - target_label: environment
+        replacement: {{ monitoring_environment | to_json }}
+{% endfor %}

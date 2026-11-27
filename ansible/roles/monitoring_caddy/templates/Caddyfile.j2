@@ -1,3 +1,11 @@
+{
+	metrics
+}
+
+http://:9180 {
+	metrics /metrics
+}
+
 {{ grafana_domain }} {
 	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy grafana:3000

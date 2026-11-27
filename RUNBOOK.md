@@ -1543,3 +1543,58 @@ ansible-playbook monitoring.yml -e @/tmp/cellestial-monitoring-vars.json
   обновлённый список через роль `runtime_host` с параметрами этого окружения или
   штатно пересоздайте окружения. Проверьте из нового и ранее активного пользовательского
   kernel, что запрос к публичному IP VPS4 на 443 не проходит.
+
+## Мониторинг VPS4
+
+Откройте [Cellestial — Services & Infrastructure](https://grafana.cellestial.ru/d/cellestial-services-infra/).
+Стек разворачивается через `ansible/monitoring.yml`. Проверяйте адреса
+`monitoring_private_ip` и `app_backend_address`, сеть
+`monitoring_runtime_network` и наличие соответствующих ролей в inventory.
+Прокси микросервисов использует `microservices_metrics_scraper_address`,
+равный приватному адресу VPS4.
+
+Перед выкладкой подготовьте в Ansible Vault
+`vault_monitoring_grafana_admin`, `vault_monitoring_openstack`,
+`vault_monitoring_prometheus_cert` и `vault_monitoring_prometheus_key`.
+Учётная запись discovery должна читать inventory только нужного проекта.
+Задайте CA и проверяемое DNS-имя HTTPS listener runtime-agent через
+`monitoring_runtime_server_ca` и `monitoring_runtime_server_name`.
+Укажите отдельно адреса BFF, webhook-alerts и githubbot в
+`monitoring_optional_targets` после согласования с владельцами.
+Для каждой записи задаются service, instance, host_role, address и при
+необходимости path. При ротации обновите Vault, повторно примените
+playbook и убедитесь в успешном scrape обоих runtime jobs.
+
+Постоянные хосты опрашиваются индивидуально. Приватные endpoints
+микросервисов доступны на VPS2 через порт 9101. OpenStack discovery
+обновляется каждые 30 секунд и использует UUID для идентичности машины.
+При пропавшей цели проверьте ошибки discovery, metadata, сеть,
+`up`, последнее сообщение об ошибке scrape и состояние Environments
+по этому UUID. При включении мониторинга сначала замените свободные runtime-VPS.
+Активные экземпляры получат exporter при штатном пересоздании.
+Для установки exporter используется подготовка runtime-VPS после загрузки
+firewall. Продолжает использоваться опубликованный образ `2026.11.08-3`.
+
+Храните резервную копию provisioning из Git и зашифрованного Vault.
+Сохраняйте каталоги Prometheus и Grafana из `monitoring_data_dir`
+согласованным снимком или после остановки соответствующего контейнера.
+Восстанавливайте с исходными владельцами каталогов. После запуска
+проверьте datasource, дашборд и исторический диапазон. При недостатке
+места проверьте WAL, блоки TSDB, файловые системы и потребление соседних
+сервисов. Расширьте SSD или уменьшите срок хранения и лимит блоков,
+сделав резервную копию перед ручным удалением данных.
+
+Начальный предел блоков TSDB составляет 30 GB при сроке хранения
+14 дней. На общей приёмке измерьте число активных рядов, темп роста
+блоков, WAL, CPU и RSS при типичной нагрузке. Предел уточняйте с запасом
+на WAL, компактацию, ОС и будущий Loki. Проверьте появление новой цели
+за 60 секунд, исчезновение удалённой цели после двух успешных циклов,
+закрытие удалённого scrape для остальных источников, изоляцию kernel,
+mTLS и обязательный вход в Grafana с HSTS.
+
+Для runtime-подготовки передайте `runtime_monitoring` по штатному
+секретному каналу Ansible. Поля `scraper_ip`, `server_cert`,
+`server_key` и `client_ca` задают IPv4 VPS4, серверную пару данной
+машины и выделенный CA Prometheus. Приватный ключ не включается в
+образ. Подключение выдачи этих параметров к автоматическому
+provisioning Environments требуется подтвердить при интеграции.

@@ -1,0 +1,37 @@
+---
+- name: Создать системного пользователя экспортёра runtime
+  ansible.builtin.user:
+    name: node_exporter
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+
+- name: Скачать закреплённый архив экспортёра runtime
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/{{ node_exporter_archive }}.tar.gz"
+    checksum: "sha256:{{ node_exporter_sha256 }}"
+    dest: "/opt/{{ node_exporter_archive }}.tar.gz"
+    mode: "0644"
+
+- name: Распаковать экспортёр runtime
+  ansible.builtin.unarchive:
+    src: "/opt/{{ node_exporter_archive }}.tar.gz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/{{ node_exporter_archive }}/node_exporter"
+
+- name: Настроить системный сервис экспортёра runtime
+  ansible.builtin.template:
+    src: node-exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: runtime_host_node_exporter_unit
+
+- name: Запустить экспортёр runtime
+  ansible.builtin.systemd_service:
+    name: node_exporter
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if runtime_host_node_exporter_unit is changed else 'started' }}"
