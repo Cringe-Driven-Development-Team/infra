@@ -97,6 +97,7 @@ pulumi config set infra:s3Pool   ru-1
 pulumi config set infra:s3Bucket <имя-бакета>
 # Публичный бакет аватарок в том же пуле
 pulumi config set infra:avatarsBucket <имя-бакета>
+pulumi config set infra:privateFilesBucket <имя-приватного-бакета>
 ```
 
 Приватная VPS2 под Go API, Postgres и Redis (infra#59) — без публичного IP, в той же приватной сети;
@@ -134,6 +135,7 @@ A-запись домена находится под управлением Pul
 | фронт | `infra:s3Bucket` | статика фронтенда (релизы) | публичный | да, источник CDN-ресурса (`infra:cdn`) | пользователь стека (`s3AccessKey`) |
 | статика | `infra:staticBucket` | статические файлы продукта (картинки, шрифты) | публичный | да, источник своего CDN-ресурса | пользователь стека (`s3AccessKey`), CI репозитория `static` |
 | аватарки | `infra:avatarsBucket` | аватарки пользователей, бэкенд | публичный | нет | Go API (`avatarsAccessKey`) |
+| приватные файлы | `infra:privateFilesBucket` | приватные файлы Go | приватный | нет | Go API (`avatarsAccessKey`) |
 
 - Фронт отдаётся через CDN (`cdnDefaultDomain`, свой домен — `cdnCustomDomain`) или напрямую с
   `https://<s3PublicDomain>/<ключ>`; проверка — ниже, «Проверка S3».
@@ -234,6 +236,19 @@ av_aws s3 rm "s3://$AV_BUCKET/check.txt"                          # проход
 ```
 
 Новый ключ шлюз S3 признаёт не сразу: первые секунды (иногда минуты) — `InvalidAccessKeyId`.
+
+## Приватные файлы Go
+
+Selectel хранит файлы в бакете `infra:privateFilesBucket` типа `private`.
+Политика разрешает существующему ключу Go API читать и записывать объекты.
+Ключ уже передаётся из Vault через `AWS_*`. Имя из выхода `privateFilesBucket`
+передаётся в `private_files_bucket` Ansible и затем в `S3_PRIVATE_FILES_BUCKET` контейнера.
+
+После применения стека проверьте запись, чтение и анонимный GET одной и той же копии
+файла с ключом Go API. После выкладки backend повторите проверку
+[Go smoke-тестом](https://github.com/Cringe-Driven-Development-Team/backend/blob/main/docs/local-development.md#s3-для-аватаров-и-приватных-файлов),
+используя переменные окружения стенда. В PR достаточно указать совпадение байтов
+и HTTP 403. Тестовый объект удаляется ключом оператора.
 
 ## Свои домены
 

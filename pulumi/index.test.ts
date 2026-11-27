@@ -46,6 +46,7 @@ pulumi.runtime.setAllConfig({
   "infra:s3Pool": "ru-7",
   "infra:s3Bucket": "releases",
   "infra:avatarsBucket": "avatars",
+  "infra:privateFilesBucket": "private-files",
   "infra:backend": "true",
   "infra:backendFlavorName": "SL1.2-4096",
   "infra:auxiliary": "true",
@@ -120,7 +121,7 @@ describe("сборка модулей", () => {
       "auxiliaryBackupAccessKey", "auxiliaryBackupBucket", "auxiliaryBackupPoolName", "auxiliaryBackupSecretKey",
       "auxiliaryPublicIp", "avatarsAccessKey", "avatarsBucket", "avatarsCustomDomain", "avatarsPublicDomain", "avatarsSecretKey", "backendPrivateIp",
       "cdnCustomDomain", "cdnDefaultDomain", "cdnResourceId", "domain", "gatewayName", "gatewayPrivateIp",
-      "hooksDomain", "projectId", "publicIp",
+      "hooksDomain", "privateFilesBucket", "projectId", "publicIp",
       "runtimeAccountId", "runtimeAvailabilityZone", "runtimeBlockedPublicIps", "runtimeCaCert", "runtimeCaKey",
       "runtimeClientCert", "runtimeClientKey", "runtimeFlavorId", "runtimeImageId", "runtimeKeypairName",
       "runtimeNetworkId", "runtimeOsPassword", "runtimeOsUsername", "runtimeProjectId", "runtimeRegion",
@@ -138,7 +139,7 @@ describe("сборка модулей", () => {
     expect(await value(stack.cdnDefaultDomain)).toBe("cdn.selcdn.net");
   });
 
-  test("пользователь avatars: только объекты бакета аватарок", () => {
+  test("ключ Go API ограничен объектами аватарок и приватных файлов", async () => {
     const user = find("selectel:index/iamServiceuserV1:IamServiceuserV1", "avatars").inputs;
     expect(user.name).toBe("cellestialAvatarsUser");
     expect(user.roles).toEqual([{ roleName: "s3.bucket.user", scope: "project", projectId: "release-id" }]);
@@ -151,9 +152,18 @@ describe("сборка модулей", () => {
       { Sid: "BackendObjects", Effect: "Allow", Principal: { AWS: ["avatars-id"] },
         Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource: "arn:avatars/*" },
     ]);
-    // В политиках других бакетов пользователя avatars нет
+    expect(await value(stack.privateFilesBucket)).toBe("private-files");
+    expect(find("test:storage:BucketAccess", "private-files").inputs)
+      .toMatchObject({ bucket: "private-files", type: "private" });
+    expect(statements("private-files")).toEqual([
+      { Sid: "StackServiceUserFullAccess", Effect: "Allow", Principal: { AWS: ["release-id"] }, Action: "s3:*",
+        Resource: ["arn:private-files", "arn:private-files/*"] },
+      { Sid: "BackendObjects", Effect: "Allow", Principal: { AWS: ["avatars-id"] },
+        Action: ["s3:GetObject", "s3:PutObject"], Resource: "arn:private-files/*" },
+    ]);
+    // В политиках остальных бакетов пользователя avatars нет.
     const others = [...created.entries()]
-      .filter(([key]) => key.startsWith("aws:s3/bucketPolicy:BucketPolicy::") && !key.endsWith("::avatars"));
+      .filter(([key]) => key.startsWith("aws:s3/bucketPolicy:BucketPolicy::") && !key.endsWith("::avatars") && !key.endsWith("::private-files"));
     expect(others.length).toBeGreaterThan(0);
     for (const [, policy] of others) expect(policy.inputs.policy).not.toContain("avatars-id");
   });

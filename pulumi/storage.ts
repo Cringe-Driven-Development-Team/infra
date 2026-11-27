@@ -11,6 +11,7 @@ export interface Storage {
   releasesAccess: BucketAccess;
   avatarsCredentials: selectel.IamS3CredentialsV1;
   avatarsBucket: aws.s3.Bucket;
+  privateFilesBucket: aws.s3.Bucket;
   avatarsAccess: BucketAccess;
   staticBucket?: aws.s3.Bucket;
   staticAccess?: BucketAccess;
@@ -21,8 +22,8 @@ export interface Storage {
 export function createStorage(c: InfraConfig, f: Foundation): Storage {
   const { project, serviceUser, s3 } = f;
 
-  // Пользователь Go API для аватарок: s3.bucket.user сам по себе ничего не даёт — доступ только к
-  // объектам бакета аватарок по его политике (ниже, "avatars"). Пароль нужен API IAM, им никто не входит.
+  // Пользователь Go API получает доступ к объектам через политики бакетов.
+  // Пароль нужен API IAM, им никто не входит.
   const avatarsUser = new selectel.IamServiceuserV1("avatars", {
     name: "cellestialAvatarsUser",
     password: new random.RandomPassword("avatars-serviceuser", serviceUserPasswordArgs).result,
@@ -103,29 +104,45 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
   // политика. Политика Selectel действует только на авторизованные запросы (Principal "*" — «все
   // авторизованные»), поэтому правила PublicRead здесь нет: через S3 API (endpoint пула) анонимный
   // запрос получает 403 при любой политике.
-  new aws.s3.BucketPolicy("avatars", {
-    bucket: avatarsBucket.id,
-    policy: pulumi.all([avatarsBucket.arn, serviceUser.id, avatarsUser.id])
-      .apply(([arn, stackUserId, backendUserId]) => JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Sid: "StackServiceUserFullAccess",
-            Effect: "Allow",
-            Principal: { AWS: [stackUserId] },
-            Action: "s3:*",
-            Resource: [arn, `${arn}/*`],
-          },
-          {
-            Sid: "BackendObjects",
-            Effect: "Allow",
-            Principal: { AWS: [backendUserId] },
-            Action: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-            Resource: `${arn}/*`,
-          },
-        ],
-      })),
-  }, { provider: s3 });
+  const backendBucketPolicy = (name: string, bucket: aws.s3.Bucket, actions: string[]) =>
+    new aws.s3.BucketPolicy(name, {
+      bucket: bucket.id,
+      policy: pulumi.all([bucket.arn, serviceUser.id, avatarsUser.id])
+        .apply(([arn, stackUserId, backendUserId]) => JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Sid: "StackServiceUserFullAccess",
+              Effect: "Allow",
+              Principal: { AWS: [stackUserId] },
+              Action: "s3:*",
+              Resource: [arn, `${arn}/*`],
+            },
+            {
+              Sid: "BackendObjects",
+              Effect: "Allow",
+              Principal: { AWS: [backendUserId] },
+              Action: actions,
+              Resource: `${arn}/*`,
+            },
+          ],
+        })),
+    }, { provider: s3 });
+
+  backendBucketPolicy("avatars", avatarsBucket, ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]);
+
+  const privateFilesBucket = new aws.s3.Bucket("private-files", {
+    bucket: c.s3.privateFilesBucket,
+  }, { provider: s3, protect: true });
+
+  new BucketAccess("private-files", {
+    projectId: project.id,
+    pool: c.s3.pool,
+    bucket: privateFilesBucket.bucket,
+    type: "private",
+  }, { dependsOn: [privateFilesBucket] });
+
+  backendBucketPolicy("private-files", privateFilesBucket, ["s3:GetObject", "s3:PutObject"]);
 
   // Бакет статики продукта. Содержимое выкладывает CI репозитория static и может выложить заново,
   // поэтому forceDestroy, как у бакета релизов. Политики нет: пишет пользователь стека по роли member.
@@ -167,6 +184,7 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
     releasesAccess,
     avatarsCredentials,
     avatarsBucket,
+    privateFilesBucket,
     avatarsAccess,
     staticBucket,
     staticAccess,

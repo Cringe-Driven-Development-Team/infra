@@ -15,6 +15,7 @@ const base = {
   "infra:s3Pool": "ru-7",
   "infra:s3Bucket": "releases",
   "infra:avatarsBucket": "avatars",
+  "infra:privateFilesBucket": "private-files",
 };
 const load = (extra: Record<string, string> = {}) => {
   Object.assign(process.env, { OS_USERNAME: "u", OS_PASSWORD: "p", OS_DOMAIN_NAME: "123456" });

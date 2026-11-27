@@ -78,6 +78,7 @@ class DeploymentChecks(unittest.TestCase):
             'session_key: "{{ vault_session_key }}"\n'
             'bff_api_key: "{{ vault_bff_api_key }}"\n'
             'avatars_s3_access_key: fake-key\navatars_s3_secret_key: fake-secret\n'
+            'private_files_bucket: private-files\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'avatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
@@ -526,6 +527,7 @@ class DeploymentChecks(unittest.TestCase):
             app_bff_go_api_url=f"https://{address}:8443/api/v1",
             app_services=services, app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF,
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
+            private_files_bucket="private-files",
             s3_endpoint="https://s3.example.org",
             avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
             postgres_password="pg-secret",
@@ -563,6 +565,7 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(api["AWS_REGION"], "ru-7")
         self.assertEqual(api["AWS_ENDPOINT_URL_S3"], "https://s3.example.org")
         self.assertEqual(api["S3_AVATARS_BUCKET"], "avatars")
+        self.assertEqual(api["S3_PRIVATE_FILES_BUCKET"], "private-files")
         self.assertEqual(api["S3_AVATARS_PUBLIC_URL"], "https://avatars.example.org")
         again, again_env = self.render_host(services)
         self.assertEqual(again_env, env)

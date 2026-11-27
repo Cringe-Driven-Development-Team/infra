@@ -44,6 +44,7 @@ export const s3SecretKey = pulumi.secret(f.s3Credentials.secretKey);
 export const avatarsAccessKey = storage.avatarsCredentials.accessKey;
 export const avatarsSecretKey = pulumi.secret(storage.avatarsCredentials.secretKey);
 export const avatarsBucket = storage.avatarsBucket.bucket;
+export const privateFilesBucket = storage.privateFilesBucket.bucket;
 export const avatarsPublicDomain = storage.avatarsAccess.publicDomain;
 export const avatarsCustomDomain = c.dns.avatarsDomain ?? null;
 // Бакет статики: пишет ключ стека (s3AccessKey), публичный URL — https://<staticCustomDomain>/<ключ>
