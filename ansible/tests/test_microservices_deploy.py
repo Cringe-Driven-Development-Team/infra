@@ -77,22 +77,22 @@ class PreflightTests(TestCase):
             root = Path(temp)
             (root / 'roles.sql').write_text('fixture role provisioning')
             deployment = self.clean_deployment(module, root)
-            with (patch.object(deployment, 'check_cutover_evidence'),
+            with (patch.object(module, 'run', return_value=b''),
                   patch.object(deployment, 'require_empty_redis'),
                   patch.object(deployment, 'psql', side_effect=[b'', b'', b'']) as sql):
                 deployment.clean_start()
                 self.assertTrue((root / 'v2-active').is_file())
                 self.assertIn('CREATE DATABASE "app_db_services"', str(sql.call_args_list))
-            with (patch.object(deployment, 'check_cutover_evidence'),
+            with (patch.object(module, 'run', return_value=b''),
                   patch.object(deployment, 'require_empty_redis') as redis,
                   patch.object(deployment, 'psql', side_effect=[b'1', b'']) as sql):
                 deployment.clean_start()
                 self.assertNotIn('CREATE DATABASE', str(sql.call_args_list))
                 redis.assert_not_called()
             incompatible = self.clean_deployment(module, root, 'another_database')
-            with patch.object(incompatible, 'check_cutover_evidence'), self.assertRaisesRegex(ValueError, 'differs'):
+            with patch.object(module, 'run', return_value=b''), self.assertRaisesRegex(ValueError, 'differs'):
                 incompatible.clean_start()
-            with (patch.object(deployment, 'check_cutover_evidence'),
+            with (patch.object(module, 'run', return_value=b''),
                   patch.object(deployment, 'psql', return_value=b'') as sql,
                   self.assertRaisesRegex(ValueError, 'missing')):
                 deployment.clean_start()
@@ -103,12 +103,22 @@ class PreflightTests(TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             deployment = self.clean_deployment(module, root)
-            with (patch.object(deployment, 'check_cutover_evidence'),
+            with (patch.object(module, 'run', return_value=b''),
                   patch.object(deployment, 'psql', return_value=b'1') as sql,
                   self.assertRaisesRegex(ValueError, 'already exists')):
                 deployment.clean_start()
                 sql.assert_called_once()
             self.assertFalse((root / 'clean-start.json').exists())
+
+    def test_clean_start_refuses_running_monolith_without_database_changes(self):
+        module = load_driver()
+        with tempfile.TemporaryDirectory() as temp:
+            deployment = self.clean_deployment(module, Path(temp))
+            with (patch.object(module, 'run', return_value=b'running-api\n'),
+                  patch.object(deployment, 'psql') as sql):
+                with self.assertRaisesRegex(ValueError, 'monolith must be stopped'):
+                    deployment.clean_start()
+                sql.assert_not_called()
 
     @staticmethod
     def clean_deployment(module, root, database='app_db_services', redis_db=1):
