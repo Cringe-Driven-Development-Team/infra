@@ -1,0 +1,17 @@
+---
+- name: Перечитать конфигурацию Caddy мониторинга
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - exec
+      - -T
+      - caddy
+      - caddy
+      - reload
+      - --config
+      - /etc/caddy/Caddyfile
+      - --adapter
+      - caddyfile
+    chdir: "{{ monitoring_compose_dir }}"
+  changed_when: true

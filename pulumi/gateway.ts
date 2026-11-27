@@ -11,10 +11,29 @@ export interface Gateway {
 export function createGateway(c: InfraConfig, f: Foundation): Gateway {
   const withOs = { provider: f.os };
 
+  // Явная группа нужна, чтобы доступ к метрикам определялся адресом VPS4.
+  const securityGroup = c.monitoring ? new openstack.networking.SecGroup("gateway", {
+    name: "gateway",
+  }, withOs) : undefined;
+  if (securityGroup && c.monitoring) {
+    for (const port of [22, 80, 443, 9100]) {
+      new openstack.networking.SecGroupRule(`gateway-tcp${port}`, {
+        securityGroupId: securityGroup.id,
+        direction: "ingress",
+        ethertype: "IPv4",
+        protocol: "tcp",
+        portRangeMin: port,
+        portRangeMax: port,
+        remoteIpPrefix: port === 9100 ? `${c.monitoring.privateIp}/32` : "0.0.0.0/0",
+      }, withOs);
+    }
+  }
+
   const port = new openstack.networking.Port("gateway", {
     name: "gateway-port",
     networkId: f.network.id,
     fixedIps: [{ subnetId: f.subnet.id }],
+    securityGroupIds: securityGroup ? [securityGroup.id] : undefined,
   }, withOs);
 
   // Boot-диск единственной VPS — под будущий Postgres (docker volume), 20 ГБ;

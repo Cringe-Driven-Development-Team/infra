@@ -19,3 +19,4 @@ groups:
   backend: (openstack.metadata | default({})).get('role') == 'backend'
   # Вспомогательная VPS для сервиса вебхуков — плейбук auxiliary.yml
   auxiliary: (openstack.metadata | default({})).get('role') == 'auxiliary'
+  monitoring: (openstack.metadata | default({})).get('role') == 'monitoring'

@@ -51,6 +51,8 @@ pulumi.runtime.setAllConfig({
   "infra:auxiliary": "true",
   "infra:auxiliaryFlavorName": "SL1.2-4096",
   "infra:auxiliaryBackupBucket": "backups",
+  "infra:monitoringPrivateIp": "192.168.199.40",
+  "infra:grafanaDomain": "grafana.example.ru",
   "infra:runtime": "true",
   "infra:runtimeFlavorName": "SL1.1-2048",
   "infra:runtimeVolumeType": "basicssd.ru-9a",
@@ -61,8 +63,8 @@ pulumi.runtime.setAllConfig({
   "infra:dnsZone": "example.ru.",
 });
 
-const fixedIps: Record<string, string> = { gateway: "192.168.199.225", backend: "192.168.199.10", auxiliary: "192.168.199.30" };
-const floating: Record<string, string> = { gateway: "203.0.113.1", auxiliary: "203.0.113.2" };
+const fixedIps: Record<string, string> = { gateway: "192.168.199.225", backend: "192.168.199.10", auxiliary: "192.168.199.30", monitoring: "192.168.199.40" };
+const floating: Record<string, string> = { gateway: "203.0.113.1", auxiliary: "203.0.113.2", monitoring: "203.0.113.4" };
 
 pulumi.runtime.setMocks(
   {
@@ -94,7 +96,9 @@ pulumi.runtime.setMocks(
     },
     call(args) {
       if (args.token === "openstack:images/getImage:getImage") return { id: `image:${args.inputs.name}` };
-      if (args.token === "openstack:compute/getFlavor:getFlavor") return { id: `flavor:${args.inputs.name}` };
+      if (args.token === "openstack:compute/getFlavor:getFlavor") {
+        return { id: `flavor:${args.inputs.name ?? `${args.inputs.vcpus}-${args.inputs.ram}-${args.inputs.disk}`}` };
+      }
       return { id: `${args.token}-id`, ...args.inputs };
     },
   },
@@ -118,9 +122,9 @@ describe("сборка модулей", () => {
   test("outputs стека", async () => {
     expect(Object.keys(stack).sort()).toEqual([
       "auxiliaryBackupAccessKey", "auxiliaryBackupBucket", "auxiliaryBackupPoolName", "auxiliaryBackupSecretKey",
-      "auxiliaryPublicIp", "avatarsAccessKey", "avatarsBucket", "avatarsCustomDomain", "avatarsPublicDomain", "avatarsSecretKey", "backendPrivateIp",
+      "auxiliaryPrivateIp", "auxiliaryPublicIp", "avatarsAccessKey", "avatarsBucket", "avatarsCustomDomain", "avatarsPublicDomain", "avatarsSecretKey", "backendPrivateIp",
       "cdnCustomDomain", "cdnDefaultDomain", "cdnResourceId", "domain", "gatewayName", "gatewayPrivateIp",
-      "hooksDomain", "projectId", "publicIp",
+      "grafanaDomain", "hooksDomain", "monitoringPrivateIp", "monitoringPublicIp", "projectId", "publicIp",
       "runtimeAccountId", "runtimeAvailabilityZone", "runtimeBlockedPublicIps", "runtimeCaCert", "runtimeCaKey",
       "runtimeClientCert", "runtimeClientKey", "runtimeFlavorId", "runtimeImageId", "runtimeKeypairName",
       "runtimeNetworkId", "runtimeOsPassword", "runtimeOsUsername", "runtimeProjectId", "runtimeRegion",
@@ -158,10 +162,34 @@ describe("сборка модулей", () => {
     for (const [, policy] of others) expect(policy.inputs.policy).not.toContain("avatars-id");
   });
 
+  test("VPS4: фиксированный порт, загрузочный SSD и доступ к экспортёрам", async () => {
+    expect(await value(stack.monitoringPublicIp)).toBe("203.0.113.4");
+    expect(stack.monitoringPrivateIp).toBe("192.168.199.40");
+    expect(find("openstack:networking/port:Port", "monitoring").inputs).toMatchObject({
+      fixedIps: [{ subnetId: "private-id", ipAddress: "192.168.199.40" }],
+      securityGroupIds: ["monitoring-id"],
+    });
+    expect(find("openstack:blockstorage/volume:Volume", "monitoring").inputs)
+      .toMatchObject({ size: 125, volumeType: "fast.ru-9a", enableOnlineResize: true });
+    expect(find("openstack:compute/instance:Instance", "monitoring").inputs)
+      .toMatchObject({ flavorId: "flavor:4-8192-0", blockDevices: [{ bootIndex: 0, deleteOnTermination: false }] });
+
+    const rule = (name: string) => find("openstack:networking/secGroupRule:SecGroupRule", name).inputs;
+    expect(rule("monitoring-ssh")).toMatchObject({ portRangeMin: 22, portRangeMax: 22, remoteIpPrefix: "192.168.199.30/32" });
+    expect(rule("monitoring-http")).toMatchObject({ portRangeMin: 80, portRangeMax: 80, remoteIpPrefix: "0.0.0.0/0" });
+    expect(rule("monitoring-https")).toMatchObject({ portRangeMin: 443, portRangeMax: 443, remoteIpPrefix: "0.0.0.0/0" });
+    for (const [name, group] of [["gateway-tcp9100", "gateway-id"], ["auxiliary-metrics", "auxiliary-id"]]) {
+      expect(rule(name)).toMatchObject({
+        portRangeMin: 9100, portRangeMax: 9100, remoteIpPrefix: "192.168.199.40/32", securityGroupId: group,
+      });
+    }
+  });
+
   test("DNS: адреса VPS и CDN-ресурс из своих модулей", () => {
     const rrset = (name: string) => find("selectel:index/domainsRrsetV2:DomainsRrsetV2", name).inputs;
     expect(rrset("app")).toMatchObject({ name: "example.ru.", type: "A", records: [{ content: "203.0.113.1" }] });
     expect(rrset("hooks")).toMatchObject({ name: "hooks.example.ru.", type: "A", records: [{ content: "203.0.113.2" }] });
+    expect(rrset("grafana")).toMatchObject({ name: "grafana.example.ru.", type: "A", records: [{ content: "203.0.113.4" }] });
     expect(rrset("cdn")).toMatchObject({ name: "cdn.example.ru.", type: "CNAME", records: [{ content: "cdn.selcdn.net." }] });
     expect(find("test:storage:CdnDomain", "cdn").inputs).toMatchObject({ resourceId: "cdn-id", domain: "cdn.example.ru" });
   });
@@ -223,7 +251,7 @@ describe("runtime-VPS", () => {
     expect(await value(stack.runtimeVolumeType)).toBe("basicssd.ru-9a");
     expect(await value(stack.runtimeCaCert)).toBe("ca-cert");
     expect(await value(stack.runtimeClientCert)).toBe("client-cert");
-    expect(await value(stack.runtimeBlockedPublicIps)).toBe("203.0.113.1,203.0.113.2");
+    expect(await value(stack.runtimeBlockedPublicIps)).toBe("203.0.113.1,203.0.113.2,203.0.113.4");
   });
 
   test("секретные выходы помечены секретом", async () => {

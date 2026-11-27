@@ -9,3 +9,6 @@ firewall_rules:
 hooks_domain: hooks.cellestial.ru
 # Общий с ролью caddy параметр, поэтому он задан в inventory, а не defaults hooks.
 caddy_image: caddy:2.11-alpine
+
+ssh_hardening_jump_targets: "{{ [monitoring_private_ip ~ ':22'] if monitoring_private_ip | default('') else [] }}"
+node_exporter_bind_ip: "{{ auxiliary_private_ip }}"

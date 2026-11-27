@@ -47,6 +47,7 @@ export interface InfraConfig {
     backupPool: string;
     backupUserName: string;
   };
+  monitoring?: { privateIp: string; domain: string; volumeSize: number };
   runtime?: { flavor: FlavorRule; imageId: string; userName: string; volumeType: string };
   s3: {
     pool: string;
@@ -203,6 +204,11 @@ export function loadConfig(): InfraConfig {
   if (runtimeEnabled && !backendEnabled) {
     throw new Error("infra:runtime задан без infra:backend: runtime-VPS пускают SSH и TLS только с VPS2");
   }
+  const monitoringPrivateIp = cfg.get("monitoringPrivateIp");
+  const grafanaDomain = cfg.get("grafanaDomain");
+  if (monitoringPrivateIp && (!auxiliaryEnabled || !cfg.get("dnsZone") || !grafanaDomain)) {
+    throw new Error("VPS4 требует VPS3, infra:dnsZone и infra:grafanaDomain");
+  }
   const volumeType = cfg.require("volumeType");      // например fast.ru-9a
 
   return {
@@ -238,6 +244,9 @@ export function loadConfig(): InfraConfig {
           backupPool: cfg.get("auxiliaryBackupPool") ?? s3Pool,
           backupUserName: cfg.get("auxiliaryBackupUserName") ?? "cellestialAuxiliaryBackupUser",
         }
+      : undefined,
+    monitoring: monitoringPrivateIp && grafanaDomain
+      ? { privateIp: monitoringPrivateIp, domain: grafanaDomain, volumeSize: cfg.getNumber("monitoringVolumeSize") ?? 125 }
       : undefined,
     runtime: runtimeEnabled
       ? {

@@ -5,6 +5,7 @@ import { loadConfig } from "./config";
 import { createDomains } from "./domains";
 import { createFoundation } from "./foundation";
 import { createGateway } from "./gateway";
+import { createMonitoring } from "./monitoring";
 import { createRuntime } from "./runtime";
 import { createStorage } from "./storage";
 
@@ -15,8 +16,11 @@ const gateway = createGateway(c, f);
 const backend = createBackend(c, f, gateway.port);
 const storage = createStorage(c, f);
 const auxiliary = createAuxiliary(c, f);
-const runtime = createRuntime(c, f, backend, [gateway.floatingIp.address, auxiliary?.floatingIp.address]);
-createDomains(c, f, gateway, storage, auxiliary);
+const monitoring = c.monitoring && auxiliary ? createMonitoring(c, c.monitoring, f, auxiliary) : undefined;
+const runtime = createRuntime(c, f, backend, [
+  gateway.floatingIp.address, auxiliary?.floatingIp.address, monitoring?.address,
+]);
+createDomains(c, f, gateway, storage, auxiliary, monitoring);
 
 export const projectId = f.project.id;
 export const publicIp = gateway.floatingIp.address;
@@ -53,6 +57,10 @@ export const staticCustomDomain = c.dns.staticDomain ?? null;
 export const staticCdnResourceId = storage.staticCdn?.id ?? null;
 export const staticCdnDefaultDomain = storage.staticCdn?.cdnDomain ?? null;
 // Вспомогательная VPS (infra:auxiliary): адрес, домен вебхуков, бакет и ключ бэкапов restic
+export const auxiliaryPrivateIp = auxiliary?.port.allFixedIps.apply((ips) => ips[0]) ?? null;
+export const monitoringPrivateIp = c.monitoring?.privateIp ?? null;
+export const monitoringPublicIp = monitoring?.address ?? null;
+export const grafanaDomain = c.monitoring?.domain ?? null;
 export const auxiliaryPublicIp = auxiliary?.floatingIp.address ?? null;
 export const hooksDomain = c.dns.hooksDomain ?? null;
 export const auxiliaryBackupBucket = auxiliary?.backupBucket.bucket ?? null;

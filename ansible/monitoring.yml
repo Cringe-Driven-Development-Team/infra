@@ -1,0 +1,27 @@
+---
+- name: Настроить пересылку SSH с VPS3 на VPS4
+  hosts: auxiliary
+  become: true
+  pre_tasks:
+    - name: Проверить адрес назначения
+      ansible.builtin.assert:
+        that: monitoring_private_ip is defined and monitoring_private_ip | length > 0
+  roles:
+    - ssh_hardening
+
+- name: Подготовить VPS4 и запустить Caddy
+  hosts: monitoring
+  become: true
+  roles:
+    - users
+    - common
+    - ssh_hardening
+    - firewall
+    - docker
+    - monitoring_caddy
+
+- name: Установить экспортёры на VPS1 и VPS3
+  hosts: gateway:auxiliary
+  become: true
+  roles:
+    - node_exporter

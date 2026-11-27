@@ -33,6 +33,7 @@ config:
   infra:runtimeFlavorName: SL1.1-2048
   infra:runtimeVolumeType: fast.ru-9a
   infra:hooksDomain: hooks.cellestial.ru
+  infra:grafanaDomain: grafana.cellestial.ru
   infra:auxiliaryBackupBucket: cellestial-auxiliary-backups-0
   infra:auxiliaryBackupPool: ru-1
   infra:s3Pool: ru-7
