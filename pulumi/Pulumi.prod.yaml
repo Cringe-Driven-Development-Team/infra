@@ -40,4 +40,5 @@ config:
   infra:s3Bucket: cellestial-frontend-releases-0
   infra:s3PublicRead: "false"
   infra:avatarsBucket: cellestial-avatars-0
+  infra:privateFilesBucket: cellestial-private-files-0
   infra:staticBucket: cellestial-static-0
