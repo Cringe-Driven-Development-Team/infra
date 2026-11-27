@@ -13,7 +13,7 @@
     "img-src 'self' https://" ~ frontend_cdn_domain ~ " https://" ~ frontend_static_domain
         ~ " https://" ~ avatars_public_domain ~ " data:",
     "font-src 'self' https://" ~ frontend_static_domain,
-    "connect-src 'self'",
+    "connect-src 'self' " ~ private_files_upload_origin,
     "manifest-src 'self'",
     "worker-src 'self'",
     "base-uri 'none'",

@@ -135,7 +135,7 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
     bucket: c.s3.privateFilesBucket,
   }, { provider: s3, protect: true });
 
-  new BucketAccess("private-files", {
+  const privateFilesAccess = new BucketAccess("private-files", {
     projectId: project.id,
     pool: c.s3.pool,
     bucket: privateFilesBucket.bucket,
@@ -143,6 +143,17 @@ export function createStorage(c: InfraConfig, f: Foundation): Storage {
   }, { dependsOn: [privateFilesBucket] });
 
   backendBucketPolicy("private-files", privateFilesBucket, ["s3:GetObject", "s3:PutObject"]);
+
+  if (c.dns.appDomain) {
+    new aws.s3.BucketCorsConfiguration("private-files", {
+      bucket: privateFilesBucket.id,
+      corsRules: [{
+        allowedOrigins: [`https://${c.dns.appDomain}`],
+        allowedMethods: ["PUT"],
+        allowedHeaders: ["content-type"],
+      }],
+    }, { provider: s3, dependsOn: [privateFilesAccess] });
+  }
 
   // Бакет статики продукта. Содержимое выкладывает CI репозитория static и может выложить заново,
   // поэтому forceDestroy, как у бакета релизов. Политики нет: пишет пользователь стека по роли member.

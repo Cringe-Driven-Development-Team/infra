@@ -59,6 +59,7 @@ s3_region: ru-7                                    # infra:s3Pool, он же р�
 s3_force_path_style: true                          # S3-клиент бэка — path-style
 avatars_bucket: cellestial-avatars-0               # выход avatarsBucket
 private_files_bucket: cellestial-private-files-0   # выход privateFilesBucket
+private_files_upload_origin: "https://{{ private_files_bucket }}.{{ s3_endpoint | urlsplit('hostname') }}"
 # Публичный URL аватарки — https://<avatars_public_domain>/<ключ>: свой домен бакета (выход
 # avatarsCustomDomain), при пересоздании стека не меняется. Сертификат домена выпущен в панели;
 # технический <uuid>.selstorage.ru — выход avatarsPublicDomain.
