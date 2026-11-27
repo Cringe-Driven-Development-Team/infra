@@ -72,6 +72,7 @@ export function createRuntime(
   const ingress: [string, string, number | undefined, pulumi.Input<string>][] = [
     ["ssh", "tcp", 22, backendAddress],
     ["agent-tls", "tcp", 8443, backendAddress],
+    ["agent-grpc", "tcp", 9090, backendAddress],
     ["icmp", "icmp", undefined, backendAddress],
   ];
   for (const [ruleName, protocol, port, remoteIpPrefix] of ingress) {

@@ -1,0 +1,14 @@
+BEGIN;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+{% for service in microservices_order %}
+{% for kind in ['owner', 'app'] %}
+SELECT format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT', '{{ service }}_{{ kind }}')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ service }}_{{ kind }}')
+\gexec
+ALTER ROLE {{ service }}_{{ kind }} PASSWORD '{{ vault_microservices_postgres[service][kind] | replace("'", "''") }}';
+{% endfor %}
+CREATE SCHEMA IF NOT EXISTS {{ service }} AUTHORIZATION {{ service }}_owner;
+REVOKE ALL ON SCHEMA {{ service }} FROM PUBLIC;
+GRANT USAGE ON SCHEMA {{ service }} TO {{ service }}_app;
+{% endfor %}
+COMMIT;

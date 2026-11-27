@@ -59,7 +59,9 @@ class DeploymentChecks(unittest.TestCase):
                                 }
                             },
                             "backend": {"hosts": {"test-backend": {
-                                "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
+                                "ansible_host": "127.0.0.1",
+                                        "ansible_connection": "local",
+                                    }}}
                         }
                     }
                 }
@@ -102,8 +104,7 @@ class DeploymentChecks(unittest.TestCase):
         ]
         if tag is not None:
             command += ["-e", json.dumps({variable: tag})]
-        if extra:
-            command += ["-e", json.dumps(extra)]
+        command += ["-e", json.dumps({"ansible_become": False, **(extra or {})})]
         return subprocess.run(
             command,
             cwd=ANSIBLE,
@@ -116,6 +117,14 @@ class DeploymentChecks(unittest.TestCase):
     def test_valid_digest_and_vault(self):
         result = self.validate(BACKEND_REF)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_monolith_deploy_is_disabled_after_the_cutover_marker(self):
+        marker = self.root / "microservices" / "v2-active"
+        marker.parent.mkdir()
+        marker.touch()
+        result = self.validate(BACKEND_REF, extra={"app_compose_dir": str(self.root)})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Microservices cutover protects the database", result.stdout + result.stderr)
 
     def test_totp_key_validation_rejects_invalid_values_without_leaks(self):
         path = self.root / "group_vars/all/vault.yml"
@@ -572,6 +581,11 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(set(config["volumes"]), {"caddy_data", "caddy_config"})
         bff = config["services"]["bff"]
         self.assertEqual(bff["environment"]["GO_API_URL"], "https://192.168.199.10:8443/api/v1")
+
+        self.assertEqual(bff["extra_hosts"], [
+            "identity.internal.cellestial.ru=192.168.199.10",
+            "workspace.internal.cellestial.ru=192.168.199.10",
+        ])
         # mTLS к Go (infra#160): клиентские файлы — каталогом read-only, имена согласованы с frontend#257
         self.assertEqual({k: v for k, v in bff["environment"].items() if k.startswith("GO_API_TLS_")}, {
             "GO_API_TLS_CA_FILE": "/run/secrets/go-api/ca.crt",
@@ -676,7 +690,11 @@ class DeploymentChecks(unittest.TestCase):
                                 cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # на gateway — только сертификат BFF для проверок Go (infra#160), выкатка — только на VPS2
-        certificate, deploy = result.stdout.split("Deploy backend")
+        _, guarded = result.stdout.split("Reject deployment of the monolith after the microservices cutover", 1)
+        guard, certificate_and_deploy = guarded.split("BFF client certificate on the gateway", 1)
+        certificate, deploy = certificate_and_deploy.split("Deploy backend", 1)
+        self.assertIn("test-backend", guard)
+        self.assertNotIn("test-vps", guard)
         self.assertNotIn("test-backend", certificate)
         self.assertIn("test-vps", certificate)
         self.assertNotIn("test-vps", deploy)

@@ -1,0 +1,51 @@
+services:
+{% for service in microservices_order %}
+  {{ service }}:
+    image: {{ microservices_desired[service].image_ref | to_json }}
+    pull_policy: never
+    restart: unless-stopped
+    mem_limit: {{ microservices_limits[service].memory }}
+    cpus: {{ microservices_limits[service].cpu | to_json }}
+    stop_grace_period: 35s
+    env_file:
+      - path: {{ (service ~ '.env') | to_json }}
+        format: raw
+    volumes:
+      - ./tls/{{ service }}:/run/secrets/service:ro
+{% if service == 'environments' %}
+      - {{ microservices_runtime_secrets_dir }}:/run/secrets/runtime:ro
+      - {{ microservices_runtime_dir }}:/app/deploy/runtime:ro
+      - {{ microservices_runtime_work_dir }}:{{ microservices_runtime_work_dir }}
+{% endif %}
+    ports:
+{% if 'http' in microservices_ports[service] %}
+      - "{{ app_backend_address }}:{{ microservices_ports[service].http }}:8080"
+{% endif %}
+      - "127.0.0.1:{{ microservices_ports[service].grpc }}:9090"
+      - "127.0.0.1:{{ microservices_ports[service].admin }}:9091"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9091/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+    networks:
+      existing:
+        aliases:
+          - {{ service }}.internal.cellestial.ru
+{% endfor %}
+{% if microservices_metrics_scraper_address | default('') %}
+  metrics:
+    image: {{ app_api_proxy_image }}
+    restart: unless-stopped
+    ports:
+      - "{{ app_backend_address }}:9101:9101"
+    volumes:
+      - ./metrics:/etc/nginx/conf.d:ro
+    networks:
+      - existing
+{% endif %}
+networks:
+  existing:
+    external: true
+    name: cellestial_app

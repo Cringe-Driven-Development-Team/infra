@@ -25,6 +25,7 @@ app_mtls_certs:
     service: api-proxy
   client:
     cn: cellestial-bff
+    san: bff.internal.cellestial.ru
     usage: clientAuth
     owner: "{{ app_bff_uid }}"
     service: bff

@@ -1,9 +1,14 @@
 # Приватная VPS2 (infra#59): Go API, Postgres и Redis. Публичного IP нет: снаружи закрывает security
 # group Selectel (pulumi/backend.ts) — SSH и mTLS-прокси Go 8443 (infra#160) только с gateway. ufw — второй слой: Docker
 # публикует порты мимо него.
-firewall_rules:
-  - { name: SSH from gateway, port: "22", proto: tcp, src: "{{ app_gateway_address }}" }
-  - { name: Go API mTLS from gateway, port: "8443", proto: tcp, src: "{{ app_gateway_address }}" }
+firewall_rules: >-
+  {{ [
+    {'name': 'SSH from gateway', 'port': '22', 'proto': 'tcp', 'src': app_gateway_address},
+    {'name': 'Go API mTLS from gateway', 'port': '8443', 'proto': 'tcp', 'src': app_gateway_address},
+    {'name': 'Identity HTTPS from gateway', 'port': '8444', 'proto': 'tcp', 'src': app_gateway_address},
+    {'name': 'Workspace HTTPS from gateway', 'port': '8445', 'proto': 'tcp', 'src': app_gateway_address}
+  ] + ([{'name': 'Service metrics from scraper', 'port': '9101', 'proto': 'tcp',
+         'src': microservices_metrics_scraper_address}] if microservices_metrics_scraper_address | default('') else []) }}
 # Прямой HTTP к Go закрыт (infra#160): прежнее правило удаляется с VPS2
 firewall_removed_rules:
   - { name: Go API from gateway, port: "8080", proto: tcp, src: "{{ app_gateway_address }}" }

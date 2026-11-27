@@ -109,6 +109,9 @@ services:
       GO_API_TLS_KEY_FILE: /run/secrets/go-api/client.key
     volumes:
       - {{ app_mtls_dir }}:/run/secrets/go-api:ro
+    extra_hosts:
+      - "identity.internal.cellestial.ru:{{ app_backend_address }}"
+      - "workspace.internal.cellestial.ru:{{ app_backend_address }}"
     # BFF дожидается текущих запросов до 10 с (frontend#2)
     stop_grace_period: 15s
     healthcheck:

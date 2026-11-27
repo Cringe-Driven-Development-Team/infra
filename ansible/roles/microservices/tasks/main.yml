@@ -1,0 +1,257 @@
+---
+- name: Validate credentials and the complete service map
+  ansible.builtin.assert:
+    that:
+      - vault_workspace_cursor_key is match('^[A-Za-z0-9_-]{32,}$')
+      - vault_microservices_postgres.keys() | list | sort == ['environments', 'identity', 'workspace']
+      - vault_microservices_postgres[service].app is match('^[A-Za-z0-9_-]{32,}$')
+      - vault_microservices_postgres[service].owner is match('^[A-Za-z0-9_-]{32,}$')
+  loop: "{{ microservices_order }}"
+  loop_control:
+    loop_var: service
+    label: "{{ service }}"
+  no_log: true
+
+- name: Prepare private deployment directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ microservices_root }}"
+    - "{{ microservices_root }}/tls"
+
+- name: Issue service and probe identities for this operation
+  ansible.builtin.include_tasks: cert.yml
+  loop: "{{ microservices_selected_services + ['probe'] }}"
+  loop_control:
+    loop_var: certificate_service
+
+- name: Generate an Environments client identity under the runtime CA
+  when: "'environments' in microservices_selected_services"
+  block:
+    - name: Prepare the runtime TLS directory and artifacts
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.owner }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ microservices_runtime_secrets_dir }}", owner: 10001, mode: "0500" }
+        - { path: "{{ microservices_runtime_dir }}", owner: 0, mode: "0755" }
+        - { path: "{{ microservices_runtime_work_dir }}", owner: 10001, mode: "0700" }
+
+    - name: Install runtime SSH and certificate-signing private keys for Environments
+      ansible.builtin.copy:
+        content: "{{ item.value | trim }}\n"
+        dest: "{{ microservices_runtime_secrets_dir }}/{{ item.name }}"
+        owner: "10001"
+        group: "10001"
+        mode: "0400"
+      loop:
+        - { name: ssh_key, value: "{{ runtime_ssh_private_key }}" }
+        - { name: ca.key, value: "{{ runtime_ca_key }}" }
+      no_log: true
+
+    - name: Issue or renew the Environments identity for runtime agents
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/roles/app/tasks/mtls-cert.yml"
+      vars:
+        app_mtls_certs:
+          grpc-client:
+            cn: environments.internal.cellestial.ru
+            san: environments.internal.cellestial.ru
+            usage: clientAuth
+            owner: 10001
+        app_mtls_name: grpc-client
+        app_mtls_dir: "{{ microservices_runtime_secrets_dir }}"
+        bff_mtls_ca_cert: "{{ runtime_ca_cert }}"
+        bff_mtls_ca_key: "{{ runtime_ca_key }}"
+
+    - name: Refresh the runtime host and gRPC agent playbook
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/runtime/"
+        dest: "{{ microservices_runtime_dir }}/"
+        owner: root
+        group: root
+        mode: preserve
+
+- name: Install the service deployment tools
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ microservices_root }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0500"
+  loop:
+    - deploy.py
+    - probe.py
+
+- name: Install Compose settings and first cutover role provisioning
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ microservices_root }}/{{ item }}"
+    mode: "0600"
+    owner: root
+    group: root
+  loop:
+    - compose.yml
+    - roles.sql
+  no_log: true
+
+- name: Install temporary credentials for the initial offline transfer
+  when: microservices_first_cutover | default(false) | bool
+  ansible.builtin.template:
+    src: transfer.env.j2
+    dest: "{{ microservices_root }}/transfer.env"
+    mode: "0600"
+    owner: root
+    group: root
+  no_log: true
+
+- name: Configure the optional private service metrics proxy
+  when: microservices_metrics_scraper_address | default('') | length > 0
+  block:
+    - name: Validate the scraper address
+      ansible.builtin.assert:
+        that:
+          - microservices_metrics_scraper_address is match('^([0-9]{1,3}[.]){3}[0-9]{1,3}$')
+          - microservices_metrics_scraper_address.split('.') | map('int') | max < 256
+
+    - name: Create the metrics proxy configuration directory
+      ansible.builtin.file:
+        path: "{{ microservices_root }}/metrics"
+        owner: root
+        group: root
+        mode: "0755"
+        state: directory
+
+    - name: Render the private scrape endpoints
+      ansible.builtin.template:
+        src: metrics.conf.j2
+        dest: "{{ microservices_root }}/metrics/metrics.conf"
+        owner: root
+        group: root
+        mode: "0644"
+
+- name: Export the private Prometheus target inventory
+  ansible.builtin.template:
+    src: prometheus-targets.json.j2
+    dest: "{{ microservices_root }}/prometheus-targets.json"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write selected service application environments
+  ansible.builtin.template:
+    src: service.env.j2
+    dest: "{{ microservices_root }}/{{ service }}.env"
+    mode: "0600"
+    owner: root
+    group: root
+  loop: "{{ microservices_selected_services }}"
+  loop_control:
+    loop_var: service
+    label: "{{ service }}"
+  no_log: true
+
+- name: Write owner credentials and grants for migrations
+  ansible.builtin.template:
+    src: "{{ item.1 }}.j2"
+    dest: "{{ microservices_root }}/{{ item.0 }}-{{ item.1 }}"
+    mode: "0600"
+    owner: root
+    group: root
+  loop: "{{ microservices_selected_services | product(['owner.env', 'grants.sql']) | list }}"
+  vars:
+    service: "{{ item.0 }}"
+  no_log: true
+
+- name: Write the probe ports
+  ansible.builtin.copy:
+    dest: "{{ microservices_root }}/ports.json"
+    content: "{{ microservices_ports | to_json }}"
+    mode: "0600"
+
+- name: Record the operation input
+  ansible.builtin.copy:
+    dest: "{{ microservices_root }}/operation.json"
+    mode: "0600"
+    content: >-
+      {{ {
+        'selected': microservices_selected_services,
+        'before': microservices_before,
+        'desired': microservices_desired,
+        'cutover': microservices_first_cutover | default(false) | bool,
+        'workers_paused': microservices_workers_paused | default(microservices_first_cutover | default(false)) | bool,
+        'action': microservices_action,
+        'metrics': microservices_metrics_scraper_address | default('') | length > 0
+      } | to_json }}
+
+- name: Remove prior operation evidence
+  ansible.builtin.file:
+    path: "{{ microservices_root }}/result.json"
+    state: absent
+
+- name: Switch the selected services and collect host evidence
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ microservices_root }}/deploy.py"
+      - "{{ microservices_root }}/operation.json"
+  register: microservices_deploy_result
+  changed_when: microservices_deploy_result.rc == 0
+  failed_when: false
+
+- name: Remove temporary credentials for the offline transfer
+  when: microservices_first_cutover | default(false) | bool
+  ansible.builtin.file:
+    path: "{{ microservices_root }}/transfer.env"
+    state: absent
+
+- name: Read observed service versions even when switching failed
+  ansible.builtin.slurp:
+    src: "{{ microservices_root }}/result.json"
+  register: microservices_result
+
+- name: Record observed service versions
+  ansible.builtin.set_fact:
+    microservices_facts: "{{ microservices_result.content | b64decode | from_json }}"
+
+- name: Verify private application HTTPS with the BFF identity
+  ansible.builtin.include_tasks: https.yml
+  loop: "{{ microservices_selected_services | intersect(['identity', 'workspace']) }}"
+  loop_control:
+    loop_var: service
+  when: microservices_facts.checks[service].ready == 'passed'
+
+- name: Record successful Environments smoke from the native gRPC probe
+  ansible.builtin.set_fact:
+    microservices_facts: "{{ microservices_facts | combine({'checks': {'environments': {'smoke': 'passed'}}}, recursive=true) }}"
+  when:
+    - "'environments' in microservices_selected_services"
+    - microservices_facts.checks.environments.ready == 'passed'
+
+- name: Record the independently observed BFF version
+  ansible.builtin.import_tasks: bff.yml
+
+- name: Write the controller report
+  ansible.builtin.copy:
+    dest: "{{ microservices_result_path }}"
+    content: "{{ microservices_facts | to_nice_json }}\n"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+
+- name: Every selected service passes the required checks
+  ansible.builtin.assert:
+    that:
+      - microservices_deploy_result.rc == 0
+      - microservices_facts.observed[service] | default({}) == microservices_desired[service]
+      - microservices_facts.checks[service].values() | unique | list == ['passed']
+    fail_msg: "{{ microservices_deploy_result.stderr | default('Check the controller report.') }}"
+  loop: "{{ microservices_selected_services }}"
+  loop_control:
+    loop_var: service

@@ -97,6 +97,21 @@
     virtualenv: "{{ runtime_agent_home }}/venv"
     extra_args: --no-deps --force-reinstall
 
+- name: Install direct gRPC TLS material for the upgraded agent
+  when: runtime_agent_grpc | bool
+  ansible.builtin.copy:
+    content: "{{ item.value | trim }}\n"
+    dest: "{{ runtime_agent_config_dir }}/{{ item.name }}"
+    owner: "{{ runtime_agent_user }}"
+    group: "{{ runtime_agent_user }}"
+    mode: "0400"
+  loop:
+    - { name: grpc.crt, value: "{{ server_cert_pem }}" }
+    - { name: grpc.key, value: "{{ server_key_pem }}" }
+    - { name: grpc-ca.crt, value: "{{ ca_cert_pem }}" }
+  register: runtime_agent_tls
+  no_log: true
+
 - name: Write the agent settings without a session
   ansible.builtin.template:
     src: agent.env.j2
@@ -104,6 +119,7 @@
     owner: root
     group: root
     mode: "0600"
+  register: runtime_agent_settings
 
 - name: Install the agent service unit of the project
   ansible.builtin.copy:
@@ -112,6 +128,7 @@
     owner: root
     group: root
     mode: "0644"
+  register: runtime_agent_unit
 
 - name: Agent unit drop-in directory
   ansible.builtin.file:
@@ -144,12 +161,15 @@
     daemon_reload: true
     enabled: true
     # Уже запущенный процесс получает новые группы только после рестарта.
-    state: "{{ 'restarted' if runtime_agent_account is changed else 'started' }}"
+    state: >-
+      {{ 'restarted' if runtime_agent_account is changed or runtime_agent_settings is changed
+         or runtime_agent_unit is changed or runtime_agent_tls is changed or runtime_agent_wheel_copy is changed
+         or runtime_agent_requirements is changed else 'started' }}
 
-- name: The agent listens on loopback
+- name: Wait for the configured legacy or gRPC agent listener
   ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: "{{ runtime_agent_port }}"
+    host: "{{ private_ip if runtime_agent_grpc | bool else '127.0.0.1' }}"
+    port: "{{ 9090 if runtime_agent_grpc | bool else runtime_agent_port }}"
     timeout: 60
 
 - name: Read the running agent PID  # noqa: command-instead-of-module

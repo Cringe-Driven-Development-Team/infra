@@ -1,0 +1,38 @@
+---
+- name: Probe the private HTTPS API with and without the S2S key
+  ansible.builtin.command:
+    argv:
+      - curl
+      - --silent
+      - --max-time
+      - "10"
+      - --output
+      - /dev/null
+      - --write-out
+      - "%{http_code}"
+      - --cacert
+      - "{{ app_mtls_dir }}/ca.crt"
+      - --cert
+      - "{{ app_mtls_dir }}/client.crt"
+      - --key
+      - "{{ app_mtls_dir }}/client.key"
+      - --resolve
+      - "{{ service }}.internal.cellestial.ru:{{ microservices_ports[service].http }}:{{ app_backend_address }}"
+      - --header
+      - "{{ 'X-BFF-Key: ' ~ bff_api_key if item == 401 else 'X-BFF-Key:' }}"
+      - "https://{{ service }}.internal.cellestial.ru:{{ microservices_ports[service].http }}/api/v1/{{ 'users/me' if service == 'identity' else 'notebooks' }}"
+  loop:
+    - 403
+    - 401
+  delegate_to: "{{ groups['gateway'][0] }}"
+  register: microservices_https
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Record the private HTTPS smoke result
+  ansible.builtin.set_fact:
+    microservices_facts: >-
+      {{ microservices_facts | combine({'checks': {service: {'smoke':
+         'passed' if microservices_https.results | map(attribute='stdout') | list == ['403', '401'] else 'failed'}}},
+         recursive=true) }}

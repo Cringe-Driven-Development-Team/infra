@@ -137,81 +137,91 @@
 - name: Prepare the disk workspace before starting the agent
   ansible.builtin.import_tasks: workspace.yml
 
-# --- TLS-прокси API агента ---------------------------------------------------------------------------
-- name: Remove the default nginx site
+- name: Remove the old HTTP proxy site for a gRPC agent
+  when: (agent_service | default('') | basename) == 'cellestial-agent-grpc.service'
   ansible.builtin.file:
-    path: /etc/nginx/sites-enabled/default
+    path: /etc/nginx/conf.d/cellestial-agent.conf
     state: absent
   notify: Reload nginx
 
-- name: TLS directory of the proxy
-  ansible.builtin.file:
-    path: /etc/nginx/cellestial
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-
-- name: Proxy certificates and key from the backend
-  ansible.builtin.copy:
-    content: "{{ item.content | trim }}\n"
-    dest: /etc/nginx/cellestial/{{ item.name }}
-    owner: root
-    group: root
-    mode: "{{ item.mode }}"
-  loop:
-    - { name: server.crt, content: "{{ server_cert_pem }}", mode: "0644" }
-    - { name: server.key, content: "{{ server_key_pem }}", mode: "0600" }
-    - { name: ca.crt, content: "{{ ca_cert_pem }}", mode: "0644" }
-  loop_control:
-    label: "{{ item.name }}"
-  notify: Reload nginx
-  no_log: true
-
-- name: Agent proxy site
-  ansible.builtin.template:
-    src: nginx-agent.conf.j2
-    dest: /etc/nginx/conf.d/cellestial-agent.conf
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Reload nginx
-
-- name: Nginx waits for the network after reboot
+- name: Configure the existing HTTP agent proxy when provisioning an HTTP agent
+  when: (agent_service | default('') | basename) != 'cellestial-agent-grpc.service'
   block:
-    - name: Nginx drop-in directory
+    # --- TLS-прокси API агента ---------------------------------------------------------------------------
+    - name: Remove the default nginx site
       ansible.builtin.file:
-        path: /etc/systemd/system/nginx.service.d
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: TLS directory of the proxy
+      ansible.builtin.file:
+        path: /etc/nginx/cellestial
         state: directory
         owner: root
         group: root
-        mode: "0755"
+        mode: "0700"
 
-    - name: Nginx network drop-in
+    - name: Proxy certificates and key from the backend
+      ansible.builtin.copy:
+        content: "{{ item.content | trim }}\n"
+        dest: /etc/nginx/cellestial/{{ item.name }}
+        owner: root
+        group: root
+        mode: "{{ item.mode }}"
+      loop:
+        - { name: server.crt, content: "{{ server_cert_pem }}", mode: "0644" }
+        - { name: server.key, content: "{{ server_key_pem }}", mode: "0600" }
+        - { name: ca.crt, content: "{{ ca_cert_pem }}", mode: "0644" }
+      loop_control:
+        label: "{{ item.name }}"
+      notify: Reload nginx
+      no_log: true
+
+    - name: Agent proxy site
       ansible.builtin.template:
-        src: nginx-network.conf.j2
-        dest: /etc/systemd/system/nginx.service.d/10-cellestial-network.conf
+        src: nginx-agent.conf.j2
+        dest: /etc/nginx/conf.d/cellestial-agent.conf
         owner: root
         group: root
         mode: "0644"
-      register: runtime_host_nginx_dropin
+      notify: Reload nginx
 
-- name: Check the nginx configuration
-  ansible.builtin.command: nginx -t
-  changed_when: false
+    - name: Nginx waits for the network after reboot
+      block:
+        - name: Nginx drop-in directory
+          ansible.builtin.file:
+            path: /etc/systemd/system/nginx.service.d
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
 
-- name: Run nginx
-  ansible.builtin.systemd_service:
-    name: nginx
-    daemon_reload: "{{ runtime_host_nginx_dropin is changed }}"
-    enabled: true
-    state: started
+        - name: Nginx network drop-in
+          ansible.builtin.template:
+            src: nginx-network.conf.j2
+            dest: /etc/systemd/system/nginx.service.d/10-cellestial-network.conf
+            owner: root
+            group: root
+            mode: "0644"
+          register: runtime_host_nginx_dropin
 
-- name: Apply the proxy configuration
-  ansible.builtin.meta: flush_handlers
+    - name: Check the nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
 
-- name: The proxy listens on the private address
-  ansible.builtin.wait_for:
-    host: "{{ private_ip }}"
-    port: "{{ runtime_host_proxy_port }}"
-    timeout: 30
+    - name: Run nginx
+      ansible.builtin.systemd_service:
+        name: nginx
+        daemon_reload: "{{ runtime_host_nginx_dropin is changed }}"
+        enabled: true
+        state: started
+
+    - name: Apply the proxy configuration
+      ansible.builtin.meta: flush_handlers
+
+    - name: The proxy listens on the private address
+      ansible.builtin.wait_for:
+        host: "{{ private_ip }}"
+        port: "{{ runtime_host_proxy_port }}"
+        timeout: 30
