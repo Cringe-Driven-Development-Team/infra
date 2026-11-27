@@ -97,10 +97,16 @@ class MtlsCertificates(unittest.TestCase):
 
     def test_ca_rotation_and_forced_replacement(self):
         mtls = self.host / 'mtls'
-        self.run_role('client')
+        legacy_client = {
+            'client': {'cn': 'cellestial-bff', 'usage': 'clientAuth',
+                       'owner': os.getuid(), 'group': os.getgid()},
+        }
+        self.run_role('client', app_mtls_certs=legacy_client)
+        self.assertIn('APPLIED client', self.run_role('client'))
         details = self.text('client', '-subject', '-ext', 'extendedKeyUsage', '-nameopt', 'RFC2253')
         self.assertIn('subject=CN=cellestial-bff', details)
         self.assertIn('TLS Web Client Authentication', details)
+        self.assertIn('DNS:bff.internal.cellestial.ru', self.text('client', '-ext', 'subjectAltName'))
         self.assertNotIn('IP Address', self.text('client', '-text'))
         old_cert = (mtls / 'client.crt').read_text()
         old_key = openssl('pkey', '-in', str(mtls / 'client.key'), '-pubout').stdout
@@ -117,6 +123,7 @@ class MtlsCertificates(unittest.TestCase):
         old.write_text(old_cert)
         self.assertNotEqual(openssl('verify', '-CAfile', str(mtls / 'ca.crt'), str(old), check=False).returncode, 0)
         openssl('verify', '-CAfile', str(mtls / 'ca.crt'), '-purpose', 'sslclient', str(mtls / 'client.crt'))
+        self.assertIn('DNS:bff.internal.cellestial.ru', self.text('client', '-ext', 'subjectAltName'))
 
     def test_local_playbook_issues_a_client_certificate_for_the_current_user(self):
         home = self.root / 'home'
