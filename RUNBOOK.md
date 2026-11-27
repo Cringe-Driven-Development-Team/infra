@@ -843,7 +843,7 @@ backend#42. Выполнить тот же `deploy-backend.yml`, заменив 
 
 | Что | Где | Срок |
 |---|---|---|
-| CA `Cellestial BFF-Go CA` (ECDSA P-256), отдельный от runtime | `vault_bff_mtls_ca_cert`, `vault_bff_mtls_ca_key`; ключ — только у controller при подписи | 5 лет, до 2031-11-22 |
+| CA `Cellestial BFF-Go CA` (ECDSA P-256), отдельный от runtime | `vault_bff_mtls_ca_cert`, `vault_bff_mtls_ca_key`; ключ — только у controller при подписи | 5 лет, до 2031-11-26 |
 | серверный `cellestial-go-api`: serverAuth, IP SAN приватного адреса VPS2 | VPS2 `/opt/cellestial/mtls/{ca.crt,server.crt,server.key}`, root, 0400; монтируется read-only только в `api-proxy` | 30 дней |
 | клиентский `cellestial-bff`: clientAuth | gateway `/opt/cellestial/mtls/{ca.crt,client.crt,client.key}`, uid 1000 (`bun`), 0400; read-only только в `bff` (`GO_API_TLS_CA_FILE`, `GO_API_TLS_CERT_FILE`, `GO_API_TLS_KEY_FILE`) | 30 дней |
 
@@ -914,7 +914,7 @@ sudo openssl x509 -in /opt/cellestial/mtls/client.crt -noout -subject -enddate
    перевыпустить локальный сертификат (`local-mtls.yml`).
 
 Плановая замена ключей без компрометации — `gh workflow run mtls.yml -f force=true`. Замена CA до
-истечения (до 2031-11-22) — те же шаги 1–4 за 1–2 месяца.
+истечения (до 2031-11-26) — те же шаги 1–4 за 1–2 месяца.
 
 ### Первая выкладка
 
