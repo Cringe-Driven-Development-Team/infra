@@ -1,0 +1,12 @@
+server {
+    listen 9101;
+    allow {{ microservices_metrics_scraper_address }};
+    deny all;
+{% for service in microservices_order %}
+    location = /{{ service }}/metrics {
+        limit_except GET { deny all; }
+        proxy_pass http://{{ service }}.internal.cellestial.ru:9091/metrics;
+    }
+{% endfor %}
+    location / { return 404; }
+}

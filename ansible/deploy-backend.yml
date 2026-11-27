@@ -17,6 +17,23 @@
           Supply backend_image_ref=<image>@sha256:<digest> and an inventory with one gateway and one backend VPS.
       tags: validation
 
+- name: Reject deployment of the monolith after the microservices cutover
+  hosts: backend
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read the microservices cutover marker
+      ansible.builtin.stat:
+        path: "{{ app_compose_dir | default('/opt/cellestial') }}/microservices/v2-active"
+      register: backend_v2_marker
+      tags: validation
+
+    - name: The legacy deployment is only valid before the microservices cutover
+      ansible.builtin.assert:
+        that: not backend_v2_marker.stat.exists
+        fail_msg: Microservices cutover protects the database. Consult the verified restore procedure in RUNBOOK.md.
+      tags: validation
+
 # Проверки Go идут с gateway сертификатом BFF (infra#160): он должен быть выпущен до них
 - name: BFF client certificate on the gateway
   hosts: gateway

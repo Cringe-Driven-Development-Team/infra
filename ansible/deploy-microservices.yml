@@ -1,0 +1,53 @@
+---
+- name: Validate the microservice deployment request
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Require exactly one backend and gateway and a local result location
+      ansible.builtin.assert:
+        that:
+          - groups.get('backend', []) | length == 1
+          - groups.get('gateway', []) | length == 1
+          - microservices_selected_services is sequence
+          - microservices_selected_services is not string
+          - microservices_selected_services | length > 0
+          - microservices_selected_services | difference(['identity', 'workspace', 'environments']) | length == 0
+          - microservices_before is mapping
+          - microservices_desired is mapping
+          - microservices_desired.keys() | list | sort == ['environments', 'identity', 'workspace']
+          - microservices_result_path is match('^/[^\r\n]+$')
+          - microservices_action in ['deploy', 'rollback']
+    - name: Initialize evidence for incomplete operations
+      ansible.builtin.copy:
+        dest: "{{ microservices_result_path }}"
+        content: "{{ {'observed': {}, 'checks': {}} | to_json }}\n"
+        mode: "0600"
+
+- name: Verify the supplied BFF identity on the gateway
+  hosts: gateway
+  become: true
+  gather_facts: false
+  vars_files:
+    - roles/app/defaults/main.yml
+  tasks:
+    - name: Check that the BFF certificate carries the required DNS SAN
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          openssl verify -CAfile ca.crt -purpose sslclient client.crt
+          openssl x509 -in client.crt -noout -ext subjectAltName |
+            tr ',' '\n' | sed 's/^[[:space:]]*//' |
+            grep -Fx 'DNS:bff.internal.cellestial.ru' >/dev/null
+        chdir: "{{ app_mtls_dir }}"
+        executable: /bin/bash
+      changed_when: false
+
+- name: Apply and verify the backend service set
+  hosts: backend
+  become: true
+  gather_facts: false
+  vars_files:
+    - roles/app/defaults/main.yml
+  roles:
+    - microservices

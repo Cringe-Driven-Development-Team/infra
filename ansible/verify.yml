@@ -330,6 +330,12 @@
   # клиентский ключ BFF на gateway читают только root и пользователь BFF
   become: true
   tasks:
+    - name: Read the service cutover marker on VPS2
+      ansible.builtin.stat:
+        path: "{{ app_compose_dir }}/microservices/v2-active"
+      delegate_to: "{{ groups['backend'][0] }}"
+      register: verify_services_marker
+
     - name: VPS2 — приватный адрес, без публичного IP
       ansible.builtin.assert:
         that:
@@ -337,6 +343,7 @@
         fail_msg: "Адрес VPS2 {{ app_backend_address }} не из приватной подсети 192.168.199.0/24"
 
     - name: Проверить S2S-ключ через mTLS
+      when: not verify_services_marker.stat.exists
       module_defaults:
         ansible.builtin.uri:
           ca_path: "{{ app_mtls_dir }}/ca.crt"
@@ -377,6 +384,20 @@
         msg: "С gateway открыт {{ app_backend_address }}:8080 — Go доступен мимо mTLS-прокси"
 
     - name: Go отвечает по mTLS и отвергает клиента без сертификата
+      when: not verify_services_marker.stat.exists
       ansible.builtin.import_tasks: roles/app/tasks/probe-backend.yml
       vars:
         backend_probe_address: "{{ app_backend_address }}"
+
+    - name: Microservice readiness LISTEN
+      when: verify_services_marker.stat.exists
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ app_compose_dir }}/microservices/probe.py"
+          - "{{ app_compose_dir }}/microservices"
+          - "{{ item }}"
+          - ready
+      delegate_to: "{{ groups['backend'][0] }}"
+      changed_when: false
+      loop: [identity, workspace, environments]

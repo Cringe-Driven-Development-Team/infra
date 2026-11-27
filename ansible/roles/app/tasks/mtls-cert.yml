@@ -52,8 +52,12 @@
     cmd: |
       set -euo pipefail
       cd {{ app_mtls_dir | quote }}
-      openssl verify -CAfile ca.crt -purpose {{ 'sslserver' if app_mtls_name == 'server' else 'sslclient' }} \
-        {{ ('-verify_ip ' ~ (app_backend_address | quote)) if app_mtls_name == 'server' else '' }} {{ app_mtls_name }}.crt
+      openssl verify -CAfile ca.crt -purpose {{ 'sslserver' if 'serverAuth' in mtls.usage else 'sslclient' }} \
+        {{ ('-verify_ip ' ~ (app_backend_address | quote)) if app_mtls_name == 'server' else '' }} \
+        {{ ('-verify_hostname ' ~ (mtls.san | quote)) if mtls.san is defined else '' }} {{ app_mtls_name }}.crt
+      {% if mtls.san is defined %}
+      openssl x509 -in {{ app_mtls_name }}.crt -noout -ext subjectAltName | grep -Fx -- '    DNS:{{ mtls.san }}'
+      {% endif %}
       openssl x509 -in {{ app_mtls_name }}.crt -noout -checkend {{ app_mtls_renew_days | int * 86400 }}
       test "$(openssl x509 -in {{ app_mtls_name }}.crt -noout -subject -nameopt RFC2253)" = "subject=CN={{ mtls.cn }}"
       cmp -s <(openssl x509 -in {{ app_mtls_name }}.crt -noout -pubkey) <(openssl pkey -in {{ app_mtls_name }}.key -pubout)
@@ -89,7 +93,8 @@
           printf '%s\n' "$CA_KEY" > "$d/ca.key"
           printf '%s\n' "$REQUEST" > "$d/request.csr"
           printf '%s\n' basicConstraints=critical,CA:FALSE keyUsage=critical,digitalSignature \
-            extendedKeyUsage={{ mtls.usage }} {{ ('subjectAltName=IP:' ~ app_backend_address) | quote if app_mtls_name == 'server' else '' }} > "$d/ext"
+            extendedKeyUsage={{ mtls.usage }} {{ ('subjectAltName=IP:' ~ app_backend_address) | quote if app_mtls_name == 'server' else '' }} \
+            {{ ('subjectAltName=DNS:' ~ mtls.san) | quote if mtls.san is defined else '' }} > "$d/ext"
           openssl x509 -req -in "$d/request.csr" -CA "$d/ca.crt" -CAkey "$d/ca.key" \
             -set_serial "0x$(openssl rand -hex 16)" -days {{ app_mtls_cert_days | int }} -extfile "$d/ext"
         executable: /bin/bash

@@ -1,0 +1,10 @@
+[
+{% if microservices_metrics_scraper_address | default('') %}
+{% for service in microservices_order %}
+  {
+    "targets": [{{ (app_backend_address ~ ':9101') | to_json }}],
+    "labels": {"service": {{ service | to_json }}, "__metrics_path__": {{ ('/' ~ service ~ '/metrics') | to_json }}}
+  }{{ ',' if not loop.last else '' }}
+{% endfor %}
+{% endif %}
+]

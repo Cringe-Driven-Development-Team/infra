@@ -1,0 +1,32 @@
+---
+- name: Read the expected BFF image and release without exposing the environment
+  ansible.builtin.slurp:
+    src: "{{ app_compose_dir }}/.env"
+  delegate_to: "{{ groups['gateway'][0] }}"
+  register: microservices_gateway_env
+  failed_when: false
+  no_log: true
+
+- name: Verify the BFF image against its deployed release
+  vars:
+    bff_check_ref: >-
+      {{ microservices_gateway_env.content | b64decode | regex_findall('(?m)^BFF_IMAGE_REF=(\S+)$') | first | default('') }}
+    microservices_gateway_release: >-
+      {{ microservices_gateway_env.content | b64decode | regex_findall('(?m)^BFF_RELEASE_SHA=([0-9a-f]{40})$') | first | default('') }}
+  when: microservices_gateway_env.content is defined
+  block:
+    - name: Verify the observed BFF image and health
+      ansible.builtin.import_tasks: "{{ playbook_dir }}/roles/app/tasks/check-bff-image.yml"
+      delegate_to: "{{ groups['gateway'][0] }}"
+      when:
+        - bff_check_ref is match('^ghcr[.]io/cringe-driven-development-team/bff@sha256:[0-9a-f]{64}$')
+        - microservices_gateway_release is match('^[0-9a-f]{40}$')
+
+    - name: Add the confirmed BFF version to the service inventory
+      ansible.builtin.set_fact:
+        microservices_facts: "{{ microservices_facts | combine({'bff_version': microservices_gateway_release}) }}"
+      when: app_bff_running.stdout is defined
+  rescue:
+    - name: Keep the BFF version unknown when the observation is incomplete
+      ansible.builtin.debug:
+        msg: The running BFF version could not be confirmed.

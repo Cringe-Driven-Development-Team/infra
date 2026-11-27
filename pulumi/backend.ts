@@ -27,8 +27,13 @@ export function createBackend(c: InfraConfig, f: Foundation, gatewayPort: openst
   const ingress: [string, string, number | undefined, pulumi.Input<string>][] = [
     ["ssh", "tcp", 22, gatewayAddress],
     ["api-mtls", "tcp", 8443, gatewayAddress],
+    ["identity-mtls", "tcp", 8444, gatewayAddress],
+    ["workspace-mtls", "tcp", 8445, gatewayAddress],
     ["icmp", "icmp", undefined, f.subnet.cidr],
   ];
+  if (backend.metricsScraperAddress) {
+    ingress.push(["service-metrics", "tcp", 9101, `${backend.metricsScraperAddress}/32`]);
+  }
   for (const [ruleName, protocol, port, remoteIpPrefix] of ingress) {
     new openstack.networking.SecGroupRule(`backend-${ruleName}`, {
       securityGroupId: secGroup.id,

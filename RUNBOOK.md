@@ -1350,3 +1350,94 @@ failed step, repair the cause, then dispatch the same release again through the 
 No rollback occurs automatically. Caller cancellation does not cancel the dispatched
 executor; inspect its own run before retrying. Shared networks, SQLite volumes and the
 other service remain in place during a targeted deploy.
+
+## Выпуск и переключение трёх backend-сервисов
+
+Выпуск задаёт полный состав Identity, Workspace и Environments. Для частичной
+операции CD передаёт в `ansible/deploy-microservices.yml` полные карты
+`microservices_before` и `microservices_desired`, список
+`microservices_selected_services`, действие `microservices_action` и путь
+`microservices_result_path` на контроллере. Нужен тот же SSH inventory и Vault,
+что для штатной выкатки backend. Обновляйте digest через CD. Выполняйте ручные
+операции в том же окне обслуживания с общей блокировкой CD.
+
+На VPS2 новые контейнеры подключаются к существующим PostgreSQL, Redis и
+закрытой сети `cellestial_app`. Для каждой схемы используются отдельные
+роли `*_owner` и `*_app`. Owner-контейнер запускается только на миграцию.
+Identity использует Redis, ключи auth и S3 аватаров. Workspace использует
+свой ключ курсоров. Environments использует выделенный runtime CA, отдельный
+клиентский сертификат, SSH и Selectel. Новый gRPC-агент слушает
+приватный адрес runtime-VPS на TCP 9090 и доступен с VPS2. Его admin-порт
+доступен на loopback. Перевод уже назначенных VPS выполните с сохранением
+SQLite state, каталога сессии и внешнего inventory до переноса БД.
+
+### Сеть, сертификаты и передача BFF
+
+Публичными входами по-прежнему служат Caddy и BFF. В контуре BFF требуется
+резолвить оба DNS-имени в приватный адрес VPS2 через `extra_hosts`
+контейнера BFF в infra Compose. Передайте владельцу
+frontend#283 следующие HTTPS origins и путь API:
+
+- `https://identity.internal.cellestial.ru:8444/api/v1`
+- `https://workspace.internal.cellestial.ru:8445/api/v1`
+
+Каждый серверный сертификат содержит DNS SAN своего имени.
+Сохраните передачу доверенного CA, сертификата и ключа через
+`GO_API_TLS_CA_FILE`, `GO_API_TLS_CERT_FILE`, `GO_API_TLS_KEY_FILE`.
+Действующий сертификат BFF требуется перевыпустить с DNS SAN
+`bff.internal.cellestial.ru` по согласованному процессу infra#160. При запросе
+к обоим API BFF использует этот сертификат и `X-BFF-Key`. Разрешения Selectel
+на 8444 и 8445 привязаны только к приватному адресу gateway. gRPC между
+сервисами идёт по сети Compose, gRPC probes используют отдельную identity
+и порты на loopback. Приватный metrics proxy открывает только
+`/<service>/metrics` при совпадающих `infra:metricsScraperAddress` в Pulumi
+и `microservices_metrics_scraper_address` в inventory. Значение — приватный
+IPv4 сборщика. Playbook сохраняет file-SD inventory трёх сервисов в
+`/opt/cellestial/microservices/prometheus-targets.json`. Этот файл подключают
+в `file_sd_configs` с VPS4, где Prometheus читает его локальную копию.
+При отключённом scraper список пуст. Динамический scrape runtime-agent
+подключается в связке с backend#119 и infra#164.
+
+Выкладка перевыпускает leaf при истечении срока, смене CA и несовпадении
+SAN. Проверьте ротацию на стенде полной повторной выкладкой по тем же digest
+с `app_mtls_force=true` и проверьте, что запрос сертификатом другого сервиса
+или клиента без сертификата не проходит.
+
+### Первичная миграция и возврат
+
+1. Проведите репетицию на копии PostgreSQL и Redis, запишите результаты сверки
+   количества блокнотов, ревизий, комментариев, ACL, очередей и runtime lease.
+   Перед первой выкаткой остановите приём работ, дождитесь завершения старых
+   задач, остановите `api` и его provisioning процессы. Сверьте runtime-VPS
+   с Selectel, обновите назначенные агентские сервисы и проверьте их gRPC mTLS
+   с удостоверением Environments.
+2. Создайте и проверьте восстановлением PostgreSQL custom dump и резервную
+   копию Redis. Сохраните исходный backend/BFF digest и Selectel inventory
+   отдельно от VPS2. После проверки положите копию PostgreSQL dump, его
+   SHA-256 одной строкой и подтверждённый inventory на VPS2 в каталог
+   `/opt/cellestial/microservices` с доступом только для root. Имена файлов
+   `monolith.dump`, `monolith.dump.sha256`, `cutover.json`. Формат inventory
+   описан в backend/docs/microservices-migration.md. В `roles` у каждой схемы
+   должны быть `<service>_owner` и `<service>_app`. Transfer дополнительно
+   проверяет исходную схему, срок lease, серверный checkpoint и состояние агентов.
+3. Запустите полный CD с `first_cutover=true` и paused workers.
+   Проверка повторно сверяет хеш backup и его формат. Подтвердите схемы,
+   здоровье сервисов, работу приватных HTTP и gRPC, отсутствие старых
+   процессов и совпадение наблюдаемых digest с выпуском. Снимите паузу
+   штатной полной выкладкой с подтверждённым before, продолжайте удерживать
+   вход пользователей до окончания recovery. Проверьте сквозную работу
+   через адаптированный BFF и откройте admission.
+4. При несовместимой схеме одно переключение на старый контейнер не меняет
+   БД. До завершения первичного перехода остановите новый вход, выключите
+   три процесса и автоматические операции, восстановите подтверждённый
+   PostgreSQL dump и Redis из проверенных копий, проверьте старую схему и
+   состояние runtime-операций. Только после сверки удалите
+   `/opt/cellestial/microservices/v2-active` и запустите выкаченные ранее
+   digest API и BFF. Маркер защищает от повторов старого CD до восстановления.
+
+Обычный rollback запускает тот же playbook. Он отклоняет старый образ, если
+у него ниже версия схемы, и смешанный набор, если расходится protocol revision.
+Отчёт использует результаты сверки работающих контейнеров и probes. Если
+переключение прервалось, сначала проверьте `result.json` на VPS2, состояние
+goose по каждой схеме и фактические Docker digest. Целевые образы не следует
+принимать за состояние контейнеров.

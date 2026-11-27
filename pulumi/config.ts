@@ -2,6 +2,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as openstack from "@pulumi/openstack";
 import * as random from "@pulumi/random";
 import { Credentials, credentialsFromEnv } from "./bootstrap/selectel-s3";
+import { isIPv4 } from "node:net";
 import { checkCdnName } from "./selectel-storage";
 
 // Пароли сервисных пользователей IAM: им никто не входит, но API требует сложность
@@ -39,7 +40,7 @@ export interface InfraConfig {
   userData: string | undefined;
   externalNetworkName: string;
   gateway: { flavor: FlavorRule; volumeSize: number };
-  backend?: { flavor: FlavorRule; volumeSize: number };
+  backend?: { flavor: FlavorRule; volumeSize: number; metricsScraperAddress?: string };
   auxiliary?: {
     flavor: FlavorRule;
     volumeSize: number;
@@ -181,6 +182,10 @@ export function loadConfig(): InfraConfig {
   const staticDomain = cfg.get("staticDomain");
   // Приватная VPS2 (infra#59) — Go API, Postgres и Redis без публичного IP; доступ только с gateway.
   const backendEnabled = cfg.getBoolean("backend") ?? false;
+  const metricsScraperAddress = cfg.get("metricsScraperAddress");
+  if (metricsScraperAddress && (!backendEnabled || !isIPv4(metricsScraperAddress))) {
+    throw new Error("infra:metricsScraperAddress ожидает приватный IPv4-адрес сборщика метрик и infra:backend");
+  }
   // Вспомогательная VPS (infra#54) — сервис вебхуков; его домен — A-запись в infra:dnsZone.
   const auxiliaryEnabled = cfg.getBoolean("auxiliary") ?? false;
   const hooksDomain = cfg.get("hooksDomain");
@@ -228,7 +233,8 @@ export function loadConfig(): InfraConfig {
     externalNetworkName: cfg.get("externalNetwork") ?? "external-network",
     gateway: { flavor: readFlavor(cfg, "gateway"), volumeSize: cfg.getNumber("gatewayVolumeSize") ?? 20 },
     backend: backendEnabled
-      ? { flavor: readFlavor(cfg, "backend"), volumeSize: cfg.getNumber("backendVolumeSize") ?? 40 }
+      ? { flavor: readFlavor(cfg, "backend"), volumeSize: cfg.getNumber("backendVolumeSize") ?? 40,
+          ...(metricsScraperAddress ? { metricsScraperAddress } : {}) }
       : undefined,
     auxiliary: auxiliaryEnabled
       ? {
