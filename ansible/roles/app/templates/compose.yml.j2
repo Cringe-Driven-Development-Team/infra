@@ -36,7 +36,6 @@ services:
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
       COOKIE_SECURE: "true"
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS origins are required}
       AWS_REGION: ${AWS_REGION:?S3 configuration is required}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?S3 configuration is required}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?S3 configuration is required}
@@ -69,10 +68,24 @@ services:
       - {{ app_runtime_secrets_dir }}:/run/secrets/runtime:ro
       - {{ app_runtime_playbook_dir }}:/app/deploy/runtime:ro
       - {{ app_runtime_work_dir }}:{{ app_runtime_work_dir }}
-    # BFF на gateway ходит сюда по приватной сети: порт — только на приватном адресе VPS2, снаружи его
-    # закрывают security group (только с gateway) и отсутствие публичного IP
+    # Порт не публикуется: BFF ходит через api-proxy (infra#160)
+    networks:
+      - app
+
+  # mTLS-прокси Go API (infra#160): BFF на gateway ходит сюда по приватной сети. Порт — только на
+  # приватном адресе VPS2, снаружи его закрывают security group и ufw (только с gateway) и отсутствие
+  # публичного IP. Серверные ключ и сертификат монтируются только сюда.
+  api-proxy:
+    image: {{ app_api_proxy_image }}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./api-proxy:/etc/nginx/conf.d:ro
+      - {{ app_mtls_dir }}:/etc/nginx/mtls:ro
     ports:
-      - "{{ app_backend_address }}:8080:8080"
+      - "{{ app_backend_address }}:8443:8443"
     networks:
       - app
 
@@ -90,6 +103,15 @@ services:
       APP_ORIGIN: ${APP_ORIGIN:?app origin is required}
       GO_API_URL: {{ app_bff_go_api_url }}
       BFF_KEY: ${BFF_API_KEY:?bff api key is required}
+      # mTLS к Go (infra#160, frontend#257): CA, клиентские сертификат и ключ (0400, пользователь bun)
+      GO_API_TLS_CA_FILE: /run/secrets/go-api/ca.crt
+      GO_API_TLS_CERT_FILE: /run/secrets/go-api/client.crt
+      GO_API_TLS_KEY_FILE: /run/secrets/go-api/client.key
+    volumes:
+      - {{ app_mtls_dir }}:/run/secrets/go-api:ro
+    extra_hosts:
+      - "identity.internal.cellestial.ru:{{ app_backend_address }}"
+      - "workspace.internal.cellestial.ru:{{ app_backend_address }}"
     # BFF дожидается текущих запросов до 10 с (frontend#2)
     stop_grace_period: 15s
     healthcheck:

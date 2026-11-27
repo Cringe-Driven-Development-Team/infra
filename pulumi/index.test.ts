@@ -195,6 +195,16 @@ describe("сборка модулей", () => {
   });
 });
 
+describe("backend VPS2", () => {
+  test("HTTPS микросервисов доступен с приватного адреса gateway", () => {
+    for (const [name, port] of [["identity-mtls", 8444], ["workspace-mtls", 8445]] as const) {
+      expect(find("openstack:networking/secGroupRule:SecGroupRule", "backend-" + name).inputs)
+        .toMatchObject({ direction: "ingress", protocol: "tcp",
+          portRangeMin: port, portRangeMax: port, remoteIpPrefix: "192.168.199.225/32" });
+    }
+  });
+});
+
 describe("runtime-VPS", () => {
   test("свой сервисный пользователь с ролью member на проект", () => {
     const user = find("selectel:index/iamServiceuserV1:IamServiceuserV1", "runtime");
@@ -202,7 +212,7 @@ describe("runtime-VPS", () => {
     expect(user.inputs.roles).toEqual([{ roleName: "member", scope: "project", projectId: "release-id" }]);
   });
 
-  test("security group: SSH, 8443 и ICMP только с VPS2, другого ingress нет", () => {
+  test("security group: SSH, HTTPS, gRPC и ICMP только с VPS2, другого ingress нет", () => {
     const rules = [...created.entries()]
       .filter(([key]) => key.startsWith("openstack:networking/secGroupRule:SecGroupRule::runtime-"))
       .map(([, r]) => [r.inputs.protocol, r.inputs.portRangeMin ?? null, r.inputs.remoteIpPrefix, r.inputs.direction])
@@ -211,6 +221,7 @@ describe("runtime-VPS", () => {
       ["icmp", null, "192.168.199.10/32", "ingress"],
       ["tcp", 22, "192.168.199.10/32", "ingress"],
       ["tcp", 8443, "192.168.199.10/32", "ingress"],
+      ["tcp", 9090, "192.168.199.10/32", "ingress"],
     ]);
     expect(find("openstack:networking/secGroup:SecGroup", "runtime").inputs.name).toBe("runtime");
   });

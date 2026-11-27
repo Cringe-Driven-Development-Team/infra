@@ -1,0 +1,7 @@
+---
+- name: Issue or renew the selected service identity
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/roles/app/tasks/mtls-cert.yml"
+  vars:
+    app_mtls_certs: "{{ microservices_tls }}"
+    app_mtls_name: "{{ certificate_service }}"
+    app_mtls_dir: "{{ microservices_root }}/tls/{{ certificate_service }}"

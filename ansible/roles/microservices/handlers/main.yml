@@ -1,0 +1,4 @@
+---
+- name: Apply new mTLS files
+  ansible.builtin.debug:
+    msg: The deployment recreates the selected services with the new credentials.

@@ -1,0 +1,128 @@
+---
+# mTLS BFF → Go (infra#160): сертификат хоста app_mtls_name (group_vars: server на VPS2, client на gateway).
+# Ключ создаётся на хосте и его не покидает; CSR подписывает controller ключом CA из Vault — на хосты
+# и в контейнеры ключ CA не попадает. Перевыпуск — если сертификата нет, он не от текущего CA, истекает
+# раньше app_mtls_renew_days, не того назначения/имени/адреса или app_mtls_force. Изменённые файлы
+# применяет пересоздание сервиса (handler «Apply new mTLS files»).
+- name: Select the mTLS certificate of this host
+  ansible.builtin.set_fact:
+    mtls: "{{ app_mtls_certs[app_mtls_name] | combine({'group': app_mtls_certs[app_mtls_name].group | default(app_mtls_certs[app_mtls_name].owner)}) }}"
+
+- name: Check the mTLS CA from Vault
+  ansible.builtin.assert:
+    that:
+      - bff_mtls_ca_cert is string
+      - bff_mtls_ca_key is string
+      - "'-----BEGIN CERTIFICATE-----' in bff_mtls_ca_cert"
+      - "'-----BEGIN PRIVATE KEY-----' in bff_mtls_ca_key"
+      - app_mtls_cert_days | int > app_mtls_renew_days | int > 0
+      - app_mtls_alert_days | int > 0
+    fail_msg: >-
+      vault_bff_mtls_ca_cert and vault_bff_mtls_ca_key must hold the BFF-Go CA (RUNBOOK, «mTLS BFF → Go»);
+      app_mtls_cert_days > app_mtls_renew_days > 0, app_mtls_alert_days > 0.
+  no_log: true
+
+# Иначе file создал бы недостающий каталог проекта с правами каталога mtls
+- name: Project directory for the mTLS files
+  ansible.builtin.file:
+    path: "{{ app_compose_dir }}"
+    state: directory
+    mode: "0755"
+
+# Контейнеры монтируют каталог read-only; 0700 — чтобы Ansible писал в него и без root (тесты)
+- name: mTLS directory
+  ansible.builtin.file:
+    path: "{{ app_mtls_dir }}"
+    state: directory
+    owner: "{{ mtls.owner }}"
+    group: "{{ mtls.group }}"
+    mode: "0700"
+
+- name: Write the trusted mTLS CA certificate
+  ansible.builtin.copy:
+    content: "{{ bff_mtls_ca_cert | trim }}\n"
+    dest: "{{ app_mtls_dir }}/ca.crt"
+    owner: "{{ mtls.owner }}"
+    group: "{{ mtls.group }}"
+    mode: "0400"
+  notify: Apply new mTLS files
+
+- name: Check the current mTLS certificate
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      cd {{ app_mtls_dir | quote }}
+      openssl verify -CAfile ca.crt -purpose {{ 'sslserver' if 'serverAuth' in mtls.usage else 'sslclient' }} \
+        {{ ('-verify_ip ' ~ (app_backend_address | quote)) if app_mtls_name == 'server' else '' }} \
+        {{ ('-verify_hostname ' ~ (mtls.san | quote)) if mtls.san is defined else '' }} {{ app_mtls_name }}.crt
+      {% if mtls.san is defined %}
+      openssl x509 -in {{ app_mtls_name }}.crt -noout -ext subjectAltName | grep -Fx -- '    DNS:{{ mtls.san }}'
+      {% endif %}
+      openssl x509 -in {{ app_mtls_name }}.crt -noout -checkend {{ app_mtls_renew_days | int * 86400 }}
+      test "$(openssl x509 -in {{ app_mtls_name }}.crt -noout -subject -nameopt RFC2253)" = "subject=CN={{ mtls.cn }}"
+      cmp -s <(openssl x509 -in {{ app_mtls_name }}.crt -noout -pubkey) <(openssl pkey -in {{ app_mtls_name }}.key -pubout)
+    executable: /bin/bash
+  register: app_mtls_current
+  changed_when: false
+  failed_when: false
+
+- name: Issue a new mTLS certificate
+  when: app_mtls_force | bool or app_mtls_current.rc != 0
+  block:
+    - name: Generate the mTLS key and request on the host
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          umask 077
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out {{ app_mtls_name }}.key.new
+          openssl req -new -key {{ app_mtls_name }}.key.new -subj "/CN={{ mtls.cn }}"
+        chdir: "{{ app_mtls_dir }}"
+        executable: /bin/bash
+      register: app_mtls_request
+      changed_when: true
+
+    # Временный каталог с ключом CA удаляется trap и при ошибке; вывод скрыт no_log
+    - name: Sign the mTLS request with the CA on the controller
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          umask 077
+          d=$(mktemp -d)
+          trap 'rm -rf "$d"' EXIT
+          printf '%s\n' "$CA_CERT" > "$d/ca.crt"
+          printf '%s\n' "$CA_KEY" > "$d/ca.key"
+          printf '%s\n' "$REQUEST" > "$d/request.csr"
+          printf '%s\n' basicConstraints=critical,CA:FALSE keyUsage=critical,digitalSignature \
+            extendedKeyUsage={{ mtls.usage }} {{ ('subjectAltName=IP:' ~ app_backend_address) | quote if app_mtls_name == 'server' else '' }} \
+            {{ ('subjectAltName=DNS:' ~ mtls.san) | quote if mtls.san is defined else '' }} > "$d/ext"
+          openssl x509 -req -in "$d/request.csr" -CA "$d/ca.crt" -CAkey "$d/ca.key" \
+            -set_serial "0x$(openssl rand -hex 16)" -days {{ app_mtls_cert_days | int }} -extfile "$d/ext"
+        executable: /bin/bash
+      environment:
+        CA_CERT: "{{ bff_mtls_ca_cert | trim }}"
+        CA_KEY: "{{ bff_mtls_ca_key | trim }}"
+        REQUEST: "{{ app_mtls_request.stdout }}"
+      delegate_to: localhost
+      become: false
+      register: app_mtls_signed
+      changed_when: true
+      no_log: true
+
+    - name: Write the mTLS certificate
+      ansible.builtin.copy:
+        content: "{{ app_mtls_signed.stdout | trim }}\n"
+        dest: "{{ app_mtls_dir }}/{{ app_mtls_name }}.crt"
+        owner: "{{ mtls.owner }}"
+        group: "{{ mtls.group }}"
+        mode: "0400"
+      notify: Apply new mTLS files
+
+    - name: Install the new mTLS key
+      ansible.builtin.shell:
+        cmd: >-
+          chown {{ mtls.owner }}:{{ mtls.group }} {{ app_mtls_name }}.key.new
+          && chmod 0400 {{ app_mtls_name }}.key.new
+          && mv -f {{ app_mtls_name }}.key.new {{ app_mtls_name }}.key
+        chdir: "{{ app_mtls_dir }}"
+      changed_when: true
+      notify: Apply new mTLS files

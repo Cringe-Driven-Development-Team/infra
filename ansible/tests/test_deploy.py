@@ -59,7 +59,9 @@ class DeploymentChecks(unittest.TestCase):
                                 }
                             },
                             "backend": {"hosts": {"test-backend": {
-                                "ansible_host": "127.0.0.1", "ansible_connection": "local"}}}
+                                "ansible_host": "127.0.0.1",
+                                        "ansible_connection": "local",
+                                    }}}
                         }
                     }
                 }
@@ -79,7 +81,6 @@ class DeploymentChecks(unittest.TestCase):
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'avatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
-            'app_cors_allowed_origins: https://app.example.org\n'
             'app_backend_address: "127.0.0.1"\n'
             + yaml.safe_dump(RUNTIME_OPEN)
             + "".join(f'{k}: "{{{{ vault_{k} }}}}"\n' for k in RUNTIME_SECRETS)
@@ -103,8 +104,7 @@ class DeploymentChecks(unittest.TestCase):
         ]
         if tag is not None:
             command += ["-e", json.dumps({variable: tag})]
-        if extra:
-            command += ["-e", json.dumps(extra)]
+        command += ["-e", json.dumps({"ansible_become": False, **(extra or {})})]
         return subprocess.run(
             command,
             cwd=ANSIBLE,
@@ -117,6 +117,14 @@ class DeploymentChecks(unittest.TestCase):
     def test_valid_digest_and_vault(self):
         result = self.validate(BACKEND_REF)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_monolith_deploy_is_disabled_after_the_cutover_marker(self):
+        marker = self.root / "microservices" / "v2-active"
+        marker.parent.mkdir()
+        marker.touch()
+        result = self.validate(BACKEND_REF, extra={"app_compose_dir": str(self.root)})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Microservices cutover protects the database", result.stdout + result.stderr)
 
     def test_totp_key_validation_rejects_invalid_values_without_leaks(self):
         path = self.root / "group_vars/all/vault.yml"
@@ -471,9 +479,9 @@ class DeploymentChecks(unittest.TestCase):
                 values = {name: secret for name in ('postgres_password', 'jwt_secret', 'csrf_secret',
                           'redis_password', 'session_key', 'bff_api_key', 'avatars_s3_access_key',
                           'avatars_s3_secret_key')}
-                config, env = self.render_host(['api', 'postgres', 'redis'], secrets=values)
+                config, env = self.render_host(['api', 'api-proxy', 'postgres', 'redis'], secrets=values)
                 services = config['services']
-                self.assertEqual(set(services), {'api', 'postgres', 'redis'})
+                self.assertEqual(set(services), {'api', 'api-proxy', 'postgres', 'redis'})
                 for service in ('api', 'postgres'):
                     self.assertEqual(services[service]['environment']['POSTGRES_PASSWORD'].replace('$$', '$'), secret)
                 for name in ('REDIS_PASSWORD', 'JWT_SECRET', 'CSRF_SECRET', 'AWS_ACCESS_KEY_ID',
@@ -482,11 +490,13 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertEqual(services['redis']['environment']['REDISCLI_AUTH'].replace('$$', '$'), secret)
                 self.assertFalse(services['redis'].get('ports'))
                 self.assertFalse(services['postgres'].get('ports'))
-                self.assertEqual(services['api']['ports'][0]['host_ip'], '192.168.199.10')
+                self.assertFalse(services['api'].get('ports'))
+                self.assertEqual(services['api-proxy']['ports'][0]['host_ip'], '192.168.199.10')
                 self.assertEqual(services['api']['depends_on']['redis']['condition'], 'service_healthy')
                 self.assertIn('/usr/local/etc/redis', [v['target'] for v in services['redis']['volumes']])
                 self.assertEqual(services['api']['environment']['REDIS_HOST'], 'redis')
-                self.assertEqual(services['api']['environment']['CORS_ALLOWED_ORIGINS'], 'https://app.example.org')
+                self.assertNotIn('CORS_ALLOWED_ORIGINS', services['api']['environment'])
+                self.assertNotIn('CORS_ALLOWED_ORIGINS', env)
                 self.assertEqual(services['api']['environment']['S3_AVATARS_PUBLIC_URL'], 'https://avatars.example.org')
                 config, env = self.render_host(['caddy', 'bff'], secrets=values)
                 self.assertEqual(set(config['services']), {'caddy', 'bff'})
@@ -495,7 +505,7 @@ class DeploymentChecks(unittest.TestCase):
                 self.assertEqual(bff['pull_policy'], 'never')
                 for name in ('SESSION_KEY', 'BFF_KEY'):
                     self.assertEqual(bff['environment'][name].replace('$$', '$'), secret)
-                self.assertEqual(bff['environment']['GO_API_URL'], 'http://192.168.199.10:8080/api/v1')
+                self.assertEqual(bff['environment']['GO_API_URL'], 'https://192.168.199.10:8443/api/v1')
                 self.assertEqual(bff['environment']['APP_ORIGIN'], 'https://app.example.org')
                 self.assertNotIn('depends_on', bff)
                 self.assertNotIn('PORT', bff['environment'])
@@ -506,18 +516,19 @@ class DeploymentChecks(unittest.TestCase):
         variables = yaml.safe_load((ANSIBLE / "roles/app/defaults/main.yml").read_text())
         variables.update(app_compose_dir="/opt/cellestial",
                          app_runtime_secrets_dir="/opt/cellestial/runtime-secrets",
-                         app_runtime_playbook_dir="/opt/cellestial/runtime-playbook")
+                         app_runtime_playbook_dir="/opt/cellestial/runtime-playbook",
+                         app_mtls_dir="/opt/cellestial/mtls")
         variables.update(self.runtime_values() if runtime is None else runtime)
         variables.update(yaml.safe_load((ANSIBLE / "roles/caddy/defaults/main.yml").read_text()))
         address = "192.168.199.10"
         variables.update(
             app_backend_address=address,
-            app_bff_go_api_url=f"http://{address}:8080/api/v1",
+            app_bff_go_api_url=f"https://{address}:8443/api/v1",
             app_services=services, app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF,
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
             s3_endpoint="https://s3.example.org",
             avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
-            app_cors_allowed_origins="https://app.example.org", postgres_password="pg-secret",
+            postgres_password="pg-secret",
             jwt_secret="jwt-secret", csrf_secret="csrf-secret", redis_password="redis-secret",
             session_key="session-secret", bff_api_key="s2s-secret",
             totp_encryption_key=TOTP_KEY,
@@ -569,7 +580,19 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(set(config["services"]), {"caddy", "bff"})
         self.assertEqual(set(config["volumes"]), {"caddy_data", "caddy_config"})
         bff = config["services"]["bff"]
-        self.assertEqual(bff["environment"]["GO_API_URL"], "http://192.168.199.10:8080/api/v1")
+        self.assertEqual(bff["environment"]["GO_API_URL"], "https://192.168.199.10:8443/api/v1")
+
+        self.assertEqual(bff["extra_hosts"], [
+            "identity.internal.cellestial.ru=192.168.199.10",
+            "workspace.internal.cellestial.ru=192.168.199.10",
+        ])
+        # mTLS к Go (infra#160): клиентские файлы — каталогом read-only, имена согласованы с frontend#257
+        self.assertEqual({k: v for k, v in bff["environment"].items() if k.startswith("GO_API_TLS_")}, {
+            "GO_API_TLS_CA_FILE": "/run/secrets/go-api/ca.crt",
+            "GO_API_TLS_CERT_FILE": "/run/secrets/go-api/client.crt",
+            "GO_API_TLS_KEY_FILE": "/run/secrets/go-api/client.key"})
+        self.assertEqual([(v["source"], v["target"], v.get("read_only")) for v in bff["volumes"]],
+                         [("/opt/cellestial/mtls", "/run/secrets/go-api", True)])
         self.assertNotIn("depends_on", bff)
         self.assertEqual(bff["environment"]["BFF_KEY"], "s2s-secret")
         # секреты Go, Postgres, Redis и S3 на публичной машине не лежат
@@ -582,15 +605,21 @@ class DeploymentChecks(unittest.TestCase):
         for secret in [*RUNTIME_PEM_BODIES, RUNTIME_SECRETS["runtime_secrets_key"]]:
             self.assertNotIn(secret, env)
 
-    def test_backend_publishes_the_api_only_on_the_private_address(self):
-        config, env = self.render_host(["api", "postgres", "redis"])
+    def test_backend_publishes_only_the_mtls_proxy_on_the_private_address(self):
+        config, env = self.render_host(["api", "api-proxy", "postgres", "redis"])
         self.assertEqual(config["name"], "cellestial")
-        self.assertEqual(set(config["services"]), {"api", "postgres", "redis"})
+        self.assertEqual(set(config["services"]), {"api", "api-proxy", "postgres", "redis"})
         self.assertEqual(set(config["volumes"]), {"postgres_data", "redis_data"})
-        ports = config["services"]["api"]["ports"]
-        self.assertEqual([(p["host_ip"], p["published"], p["target"]) for p in ports],
-                         [("192.168.199.10", "8080", 8080)])
-        for service in ["postgres", "redis"]:
+        proxy = config["services"]["api-proxy"]
+        self.assertEqual([(p["host_ip"], p["published"], p["target"]) for p in proxy["ports"]],
+                         [("192.168.199.10", "8443", 8443)])
+        self.assertEqual(proxy["depends_on"]["api"]["condition"], "service_healthy")
+        # серверные ключ и сертификат — только прокси и только read-only; Go их не видит
+        self.assertIn(("/opt/cellestial/mtls", "/etc/nginx/mtls", True),
+                      [(v["source"], v["target"], v.get("read_only")) for v in proxy["volumes"]])
+        self.assertTrue(all(v.get("read_only") for v in proxy["volumes"]))
+        self.assertNotIn("/opt/cellestial/mtls", [v["source"] for v in config["services"]["api"]["volumes"]])
+        for service in ["api", "postgres", "redis"]:
             self.assertFalse(config["services"][service].get("ports"))
         self.assertEqual(config["services"]["api"]["environment"]["BFF_API_KEY"], "s2s-secret")
         # ключ сессии BFF и образ BFF на VPS2 не нужны
@@ -623,8 +652,8 @@ class DeploymentChecks(unittest.TestCase):
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode, 0, output)
                 gateway = "caddy,bff" if has_bff else "caddy"
-                self.assertIn(f"SERVICES test-vps {gateway} URL http://127.0.0.1:8080/api/v1", output)
-                self.assertIn("SERVICES test-backend api,postgres,redis URL http://127.0.0.1:8080/api/v1", output)
+                self.assertIn(f"SERVICES test-vps {gateway} URL https://127.0.0.1:8443/api/v1", output)
+                self.assertIn("SERVICES test-backend api,api-proxy,postgres,redis URL https://127.0.0.1:8443/api/v1", output)
 
     def test_verify_accepts_the_backend_vps_in_the_inventory(self):
         def run(groups):
@@ -660,8 +689,16 @@ class DeploymentChecks(unittest.TestCase):
                                  str(ANSIBLE / "deploy-backend.yml"), "--list-hosts"],
                                 cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("test-vps", result.stdout)
-        self.assertIn("test-backend", result.stdout)
+        # на gateway — только сертификат BFF для проверок Go (infra#160), выкатка — только на VPS2
+        _, guarded = result.stdout.split("Reject deployment of the monolith after the microservices cutover", 1)
+        guard, certificate_and_deploy = guarded.split("BFF client certificate on the gateway", 1)
+        certificate, deploy = certificate_and_deploy.split("Deploy backend", 1)
+        self.assertIn("test-backend", guard)
+        self.assertNotIn("test-vps", guard)
+        self.assertNotIn("test-backend", certificate)
+        self.assertIn("test-vps", certificate)
+        self.assertNotIn("test-vps", deploy)
+        self.assertIn("test-backend", deploy)
 
     def test_multiple_backend_hosts_are_rejected(self):
         data = yaml.safe_load(self.inventory.read_text())

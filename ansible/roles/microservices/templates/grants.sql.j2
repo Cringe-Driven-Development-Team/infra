@@ -1,0 +1,11 @@
+BEGIN;
+GRANT USAGE ON SCHEMA {{ service }} TO {{ service }}_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {{ service }} TO {{ service }}_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {{ service }} TO {{ service }}_app;
+REVOKE INSERT, UPDATE, DELETE ON TABLE {{ service }}.goose_db_version FROM {{ service }}_app;
+{% if service == 'identity' %}
+SELECT 'REVOKE ALL ON TABLE identity.refresh_sessions FROM identity_app'
+WHERE to_regclass('identity.refresh_sessions') IS NOT NULL
+\gexec
+{% endif %}
+COMMIT;

@@ -2,6 +2,10 @@
 - name: Validate the deployment inputs
   ansible.builtin.import_tasks: validate.yml
 
+# До tags.yml: выкатка BFF там проверяет Go по mTLS сертификатом BFF
+- name: mTLS certificate of this host
+  ansible.builtin.include_tasks: mtls-cert.yml
+
 - name: Choose the image references
   ansible.builtin.import_tasks: tags.yml
 
@@ -125,6 +129,25 @@
             mode: u=rwX,go=rX
             directory_mode: "0755"
 
+    - name: API proxy configuration directory
+      when: "'api-proxy' in app_services"
+      ansible.builtin.file:
+        path: "{{ app_compose_dir }}/api-proxy"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Write the API proxy configuration
+      when: "'api-proxy' in app_services"
+      ansible.builtin.template:
+        src: api-proxy.conf.j2
+        dest: "{{ app_compose_dir }}/api-proxy/api.conf"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Apply new mTLS files
+
     - name: Write the full application Compose project
       ansible.builtin.template:
         src: compose.yml.j2
@@ -137,7 +160,7 @@
     - name: Pull missing public service images
       community.docker.docker_compose_v2_pull:
         project_src: "{{ app_compose_dir }}"
-        services: "{{ ['caddy', 'postgres', 'redis'] | intersect(app_services) }}"
+        services: "{{ ['caddy', 'postgres', 'redis', 'api-proxy'] | intersect(app_services) }}"
         policy: missing
 
     - name: Start the application and wait for healthchecks

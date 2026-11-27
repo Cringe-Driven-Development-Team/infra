@@ -1,4 +1,4 @@
-"""Exercise production Ansible tasks with local HTTP/HTTPS; never contact production."""
+"""Exercise production Ansible tasks with local mTLS/HTTPS; never contact production."""
 import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -20,6 +20,22 @@ RELEASE = 'b' * 40
 VALID_LOGIN = {'error': {'code': 'BAD_REQUEST', 'message': 'Неверный логин или пароль', 'appCode': 'invalid_credentials'}}
 
 
+class VerifyBackendProbeScope(unittest.TestCase):
+    def test_verify_limits_client_certificate_to_s2s_checks(self):
+        plays = yaml.safe_load((ANSIBLE / 'verify.yml').read_text())
+        probe = 'roles/app/tasks/probe-backend.yml'
+        play = next(play for play in plays if any(
+            task.get('ansible.builtin.import_tasks') == probe for task in play.get('tasks', [])
+        ))
+        uri = 'ansible.builtin.uri'
+        certificate_args = {'client_cert', 'client_key'}
+        self.assertTrue(certificate_args.isdisjoint(play.get('module_defaults', {}).get(uri, {})))
+
+        s2s_check = next(task for task in play['tasks'] if 'block' in task)
+        self.assertTrue(certificate_args.issubset(s2s_check['module_defaults'][uri]))
+        self.assertEqual([task[uri]['status_code'] for task in s2s_check['block']], [403, 401])
+
+
 class BackendProbes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -29,6 +45,23 @@ class BackendProbes(unittest.TestCase):
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(key),
                         '-out', str(cls.cert), '-days', '1', '-subj', '/CN=localhost',
                         '-addext', 'subjectAltName=DNS:localhost'], check=True, capture_output=True)
+        # mTLS VPS2 (infra#160): CA, серверный сертификат с IP SAN и клиентский BFF — как раскладывает mtls-cert.yml
+        cls.mtls = cls.root / 'mtls'
+        cls.mtls.mkdir()
+        def issue(name, subject, extensions):
+            subprocess.run(['openssl', 'req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+                            '-keyout', str(cls.mtls / f'{name}.key'), '-out', str(cls.mtls / f'{name}.crt'),
+                            '-subj', subject, '-days', '1', '-CA', str(cls.mtls / 'ca.crt'),
+                            '-CAkey', str(cls.root / 'ca.key'), *sum((['-addext', e] for e in [
+                                'basicConstraints=critical,CA:FALSE', 'keyUsage=critical,digitalSignature',
+                                *extensions]), [])],
+                           check=True, capture_output=True)
+        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+                        '-keyout', str(cls.root / 'ca.key'), '-out', str(cls.mtls / 'ca.crt'), '-days', '1',
+                        '-subj', '/CN=Test BFF-Go CA', '-addext', 'basicConstraints=critical,CA:TRUE,pathlen:0',
+                        '-addext', 'keyUsage=critical,keyCertSign,cRLSign'], check=True, capture_output=True)
+        issue('server', '/CN=cellestial-go-api', ['subjectAltName=IP:127.0.0.1', 'extendedKeyUsage=serverAuth'])
+        issue('client', '/CN=cellestial-bff', ['extendedKeyUsage=clientAuth'])
         cls.requests = []
         cls.health = (200, {'status': 'alive'})
         cls.login = (400, VALID_LOGIN)
@@ -77,7 +110,13 @@ class BackendProbes(unittest.TestCase):
                 except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
                     pass  # Expected when a timeout fixture outlives the client socket.
 
+        # cls.http — приватный Go за mTLS-прокси: без клиентского сертификата CA соединение обрывается
         cls.http = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        mtls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        mtls.load_cert_chain(cls.mtls / 'server.crt', cls.mtls / 'server.key')
+        mtls.load_verify_locations(cls.mtls / 'ca.crt')
+        mtls.verify_mode = ssl.CERT_REQUIRED
+        cls.http.socket = mtls.wrap_socket(cls.http.socket, server_side=True)
         cls.https = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(cls.cert, key)
@@ -109,11 +148,12 @@ class BackendProbes(unittest.TestCase):
         self.assertTrue(path.is_file(), 'Missing production probe: ' + name)
         tasks = copy.deepcopy(yaml.safe_load(path.read_text()))
         for task in tasks:
-            # Only shorten delays and remap the private HTTP port to an ephemeral local fixture.
+            # Only shorten delays, drop sudo and remap the private mTLS port to an ephemeral local fixture.
             if 'delay' in task:
                 task['delay'] = 0
+            task.pop('become', None)
             uri = task.get('ansible.builtin.uri', {})
-            uri['url'] = uri.get('url', '').replace(':8080/health', f':{self.http.server_port}/health')
+            uri['url'] = uri.get('url', '').replace(':8443/health', f':{self.http.server_port}/health')
         return tasks
 
     def run_tasks(self, tasks, variables=None, host_variables=None):
@@ -128,6 +168,7 @@ class BackendProbes(unittest.TestCase):
         play = self.root / 'test.yml'
         play.write_text(yaml.safe_dump([{'name': 'Exercise real probes', 'hosts': 'backend', 'gather_facts': False,
             'vars': {'ansible_python_interpreter': sys.executable, 'backend_probe_address': '127.0.0.1',
+                     'app_mtls_dir': str(self.mtls),
                      'app_domain': f'localhost:{self.https.server_port}', 'bff_probe_release': RELEASE,
                      **(variables or {})},
             'module_defaults': {'ansible.builtin.uri': {'ca_path': str(self.cert)}}, 'tasks': tasks}]))
@@ -214,7 +255,7 @@ class BackendProbes(unittest.TestCase):
         # Reserve an unused local port without listening, so connection attempts are refused.
         with socket.socket() as unused:
             unused.bind(('127.0.0.1', 0))
-            tasks[0]['ansible.builtin.uri']['url'] = f'http://127.0.0.1:{unused.getsockname()[1]}/health'
+            tasks[0]['ansible.builtin.uri']['url'] = f'https://127.0.0.1:{unused.getsockname()[1]}/health'
             result = self.run_tasks(tasks)
         self.assertNotEqual(result.returncode, 0)
 
@@ -228,7 +269,7 @@ class BackendProbes(unittest.TestCase):
         type(self).login = 500, {}
         result = self.run_tasks(self.tasks('probe-backend.yml') + self.tasks('probe-bff.yml'))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Backend internal HTTP check', result.stdout)
+        self.assertIn('Backend internal mTLS check', result.stdout)
         self.assertIn('ok: [backend-test -> gateway-test', result.stdout)
         self.assertTrue(any(r[0] == '/api/auth/login' for r in self.requests))
 
@@ -289,7 +330,7 @@ class BackendProbes(unittest.TestCase):
                 if scenario == 'internal-failure':
                     self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
                 else:
-                    self.assertRegex(output, r'TASK \[Backend internal HTTP check\][^\n]*\nok: \[backend-test -> gateway-test')
+                    self.assertRegex(output, r'TASK \[Backend internal mTLS check\][^\n]*\nok: \[backend-test -> gateway-test')
                     if scenario == 'missing-release':
                         self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
                     else:

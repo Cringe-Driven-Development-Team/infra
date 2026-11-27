@@ -9,3 +9,4 @@ runtime_agent_max_output_bytes: 10485760
 # Те же значения, что runtime_host_agent_port и runtime_host_network: роль host слушает/фильтрует их
 runtime_agent_port: 8000
 runtime_agent_network: cellestial-kernel
+runtime_agent_grpc: "{{ agent_service | default('') | basename == 'cellestial-agent-grpc.service' }}"
