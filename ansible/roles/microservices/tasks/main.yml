@@ -23,6 +23,26 @@
     - "{{ microservices_root }}"
     - "{{ microservices_root }}/tls"
 
+- name: Look for the storage selected by clean start
+  ansible.builtin.stat:
+    path: "{{ microservices_root }}/clean-start.json"
+  register: microservices_storage_marker
+
+- name: Read the storage selected by clean start
+  ansible.builtin.slurp:
+    src: "{{ microservices_root }}/clean-start.json"
+  register: microservices_storage_record
+  when: microservices_storage_marker.stat.exists
+
+- name: Select persistent storage for the service set
+  ansible.builtin.set_fact:
+    microservices_storage: >-
+      {{ (microservices_storage_record.content | b64decode | from_json)
+         if microservices_storage_marker.stat.exists
+         else ({'database': microservices_clean_database, 'redis_db': microservices_clean_redis_db}
+               if microservices_clean_start | default(false) | bool
+               else {'database': app_postgres_database, 'redis_db': 0}) }}
+
 - name: Issue service and probe identities for this operation
   ansible.builtin.include_tasks: cert.yml
   loop: "{{ microservices_selected_services + ['probe'] }}"
@@ -184,8 +204,12 @@
         'selected': microservices_selected_services,
         'before': microservices_before,
         'desired': microservices_desired,
-        'cutover': microservices_first_cutover | default(false) | bool,
-        'workers_paused': microservices_workers_paused | default(microservices_first_cutover | default(false)) | bool,
+        'cutover': microservices_initial_deployment | bool,
+        'clean_start': microservices_clean_start | default(false) | bool,
+        'workers_paused': microservices_workers_paused | default(microservices_initial_deployment) | bool,
+        'database': microservices_storage.database,
+        'legacy_database': app_postgres_database,
+        'redis_db': microservices_storage.redis_db | int,
         'action': microservices_action,
         'metrics': microservices_metrics_scraper_address | default('') | length > 0
       } | to_json }}

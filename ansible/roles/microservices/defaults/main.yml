@@ -1,5 +1,10 @@
 ---
 microservices_root: "{{ app_compose_dir }}/microservices"
+microservices_clean_database: "{{ app_postgres_database }}_services"
+microservices_clean_redis_db: 1
+microservices_initial_deployment: >-
+  {{ (microservices_first_cutover | default(false) | bool)
+     or (microservices_clean_start | default(false) | bool) }}
 microservices_order:
   - identity
   - environments

@@ -105,14 +105,13 @@ class Deployment:
         sql = f"SELECT COALESCE(max(version_id),0) FROM {service}.goose_db_version WHERE is_applied;"
         return int(self.psql(sql).decode().strip())
 
-    def psql(self, sql):
+    def psql(self, sql, database=None):
+        target = database if database is not None else self.inputs.get('database', '')
         return run('docker', 'exec', '-i', self.database_container(), 'sh', '-ec',
-                   'exec psql -XAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"',
-                   input_data=sql.encode())
+                   'exec psql -XAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "${1:-$POSTGRES_DB}"',
+                   'psql', target, input_data=sql.encode())
 
-    def first_cutover(self):
-        if (self.root / 'v2-active').exists():
-            raise ValueError('service schemas are active; restore the monolith before a new cutover')
+    def check_cutover_evidence(self):
         inventory_path, backup, checksum = (self.root / name for name in
                                             ('cutover.json', 'monolith.dump', 'monolith.dump.sha256'))
         inventory = json.loads(inventory_path.read_text())
@@ -138,6 +137,17 @@ class Deployment:
                        '--filter', 'label=com.docker.compose.service=api').strip()
         if monolith:
             raise ValueError('monolith must be stopped before first cutover')
+        if self.inputs.get('clean_start', False):
+            with (self.root / 'redis.rdb').open('rb') as data:
+                redis_sha = hashlib.file_digest(data, 'sha256').hexdigest()
+            if (self.root / 'redis.rdb.sha256').read_text().strip() != redis_sha:
+                raise ValueError('production Redis backup checksum mismatch')
+        return inventory_path
+
+    def first_cutover(self):
+        if (self.root / 'v2-active').exists() or (self.root / 'clean-start.json').exists():
+            raise ValueError('service schemas are active; restore the monolith before a new cutover')
+        inventory_path = self.check_cutover_evidence()
         self.psql((self.root / 'roles.sql').read_text())
         (self.root / 'v2-active').touch(exist_ok=True)
         for mode in ('--dry-run', '--apply'):
@@ -149,6 +159,44 @@ class Deployment:
         for service in SERVICES:
             if self.schema_version(service) > self.desired[service]['migration_version']:
                 raise ValueError(f'{service}: database schema is newer than the requested image')
+
+    def require_empty_redis(self, index):
+        keys = run('docker', 'compose', '--project-name', 'cellestial',
+                   '--project-directory', str(self.root.parent),
+                   'exec', '-T', 'redis', 'redis-cli', '-e', '-n', str(index), 'DBSIZE')
+        if keys.strip() != b'0':
+            raise ValueError('clean start requires an empty Redis database')
+
+    def clean_start(self):
+        database = self.inputs['database']
+        redis_db = self.inputs['redis_db']
+        if (not re.fullmatch('[a-z_][a-z0-9_]{0,62}', database)
+                or database in (self.inputs['legacy_database'], 'postgres', 'template0', 'template1')
+                or type(redis_db) is not int or redis_db <= 0):
+            raise ValueError('clean start requires separate PostgreSQL and Redis databases')
+
+        self.check_cutover_evidence()
+        marker = self.root / 'clean-start.json'
+        storage = {'database': database, 'redis_db': redis_db, 'desired': self.desired}
+        retry = marker.is_file()
+        if retry and json.loads(marker.read_text()) != storage:
+            raise ValueError('clean start differs from the recorded first attempt')
+        if not retry and (self.root / 'v2-active').exists():
+            raise ValueError('service schemas are already active')
+        exists = self.psql(f"SELECT 1 FROM pg_database WHERE datname = '{database}';", 'postgres').strip()
+        if not exists and (self.root / 'v2-active').exists():
+            raise ValueError('recorded clean start database is missing')
+        if not retry:
+            if exists:
+                raise ValueError('clean start target database already exists')
+            self.require_empty_redis(redis_db)
+            pending = marker.with_suffix('.tmp')
+            pending.write_text(json.dumps(storage) + '\n')
+            pending.replace(marker)
+        if not exists:
+            self.psql(f'CREATE DATABASE "{database}" TEMPLATE template0;', 'postgres')
+        self.psql((self.root / 'roles.sql').read_text())
+        (self.root / 'v2-active').touch()
 
     def pull(self, service):
         version = self.desired[service]
@@ -173,12 +221,20 @@ class Deployment:
         validate(self.selected, self.before, self.desired, self.cutover)
         if self.inputs['action'] not in ('deploy', 'rollback') or self.cutover and self.inputs['action'] != 'deploy':
             raise ValueError('invalid deployment action')
+        marker = self.root / 'clean-start.json'
+        if not self.cutover and marker.is_file():
+            storage = json.loads(marker.read_text())
+            if any(self.inputs.get(key) != storage[key] for key in ('database', 'redis_db')):
+                raise ValueError('deployment storage differs from the recorded clean start')
         for service in self.selected:
             self.pull(service)
         if self.cutover:
             if not self.workers_paused:
                 raise ValueError('initial cutover requires paused workers')
-            self.first_cutover()
+            if self.inputs.get('clean_start', False):
+                self.clean_start()
+            else:
+                self.first_cutover()
         else:
             observed = self.observed()
             if not (self.root / 'v2-active').is_file() or any(
