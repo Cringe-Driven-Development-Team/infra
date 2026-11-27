@@ -84,6 +84,7 @@ pulumi config set infra:dnsProjectId '<project id из п.1.2>'
 pulumi config set infra:s3Pool   ru-7
 pulumi config set infra:s3Bucket '<имя бакета релизов, глобально уникальное>'
 pulumi config set infra:avatarsBucket '<имя публичного бакета аватарок, глобально уникальное>'
+pulumi config set infra:privateFilesBucket '<имя приватного бакета файлов Go, глобально уникальное>'
 pulumi config set infra:staticBucket '<имя публичного бакета статики, глобально уникальное>'
 pulumi config set infra:s3PublicRead true   # публичное чтение объектов (политика бакета), нужно для DoD
 ```

@@ -17,6 +17,7 @@ import unittest
 
 from ansible.parsing.vault import VaultLib, VaultSecret
 from ansible.plugins.filter.core import to_bool, to_json
+from ansible.plugins.filter.urlsplit import split_url
 from jinja2 import Environment, StrictUndefined, UndefinedError
 import yaml
 
@@ -78,6 +79,7 @@ class DeploymentChecks(unittest.TestCase):
             'session_key: "{{ vault_session_key }}"\n'
             'bff_api_key: "{{ vault_bff_api_key }}"\n'
             'avatars_s3_access_key: fake-key\navatars_s3_secret_key: fake-secret\n'
+            'private_files_bucket: private-files\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'avatars_bucket: avatars\n'
             'avatars_public_domain: avatars.example.org\n'
@@ -526,6 +528,7 @@ class DeploymentChecks(unittest.TestCase):
             app_bff_go_api_url=f"https://{address}:8443/api/v1",
             app_services=services, app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF,
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
+            private_files_bucket="private-files",
             s3_endpoint="https://s3.example.org",
             avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
             postgres_password="pg-secret",
@@ -537,6 +540,7 @@ class DeploymentChecks(unittest.TestCase):
         templates = Environment(undefined=StrictUndefined)
         templates.filters["to_json"] = to_json
         templates.filters["bool"] = to_bool
+        templates.filters["urlsplit"] = split_url
         compose = templates.from_string(
             (ANSIBLE / "roles/app/templates/compose.yml.j2").read_text()).render(variables)
         env = templates.from_string((ANSIBLE / "roles/app/templates/env.j2").read_text()).render(variables)
@@ -563,6 +567,7 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(api["AWS_REGION"], "ru-7")
         self.assertEqual(api["AWS_ENDPOINT_URL_S3"], "https://s3.example.org")
         self.assertEqual(api["S3_AVATARS_BUCKET"], "avatars")
+        self.assertEqual(api["S3_PRIVATE_FILES_BUCKET"], "private-files")
         self.assertEqual(api["S3_AVATARS_PUBLIC_URL"], "https://avatars.example.org")
         again, again_env = self.render_host(services)
         self.assertEqual(again_env, env)
@@ -581,6 +586,8 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(set(config["volumes"]), {"caddy_data", "caddy_config"})
         bff = config["services"]["bff"]
         self.assertEqual(bff["environment"]["GO_API_URL"], "https://192.168.199.10:8443/api/v1")
+        self.assertEqual(bff["environment"]["IDENTITY_API_URL"], "https://identity.internal.cellestial.ru:8444/api/v1")
+        self.assertEqual(bff["environment"]["WORKSPACE_API_URL"], "https://workspace.internal.cellestial.ru:8445/api/v1")
 
         self.assertEqual(bff["extra_hosts"], [
             "identity.internal.cellestial.ru=192.168.199.10",

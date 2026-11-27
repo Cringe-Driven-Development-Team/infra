@@ -3,8 +3,10 @@ app_backend_image: ghcr.io/cringe-driven-development-team/backend
 # BFF (infra#58): публичный образ публикует CI фронта (frontend#4), выкатывается по digest —
 # bff_image_ref (infra#74)
 app_bff_image: ghcr.io/cringe-driven-development-team/bff
-# BFF всегда обращается с gateway к приватной VPS2: mTLS-прокси перед Go (infra#160)
+# BFF из frontend#257 использует прокси монолита, BFF из frontend#283 — два HTTPS API.
 app_bff_go_api_url: "https://{{ app_backend_address }}:8443/api/v1"
+app_bff_identity_api_url: https://identity.internal.cellestial.ru:8444/api/v1
+app_bff_workspace_api_url: https://workspace.internal.cellestial.ru:8445/api/v1
 # mTLS BFF → Go (infra#160): TLS-прокси перед Go на VPS2, Go доступен ему только по сети app
 app_api_proxy_image: nginx:1.30-alpine
 # CA, сертификат и ключ хоста: на VPS2 — серверные (читает только прокси), на gateway — клиентские BFF
