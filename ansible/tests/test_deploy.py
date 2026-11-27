@@ -76,9 +76,9 @@ class DeploymentChecks(unittest.TestCase):
             'session_key: "{{ vault_session_key }}"\n'
             'bff_api_key: "{{ vault_bff_api_key }}"\n'
             'avatars_s3_access_key: fake-key\navatars_s3_secret_key: fake-secret\n'
+            'private_files_bucket: private-files\n'
             's3_region: ru-7\ns3_endpoint: https://s3.example.org\n'
             'avatars_bucket: avatars\n'
-            'private_files_bucket: private-files\n'
             'avatars_public_domain: avatars.example.org\n'
             'app_cors_allowed_origins: https://app.example.org\n'
             'app_backend_address: "127.0.0.1"\n'
@@ -516,9 +516,9 @@ class DeploymentChecks(unittest.TestCase):
             app_bff_go_api_url=f"http://{address}:8080/api/v1",
             app_services=services, app_backend_ref=BACKEND_REF, app_bff_ref=BFF_REF,
             app_bff_release=BFF_SHA, app_domain="app.example.org", s3_region="ru-7",
+            private_files_bucket="private-files",
             s3_endpoint="https://s3.example.org",
             avatars_bucket="avatars", avatars_public_domain="avatars.example.org",
-            private_files_bucket="private-files",
             app_cors_allowed_origins="https://app.example.org", postgres_password="pg-secret",
             jwt_secret="jwt-secret", csrf_secret="csrf-secret", redis_password="redis-secret",
             session_key="session-secret", bff_api_key="s2s-secret",
