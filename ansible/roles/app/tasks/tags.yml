@@ -47,7 +47,7 @@
   when: "'api' in app_services"
 
 # Выкатка BFF не читает VPS2: ключу frontend CI доступен только gateway (infra#200)
-- name: Require the Identity, Workspace and OnlineConf HTTPS APIs from gateway
+- name: Require the Identity and Workspace HTTPS APIs from gateway
   ansible.builtin.command:
     argv:
       - curl
@@ -76,7 +76,6 @@
   loop:
     - { url: "{{ app_bff_identity_api_url }}", path: /users/me }
     - { url: "{{ app_bff_workspace_api_url }}", path: /notebooks }
-    - { url: "{{ app_bff_onlineconf_api_url }}", path: /admin/access }
   register: app_bff_api_probe
   changed_when: false
   failed_when: app_bff_api_probe.rc != 0 or app_bff_api_probe.stdout != '401'

@@ -1354,7 +1354,7 @@ other service remain in place during a targeted deploy.
 
 ## Выпуск и переключение backend-сервисов
 
-Выпуск задаёт полный состав Identity, OnlineConf, Workspace и Environments. Для частичной
+Выпуск задаёт полный состав Identity, Workspace и Environments. Для частичной
 операции CD передаёт в `ansible/deploy-microservices.yml` полные карты
 `microservices_before` и `microservices_desired`, список
 `microservices_selected_services`, действие `microservices_action` и путь
@@ -1406,6 +1406,11 @@ SAN. Проверьте ротацию на стенде полной повто
 или клиента без сертификата не проходит.
 
 ### OnlineConf (infra#203)
+
+**Сейчас OnlineConf выключен:** backend ещё не публикует его образ, поэтому сервис убран из
+`microservices_order`, `SERVICES` в `deploy.py`, валидатора `deploy-microservices.yml`, `verify.yml`,
+Prometheus и preflight BFF. BFF получает `ONLINECONF_API_URL`, но наличие OnlineConf не проверяет.
+Включение — вернуть его во все эти места, когда в release manifest появится `onlineconf`.
 
 OnlineConf — четвёртый сервис того же выпуска. Образ следует общему контракту
 сервисов VPS2, по нему backend#154 собирает `cellestial-onlineconf`:

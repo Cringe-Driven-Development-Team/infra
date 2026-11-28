@@ -639,9 +639,8 @@ class DeploymentChecks(unittest.TestCase):
         # ключ frontend CI пускает только на gateway (infra#200): выкатка BFF проверяет API по HTTPS
         tasks = yaml.safe_load((ANSIBLE / "roles/app/tasks/tags.yml").read_text())
         self.assertFalse([task["name"] for task in tasks if "delegate_to" in task])
-        probe = next(task for task in tasks if task["name"].startswith("Require the Identity, Workspace and OnlineConf"))
+        probe = next(task for task in tasks if task["name"].startswith("Require the Identity and Workspace"))
         self.assertEqual(probe["when"], "app_deploy_service == 'bff'")
-        self.assertIn({"url": "{{ app_bff_onlineconf_api_url }}", "path": "/admin/access"}, probe["loop"])
 
     def test_services_of_each_host(self):
         playbook = self.root / "services-test.yml"

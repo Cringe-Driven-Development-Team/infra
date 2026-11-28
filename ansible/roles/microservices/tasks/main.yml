@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - vault_workspace_cursor_key is match('^[A-Za-z0-9_-]{32,}$')
-      - vault_microservices_postgres.keys() | list | sort == microservices_order | sort
+      - microservices_order | difference(vault_microservices_postgres.keys() | list) | length == 0
       - vault_microservices_postgres[service].app is match('^[A-Za-z0-9_-]{32,}$')
       - vault_microservices_postgres[service].owner is match('^[A-Za-z0-9_-]{32,}$')
   loop: "{{ microservices_order }}"
