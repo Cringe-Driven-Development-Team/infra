@@ -7,7 +7,7 @@ app_bff_image: ghcr.io/cringe-driven-development-team/bff
 app_bff_go_api_url: "https://{{ app_backend_address }}:8443/api/v1"
 app_bff_identity_api_url: https://identity.internal.cellestial.ru:8444/api/v1
 app_bff_workspace_api_url: https://workspace.internal.cellestial.ru:8445/api/v1
-app_bff_onlineconf_api_url: https://onlineconf.internal.cellestial.ru:8446/api/v1
+app_bff_onlineconf_api_url: https://onlineconf.internal.cellestial.ru:8446
 # mTLS BFF → Go (infra#160): TLS-прокси перед Go на VPS2, Go доступен ему только по сети app
 app_api_proxy_image: nginx:1.30-alpine
 # CA, сертификат и ключ хоста: на VPS2 — серверные (читает только прокси), на gateway — клиентские BFF

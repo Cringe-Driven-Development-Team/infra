@@ -1424,9 +1424,11 @@ OnlineConf — четвёртый сервис того же выпуска. О�
 - Переменные: `DATABASE_URL`, `TLS_CA_FILE`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `VERSION`,
   `WORKERS_PAUSED`, `BFF_API_KEY`, `IDENTITY_GRPC_ADDR=identity.internal.cellestial.ru:9090`.
   Workspace получает `ONLINECONF_GRPC_ADDR=onlineconf.internal.cellestial.ru:9090`, BFF —
-  `ONLINECONF_API_URL=https://onlineconf.internal.cellestial.ru:8446/api/v1`.
-- Smoke выкладки: `GET /api/v1/onlineconf/keys` без `X-BFF-Key` — 403, с ключом без
-  пользователя — 401.
+  `ONLINECONF_API_URL=https://onlineconf.internal.cellestial.ru:8446`.
+- Административный API — `/admin/*` (backend#154). Smoke выкладки и preflight BFF:
+  `GET /admin/access` без `X-BFF-Key` — 403, с ключом без пользователя — 401.
+- Prometheus на VPS4 опрашивает `/onlineconf/metrics`, `verify.yml` проверяет readiness
+  OnlineConf вместе с остальными сервисами.
 
 Первая установка выполняется обычной выкладкой без `first_cutover` и `clean_start`: в
 `microservices_before` три работающих сервиса, в `microservices_desired` — четыре,
