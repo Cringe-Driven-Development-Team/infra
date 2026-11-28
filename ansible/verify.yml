@@ -307,6 +307,7 @@
   hosts: auxiliary
   gather_facts: false
   become: true
+  tags: auxiliary_releases
   vars_files:
     - roles/hooks/defaults/main.yml
   tasks:
