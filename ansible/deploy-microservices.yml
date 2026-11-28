@@ -3,6 +3,8 @@
   hosts: localhost
   gather_facts: false
   connection: local
+  vars:
+    microservices_all: ['environments', 'identity', 'onlineconf', 'workspace']
   tasks:
     - name: Require exactly one backend and gateway and a local result location
       ansible.builtin.assert:
@@ -12,16 +14,16 @@
           - microservices_selected_services is sequence
           - microservices_selected_services is not string
           - microservices_selected_services | length > 0
-          - microservices_selected_services | difference(['identity', 'workspace', 'environments']) | length == 0
+          - microservices_selected_services | difference(microservices_all) | length == 0
           - microservices_before is mapping
           - microservices_desired is mapping
-          - microservices_desired.keys() | list | sort == ['environments', 'identity', 'workspace']
+          - microservices_desired.keys() | list | sort == microservices_all
           - microservices_result_path is match('^/[^\r\n]+$')
           - microservices_action in ['deploy', 'rollback']
           - >-
             not (microservices_clean_start | default(false) | bool) or
             (not (microservices_first_cutover | default(false) | bool)
-             and microservices_selected_services | sort == ['environments', 'identity', 'workspace']
+             and microservices_selected_services | sort == microservices_all
              and microservices_action == 'deploy' and microservices_before | length == 0)
     - name: Initialize evidence for incomplete operations
       ansible.builtin.copy:

@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - vault_workspace_cursor_key is match('^[A-Za-z0-9_-]{32,}$')
-      - vault_microservices_postgres.keys() | list | sort == ['environments', 'identity', 'workspace']
+      - vault_microservices_postgres.keys() | list | sort == microservices_order | sort
       - vault_microservices_postgres[service].app is match('^[A-Za-z0-9_-]{32,}$')
       - vault_microservices_postgres[service].owner is match('^[A-Za-z0-9_-]{32,}$')
   loop: "{{ microservices_order }}"
@@ -255,7 +255,7 @@
 
 - name: Verify private application HTTPS with the BFF identity
   ansible.builtin.include_tasks: https.yml
-  loop: "{{ microservices_selected_services | intersect(['identity', 'workspace']) }}"
+  loop: "{{ microservices_selected_services | intersect(['identity', 'workspace', 'onlineconf']) }}"
   loop_control:
     loop_var: service
   when: microservices_facts.checks[service].ready == 'passed'

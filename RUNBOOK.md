@@ -1352,9 +1352,9 @@ No rollback occurs automatically. Caller cancellation does not cancel the dispat
 executor; inspect its own run before retrying. Shared networks, SQLite volumes and the
 other service remain in place during a targeted deploy.
 
-## Выпуск и переключение трёх backend-сервисов
+## Выпуск и переключение backend-сервисов
 
-Выпуск задаёт полный состав Identity, Workspace и Environments. Для частичной
+Выпуск задаёт полный состав Identity, OnlineConf, Workspace и Environments. Для частичной
 операции CD передаёт в `ansible/deploy-microservices.yml` полные карты
 `microservices_before` и `microservices_desired`, список
 `microservices_selected_services`, действие `microservices_action` и путь
@@ -1394,7 +1394,7 @@ frontend#283 следующие HTTPS origins и путь API:
 и порты на loopback. Приватный metrics proxy открывает только
 `/<service>/metrics` при совпадающих `infra:metricsScraperAddress` в Pulumi
 и `microservices_metrics_scraper_address` в inventory. Значение — приватный
-IPv4 сборщика. Playbook сохраняет file-SD inventory трёх сервисов в
+IPv4 сборщика. Playbook сохраняет file-SD inventory сервисов в
 `/opt/cellestial/microservices/prometheus-targets.json`. Этот файл подключают
 в `file_sd_configs` с VPS4, где Prometheus читает его локальную копию.
 При отключённом scraper список пуст. Динамический scrape runtime-agent
@@ -1405,9 +1405,48 @@ SAN. Проверьте ротацию на стенде полной повто
 с `app_mtls_force=true` и проверьте, что запрос сертификатом другого сервиса
 или клиента без сертификата не проходит.
 
+### OnlineConf (infra#203)
+
+OnlineConf — четвёртый сервис того же выпуска. Образ следует общему контракту
+сервисов VPS2, по нему backend#154 собирает `cellestial-onlineconf`:
+
+- `ghcr.io/cringe-driven-development-team/cellestial-onlineconf@sha256:…` с метками
+  `org.opencontainers.image.revision` (полный SHA) и
+  `org.opencontainers.image.source=https://github.com/Cringe-Driven-Development-Team/backend`;
+  запись в release manifest — `image_ref`, `source_sha`, `protocol_revision` (общий для выпуска)
+  и `migration_version`.
+- Миграции: `./migrate --service onlineconf up` под `onlineconf_owner`, схема `onlineconf`,
+  таблица goose `onlineconf.goose_db_version`. Приложение работает под `onlineconf_app` с
+  DML только в своей схеме.
+- Порты в контейнере: HTTPS API 8080 (mTLS, `X-BFF-Key`), gRPC 9090 (mTLS, `grpc.health.v1`),
+  admin 9091 (`/readyz`, `/metrics`). Снаружи: 8446 только на приватном адресе VPS2
+  и только с gateway, gRPC 49090 и admin 49091 — на loopback.
+- Переменные: `DATABASE_URL`, `TLS_CA_FILE`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `VERSION`,
+  `WORKERS_PAUSED`, `BFF_API_KEY`, `IDENTITY_GRPC_ADDR=identity.internal.cellestial.ru:9090`.
+  Workspace получает `ONLINECONF_GRPC_ADDR=onlineconf.internal.cellestial.ru:9090`, BFF —
+  `ONLINECONF_API_URL=https://onlineconf.internal.cellestial.ru:8446`.
+- Административный API — `/admin/*` (backend#154). Smoke выкладки и preflight BFF:
+  `GET /admin/access` без `X-BFF-Key` — 403, с ключом без пользователя — 401.
+- Prometheus на VPS4 опрашивает `/onlineconf/metrics`, `verify.yml` проверяет readiness
+  OnlineConf вместе с остальными сервисами.
+
+Первая установка выполняется обычной выкладкой без `first_cutover` и `clean_start`: в
+`microservices_before` три работающих сервиса, в `microservices_desired` — четыре,
+в `microservices_selected_services` есть `onlineconf`. Playbook создаёт роли и схему
+идемпотентно, не меняя digest и схемы остальных сервисов. Пароли ролей —
+`vault_microservices_postgres.onlineconf`. Перед первой установкой примените
+Pulumi (правило 8446 в security group backend) и `site.yml` (ufw VPS2, Compose BFF).
+
+Проверка на стенде: в отчёте `microservices_result_path` у `onlineconf` фактический digest
+в `observed` и `passed` для `image`, `ready`, `smoke`. Повторная выкладка того же выпуска
+сохраняет ключи. `ss -ltn` на VPS2 показывает 49090 и 49091 только на `127.0.0.1`; с gateway
+`curl` на 8446 без клиентского сертификата не проходит TLS. Под `onlineconf_app`
+`INSERT` в `identity`/`workspace` запрещён. Изменение значения в OnlineConf CI/CD не запускает:
+значения хранятся в БД сервиса, а не в inventory.
+
 ### Первый запуск с пустыми таблицами
 
-Режим `clean_start` выбирают, если команда согласовала запуск без прежних аккаунтов, блокнотов и сессий. Он создаёт новую БД с суффиксом `_services` в том же PostgreSQL, применяет обычные миграции всех трёх сервисов и использует Redis DB 1. Данные монолита остаются в исходной БД и Redis DB 0. Проверку переноса из действующего монолита проводят отдельно, на копии данных.
+Режим `clean_start` выбирают, если команда согласовала запуск без прежних аккаунтов, блокнотов и сессий. Он создаёт новую БД с суффиксом `_services` в том же PostgreSQL, применяет обычные миграции всех сервисов и использует Redis DB 1. Данные монолита остаются в исходной БД и Redis DB 0. Проверку переноса из действующего монолита проводят отдельно, на копии данных.
 
 1. Проведите репетицию на стенде. В production согласуйте окно, остановите приём новых работ, дождитесь завершения очередей, сверьте ресурсы в Selectel и остановите монолит с его воркерами. Сохраните его digest и digest BFF.
 2. В Backend CD выберите опубликованный релиз, `services=all`, включите `clean_start` и оставьте `first_cutover` выключенным. Целевая БД PostgreSQL должна ещё отсутствовать, Redis DB 1 должна быть пустой. При прерывании повтор той же операции с тем же релизом сверяет уже зафиксированную цель. `clean-start.json` хранит имя новой БД и индекс Redis для последующих выкладок.

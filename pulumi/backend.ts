@@ -29,6 +29,7 @@ export function createBackend(c: InfraConfig, f: Foundation, gatewayPort: openst
     ["api-mtls", "tcp", 8443, gatewayAddress],
     ["identity-mtls", "tcp", 8444, gatewayAddress],
     ["workspace-mtls", "tcp", 8445, gatewayAddress],
+    ["onlineconf-mtls", "tcp", 8446, gatewayAddress],
     ["icmp", "icmp", undefined, f.subnet.cidr],
   ];
   const scraper = c.monitoring?.privateIp ?? backend.metricsScraperAddress;
