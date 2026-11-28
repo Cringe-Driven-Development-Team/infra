@@ -36,8 +36,3 @@
       ansible.builtin.import_tasks: roles/app/tasks/check-bff-image.yml
       vars:
         bff_check_ref: "{{ bff_image_ref }}"
-
-    - name: Check the BFF through public Caddy
-      ansible.builtin.import_tasks: roles/app/tasks/probe-bff.yml
-      vars:
-        bff_probe_release: "{{ bff_release_sha }}"

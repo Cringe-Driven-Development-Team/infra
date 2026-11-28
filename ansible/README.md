@@ -293,8 +293,8 @@ BFF сам разбирает остальное: маршруты своего 
 
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
 - до первой выкатки BFF `https://<app_domain>/` отвечает `503 BFF is not deployed` с `nosniff`;
-- после неё (в `.env` на VPS есть `BFF_IMAGE_REF`) — проверки релиза из `deploy-bff.yml`:
-  запущенный контейнер `bff` — образ `BFF_IMAGE_REF` из `.env` (тот же digest и image ID) и
+- после неё (в `.env` на VPS есть `BFF_IMAGE_REF`): запущенный контейнер `bff` — образ `BFF_IMAGE_REF`
+  из `.env` (тот же digest и image ID) и
   `healthy` (`roles/app/tasks/check-bff-image.yml`); снаружи (`roles/app/tasks/probe-bff.yml`) —
   гостевой HTML `/login` с ровно одним `<script id="bootstrap">` и `{"user":null}`,
   `<meta name="release">` с полным `BFF_RELEASE_SHA`, `Cache-Control: private, no-store`,
@@ -412,16 +412,14 @@ ansible-playbook -i inventory/ci.yml deploy-bff.yml \
 - В `.env` пишутся `BFF_IMAGE_REF` (ссылка по digest) и `BFF_RELEASE_SHA`; Compose запускает
   `image: ${BFF_IMAGE_REF}` с `pull_policy: never` и `--wait`. Полный digest-ref Go берётся из `.env` на VPS:
   выкатка BFF не трогает API, а `deploy-backend.yml` не меняет BFF (`bff_image_ref` он не принимает).
-  Без выкаченного Go BFF не выкатывается (он ждёт `api` в состоянии healthy).
 - После запуска проверяется фактически запущенный контейнер: его образ — тот же `BFF_IMAGE_REF` и
-  image ID, состояние `healthy` (`roles/app/tasks/check-bff-image.yml`). Затем Caddy переключается на
-  BFF и выполняются проверки снаружи (`roles/app/tasks/probe-bff.yml`, раздел «Проверки verify.yml»),
-  `<meta name="release">` сверяется с `bff_release_sha`. Провал любой проверки — ошибка playbook, а
-  не успех. Что остаётся на VPS, зависит от места сбоя:
+  image ID, состояние `healthy` по локальному `/health` BFF (`roles/app/tasks/check-bff-image.yml`).
+  Caddy переключается на BFF. К Go, Identity, Workspace и через публичный Caddy выкатка не обращается
+  (infra#215). Провал проверки — ошибка playbook, а не успех. Что остаётся на VPS, зависит от места сбоя:
   - до запуска (скачивание образа, сверка метки) — ничего не менялось;
   - при записи файлов или запуске Compose (роль `app`) — `.env` и `compose.yml` прежней выкатки
     восстанавливаются, контейнер — нет;
-  - в проверках после запуска (запущенный образ, healthy, проба снаружи) — новая выкатка уже записана
+  - в проверке после запуска (запущенный образ, healthy) — новая выкатка уже записана
     и запущена: `.env` и `compose.yml` — нового релиза.
 
   В двух последних случаях нужна выкатка рабочего digest (откат — той же командой).
@@ -446,7 +444,7 @@ gateway пускает пересылку только на `VPS2:22` и `VPS2:8
 машины — только секреты её сервисов; `BFF_API_KEY` нужен обеим сторонам. `deploy-backend.yml`
 выкатывает приложение только на группу `backend`; отсутствие или несколько VPS2 приводят
 к ошибке предварительной проверки inventory. Gateway участвует в делегированных проверках.
-`deploy-bff.yml` работает только на gateway и перед запуском требует доступный Go на VPS2.
+`deploy-bff.yml` работает только на gateway и не обращается к Go на VPS2.
 Откат версии повторно выкатывает прежний digest на VPS2, без возврата сервисов на gateway.
 Порядок выкатки и отката — [RUNBOOK.md](../RUNBOOK.md#go-и-postgres-на-vps2-infra59).
 
