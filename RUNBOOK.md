@@ -328,16 +328,14 @@ HTTP API BFF (`/api/auth/*`, `/api/notebooks/*` и др., frontend#254) и пу�
    ссылкой по digest и полным SHA в этих переменных, без GHCR credentials (команда —
    [ansible/README.md](ansible/README.md#bff-выкатка-проверка-и-откат); в CD её запускает workflow
    фронта, frontend#4). Playbook до изменений VPS скачивает образ анонимно и сверяет его метку
-   `org.opencontainers.image.revision` с SHA, после запуска — что контейнер работает на этом образе и
-   `healthy`, и снаружи — гостевой HTML `/login` с bootstrap и релизом этого SHA, `UNAUTHORIZED` у
-   `users.me` без сессии и `404` на `/api/v1`, `/api/unknown`, `/health`. Для админки OnlineConf
-   (infra#204) — HTML `/onlineconf/keys` с релизом этого SHA (не продуктовый, без bootstrap,
-   `private, no-store`), его JS и CSS с CDN `releases/<sha>/` с типами `text/javascript` и `text/css`,
-   `/api/onlineconf/access` без сессии — `401 UNAUTHORIZED` JSON. Запросы API шлют `X-CSRF: 1`:
-   без него BFF отвечает `403 csrf_invalid` раньше проверки сессии.
+   `org.opencontainers.image.revision` с SHA. После запуска он проверяет, что контейнер `bff` работает
+   на этом образе (тот же digest и image ID) и Docker считает его `healthy` по локальному `/health`
+   BFF, затем переключает маршрут Caddy на BFF. Другой образ, неподнявшийся контейнер или провал
+   `/health` — ошибка выкладки. К Go, Identity, Workspace и через публичный Caddy выкладка не
+   обращается (infra#215): она проходит и при недоступном backend.
 3. Руками — пользовательский путь: вход, защищённый RPC (список блокнотов), прямое открытие
    `/notebooks/<id>`. Затем `verify.yml`.
-4. Откат — шаг 2 с прежними `bff_image_ref` и `bff_release_sha`; после него те же проверки. `SESSION_KEY` не меняется, сессия
+4. Откат — шаг 2 с прежними `bff_image_ref` и `bff_release_sha` и с теми же проверками. `SESSION_KEY` не меняется, сессия
    остаётся. Go и БД откат BFF не трогает.
 5. Недоступность Go: API BFF отвечает `BAD_GATEWAY` (502), HTML — `503` без приложения, а не SPA.
 

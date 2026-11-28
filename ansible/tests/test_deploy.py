@@ -635,12 +635,22 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotIn("session-secret", env)
         self.assertNotIn("BFF_IMAGE_REF", env)
 
-    def test_bff_deploy_does_not_reach_vps2(self):
-        # ключ frontend CI пускает только на gateway (infra#200): выкатка BFF проверяет API по HTTPS
+    def test_bff_deploy_checks_only_the_local_container(self):
+        # выкатка и откат BFF не обращаются ни к backend, ни к публичному Caddy (infra#215):
+        # успех — запущенный запрошенный digest и healthy по локальному /health
+        result = subprocess.run(["ansible-playbook", "-i", str(self.inventory), "--list-tasks", "deploy-bff.yml"],
+                                cwd=ANSIBLE, env=self.environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        names = [line.split("\tTAGS:")[0].strip() for line in result.stdout.splitlines() if "\tTAGS:" in line]
+        probes = {task["name"] for name in ("probe-bff.yml", "probe-backend.yml", "probe-login.yml")
+                  for task in yaml.safe_load((ANSIBLE / "roles/app/tasks" / name).read_text())}
+        self.assertFalse(probes & set(names))
+        self.assertFalse([name for name in names if "Identity and Workspace" in name])
+        self.assertEqual(names[-1], "The running BFF is the deployed image and healthy")
+        self.assertIn("app : Route Caddy to the BFF", names)
         tasks = yaml.safe_load((ANSIBLE / "roles/app/tasks/tags.yml").read_text())
-        self.assertFalse([task["name"] for task in tasks if "delegate_to" in task])
-        probe = next(task for task in tasks if task["name"].startswith("Require the Identity and Workspace"))
-        self.assertEqual(probe["when"], "app_deploy_service == 'bff'")
+        self.assertFalse([task["name"] for task in tasks if "delegate_to" in task
+                          or {"ansible.builtin.command", "ansible.builtin.uri"} & set(task)])
 
     def test_services_of_each_host(self):
         playbook = self.root / "services-test.yml"

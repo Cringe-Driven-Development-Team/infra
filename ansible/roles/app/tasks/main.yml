@@ -2,7 +2,6 @@
 - name: Validate the deployment inputs
   ansible.builtin.import_tasks: validate.yml
 
-# До tags.yml: выкатка BFF там проверяет Go по mTLS сертификатом BFF
 - name: mTLS certificate of this host
   ansible.builtin.include_tasks: mtls-cert.yml
 
@@ -230,5 +229,5 @@
     caddy_bff_enabled: "{{ app_bff_ref | length > 0 }}"
   notify: Reload caddy
 
-- name: Apply the Caddy route before the public probe
+- name: Apply the Caddy route
   ansible.builtin.meta: flush_handlers
