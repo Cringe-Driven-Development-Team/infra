@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 
-SERVICES = ('identity', 'environments', 'workspace')
+SERVICES = ('identity', 'environments', 'workspace', 'onlineconf')
 # Сервис, добавленный после первичного перехода: его первая установка идёт без cutover (infra#203)
 ADDED = {'onlineconf'}
 REGISTRY = 'ghcr.io/cringe-driven-development-team/cellestial-'
@@ -25,7 +25,7 @@ def validate(selected, before, desired, cutover):
         raise ValueError('invalid deployment inventory')
     if cutover and (set(selected) != all_services or before):
         raise ValueError('first cutover must select all services with an empty inventory')
-    if not cutover and all_services - set(before) - ADDED:
+    if not cutover and all_services - set(before) - (ADDED & set(selected)):
         raise ValueError('service deployment requires the current inventory')
     for inventory in (before, desired):
         for service, version in inventory.items():

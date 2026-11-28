@@ -21,7 +21,9 @@ services:
 {% if 'http' in microservices_ports[service] %}
       - "{{ app_backend_address }}:{{ microservices_ports[service].http }}:8080"
 {% endif %}
+{% if 'grpc' in microservices_ports[service] %}
       - "127.0.0.1:{{ microservices_ports[service].grpc }}:9090"
+{% endif %}
       - "127.0.0.1:{{ microservices_ports[service].admin }}:9091"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9091/readyz"]

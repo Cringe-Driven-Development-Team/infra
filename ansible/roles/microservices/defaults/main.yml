@@ -5,17 +5,16 @@ microservices_clean_redis_db: 1
 microservices_initial_deployment: >-
   {{ (microservices_first_cutover | default(false) | bool)
      or (microservices_clean_start | default(false) | bool) }}
-# OnlineConf вне состава, пока backend не публикует его образ в release manifest (infra#203):
-# включить — вернуть сюда, в SERVICES deploy.py, deploy-microservices.yml, verify.yml,
-# prometheus.yml.j2 и preflight BFF (roles/app/tasks/tags.yml)
 microservices_order:
   - identity
   - environments
   - workspace
+  - onlineconf
 microservices_ports:
   identity: { http: 8444, grpc: 19090, admin: 19091 }
   workspace: { http: 8445, grpc: 29090, admin: 29091 }
-  onlineconf: { http: 8446, grpc: 49090, admin: 49091 }
+  # У OnlineConf нет gRPC: готовность — по /readyz admin-порта (infra#220)
+  onlineconf: { http: 8446, admin: 49091 }
   environments: { grpc: 39090, admin: 39091 }
 microservices_limits:
   identity: { memory: 256m, cpu: "0.75" }

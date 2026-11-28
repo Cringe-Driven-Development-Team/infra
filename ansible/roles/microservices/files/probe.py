@@ -1,4 +1,4 @@
-"""Проверяет готовность по mTLS gRPC и HTTP без вывода служебных ключей."""
+"""Проверяет готовность по mTLS gRPC или admin /readyz без вывода служебных ключей."""
 
 import json
 from pathlib import Path
@@ -24,15 +24,22 @@ def grpc_ready(root, service, port):
                 and b'grpc-status: 0' in [line.lower() for line in headers.read_bytes().splitlines()])
 
 
+def admin_ready(port):
+    """Готовность сервиса без gRPC (OnlineConf): /readyz admin-порта на 127.0.0.1."""
+    result = subprocess.run(['curl', '--silent', '--fail', '--max-time', '5', '--output', '/dev/null',
+                             f'http://127.0.0.1:{port}/readyz'], stderr=subprocess.DEVNULL, check=False)
+    return result.returncode == 0
+
+
 def main():
     root, service, check = sys.argv[1:]
     base = Path(root)
-    port = json.loads((base / 'ports.json').read_text())[service]['grpc']
+    ports = json.loads((base / 'ports.json').read_text())[service]
     if check != 'ready':
         return 1
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
-        if grpc_ready(base, service, port):
+        if grpc_ready(base, service, ports['grpc']) if 'grpc' in ports else admin_ready(ports['admin']):
             return 0
         time.sleep(2)
     return 1

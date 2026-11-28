@@ -160,13 +160,16 @@ class PreflightTests(TestCase):
 
     def test_first_onlineconf_install_keeps_running_services(self):
         module = load_driver()
-        # OnlineConf пока вне состава (infra#203): проверяем путь первой установки добавленного сервиса
-        module.SERVICES = (*module.SERVICES, 'onlineconf')
+        self.assertIn('onlineconf', module.SERVICES)
         before = {service: version(service) for service in module.SERVICES if service != 'onlineconf'}
         desired = {**before, 'onlineconf': version('onlineconf')}
         module.validate(['onlineconf'], before, desired, False)
-        with self.assertRaisesRegex(ValueError, 'unselected'):
+        # Отсутствующий в inventory OnlineConf нельзя оставить невыбранным (infra#220)
+        with self.assertRaisesRegex(ValueError, 'inventory'):
             module.validate(['identity'], before, {**desired, 'identity': version('identity', 'd')}, False)
+        with self.assertRaisesRegex(ValueError, 'unselected'):
+            module.validate(['identity', 'onlineconf'], before,
+                            {**desired, 'workspace': version('workspace', 'd')}, False)
         with self.assertRaisesRegex(ValueError, 'inventory'):
             module.validate(['identity', 'onlineconf'], {k: v for k, v in before.items() if k != 'identity'},
                             desired, False)
@@ -222,13 +225,16 @@ class PreflightTests(TestCase):
                                        capture_output=True, text=True, timeout=30)
         config = json.loads(completed.stdout)
         services = config['services']
-        self.assertEqual(set(services), {'identity', 'workspace', 'environments', 'metrics'})
+        self.assertEqual(set(services), {'identity', 'workspace', 'environments', 'onlineconf', 'metrics'})
+        # У OnlineConf нет gRPC: публикуются только HTTPS на приватном адресе и admin на loopback
+        self.assertEqual({(port['host_ip'], port['target']) for port in services['onlineconf']['ports']},
+                         {('192.168.199.10', 8080), ('127.0.0.1', 9091)})
         self.assertEqual(config['networks']['existing']['name'], 'cellestial_app')
         for name, expected in {'identity': {'192.168.199.10', '127.0.0.1'},
                                'workspace': {'192.168.199.10', '127.0.0.1'},
                                'environments': {'127.0.0.1'}, 'metrics': {'192.168.199.10'}}.items():
             self.assertEqual({port['host_ip'] for port in services[name]['ports']}, expected)
-        for name in ('identity', 'workspace'):
+        for name in ('identity', 'workspace', 'onlineconf'):
             self.assertNotIn('/run/secrets/runtime', {v['target'] for v in services[name]['volumes']})
         self.assertIn('/run/secrets/runtime', {v['target'] for v in services['environments']['volumes']})
 
@@ -243,3 +249,26 @@ class PreflightTests(TestCase):
             {'targets': ['192.168.199.10:9101'], 'labels': {'service': name, '__metrics_path__': f'/{name}/metrics'}}
             for name in values['microservices_order']
         ])
+
+
+class Readiness(TestCase):
+    def test_service_without_grpc_is_ready_by_admin_readyz(self):
+        spec = importlib.util.spec_from_file_location('probe', driver.with_name('probe.py'))
+        probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(probe)
+        with tempfile.TemporaryDirectory() as temp:
+            (Path(temp) / 'ports.json').write_text(json.dumps(
+                {'onlineconf': {'http': 8446, 'admin': 49091}, 'identity': {'http': 8444, 'grpc': 19090, 'admin': 19091}}))
+            for code, expected in ((0, 0), (22, 1)):
+                with (self.subTest(code=code), patch('sys.argv', ['probe.py', temp, 'onlineconf', 'ready']),
+                      patch.object(probe, 'grpc_ready') as grpc, patch.object(probe.time, 'sleep'),
+                      patch.object(probe.time, 'monotonic', side_effect=[0, 1, 100]),
+                      patch.object(probe.subprocess, 'run',
+                                   return_value=subprocess.CompletedProcess([], code)) as run):
+                    self.assertEqual(probe.main(), expected)
+                    grpc.assert_not_called()
+                    self.assertEqual(run.call_args.args[0][-1], 'http://127.0.0.1:49091/readyz')
+            with (patch('sys.argv', ['probe.py', temp, 'identity', 'ready']),
+                  patch.object(probe, 'grpc_ready', return_value=True) as grpc):
+                self.assertEqual(probe.main(), 0)
+                grpc.assert_called_once_with(Path(temp), 'identity', 19090)
