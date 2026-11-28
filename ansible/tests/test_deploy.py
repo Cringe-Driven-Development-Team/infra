@@ -592,8 +592,8 @@ class DeploymentChecks(unittest.TestCase):
 
         self.assertEqual(bff["extra_hosts"], [
             "identity.internal.cellestial.ru=192.168.199.10",
-            "workspace.internal.cellestial.ru=192.168.199.10",
             "onlineconf.internal.cellestial.ru=192.168.199.10",
+            "workspace.internal.cellestial.ru=192.168.199.10",
         ])
         # mTLS к Go (infra#160): клиентские файлы — каталогом read-only, имена согласованы с frontend#257
         self.assertEqual({k: v for k, v in bff["environment"].items() if k.startswith("GO_API_TLS_")}, {
