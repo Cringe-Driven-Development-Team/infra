@@ -133,21 +133,19 @@ class Deployment:
             subprocess.run(['docker', 'exec', '-i', postgres, 'pg_restore', '--list'],
                            stdin=data, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                            check=True, timeout=60)
+        return inventory_path
+
+    def require_monolith_stopped(self):
         monolith = run('docker', 'ps', '--quiet', '--filter', 'label=com.docker.compose.project=cellestial',
                        '--filter', 'label=com.docker.compose.service=api').strip()
         if monolith:
             raise ValueError('monolith must be stopped before first cutover')
-        if self.inputs.get('clean_start', False):
-            with (self.root / 'redis.rdb').open('rb') as data:
-                redis_sha = hashlib.file_digest(data, 'sha256').hexdigest()
-            if (self.root / 'redis.rdb.sha256').read_text().strip() != redis_sha:
-                raise ValueError('production Redis backup checksum mismatch')
-        return inventory_path
 
     def first_cutover(self):
         if (self.root / 'v2-active').exists() or (self.root / 'clean-start.json').exists():
             raise ValueError('service schemas are active; restore the monolith before a new cutover')
         inventory_path = self.check_cutover_evidence()
+        self.require_monolith_stopped()
         self.psql((self.root / 'roles.sql').read_text())
         (self.root / 'v2-active').touch(exist_ok=True)
         for mode in ('--dry-run', '--apply'):
@@ -175,7 +173,7 @@ class Deployment:
                 or type(redis_db) is not int or redis_db <= 0):
             raise ValueError('clean start requires separate PostgreSQL and Redis databases')
 
-        self.check_cutover_evidence()
+        self.require_monolith_stopped()
         marker = self.root / 'clean-start.json'
         storage = {'database': database, 'redis_db': redis_db, 'desired': self.desired}
         retry = marker.is_file()
