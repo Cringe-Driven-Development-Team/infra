@@ -633,6 +633,13 @@ class DeploymentChecks(unittest.TestCase):
         self.assertNotIn("session-secret", env)
         self.assertNotIn("BFF_IMAGE_REF", env)
 
+    def test_bff_deploy_does_not_reach_vps2(self):
+        # ключ frontend CI пускает только на gateway (infra#200): выкатка BFF проверяет API по HTTPS
+        tasks = yaml.safe_load((ANSIBLE / "roles/app/tasks/tags.yml").read_text())
+        self.assertFalse([task["name"] for task in tasks if "delegate_to" in task])
+        probe = next(task for task in tasks if task["name"].startswith("Require the Identity and Workspace"))
+        self.assertEqual(probe["when"], "app_deploy_service == 'bff'")
+
     def test_services_of_each_host(self):
         playbook = self.root / "services-test.yml"
         playbook.write_text(yaml.safe_dump([{
