@@ -588,10 +588,12 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(bff["environment"]["GO_API_URL"], "https://192.168.199.10:8443/api/v1")
         self.assertEqual(bff["environment"]["IDENTITY_API_URL"], "https://identity.internal.cellestial.ru:8444/api/v1")
         self.assertEqual(bff["environment"]["WORKSPACE_API_URL"], "https://workspace.internal.cellestial.ru:8445/api/v1")
+        self.assertEqual(bff["environment"]["ONLINECONF_API_URL"], "https://onlineconf.internal.cellestial.ru:8446/api/v1")
 
         self.assertEqual(bff["extra_hosts"], [
             "identity.internal.cellestial.ru=192.168.199.10",
             "workspace.internal.cellestial.ru=192.168.199.10",
+            "onlineconf.internal.cellestial.ru=192.168.199.10",
         ])
         # mTLS к Go (infra#160): клиентские файлы — каталогом read-only, имена согласованы с frontend#257
         self.assertEqual({k: v for k, v in bff["environment"].items() if k.startswith("GO_API_TLS_")}, {

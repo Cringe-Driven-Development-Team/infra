@@ -10,7 +10,9 @@ import re
 import subprocess
 import sys
 
-SERVICES = ('identity', 'environments', 'workspace')
+SERVICES = ('identity', 'onlineconf', 'environments', 'workspace')
+# Сервис, добавленный после первичного перехода: его первая установка идёт без cutover (infra#203)
+ADDED = {'onlineconf'}
 REGISTRY = 'ghcr.io/cringe-driven-development-team/cellestial-'
 
 
@@ -23,7 +25,7 @@ def validate(selected, before, desired, cutover):
         raise ValueError('invalid deployment inventory')
     if cutover and (set(selected) != all_services or before):
         raise ValueError('first cutover must select all services with an empty inventory')
-    if not cutover and set(before) != all_services:
+    if not cutover and all_services - set(before) - ADDED:
         raise ValueError('service deployment requires the current inventory')
     for inventory in (before, desired):
         for service, version in inventory.items():
@@ -239,9 +241,12 @@ class Deployment:
                 observed.get(service) != self.before[service] for service in SERVICES if service not in self.selected
             ):
                 raise ValueError('observed unselected services differ from the operation baseline')
-            if any(service not in observed for service in self.selected):
+            if any(service not in observed for service in self.selected if service in self.before):
                 raise ValueError('selected service image must match the baseline or desired version')
-            for service in SERVICES:
+            if set(self.selected) - set(self.before):
+                # первая установка сервиса: роли и схема создаются идемпотентно, соседние не меняются
+                self.psql((self.root / 'roles.sql').read_text())
+            for service in self.before:
                 current_version = self.schema_version(service)
                 if current_version not in (self.before[service]['migration_version'], self.desired[service]['migration_version']):
                     raise ValueError(f'{service}: observed schema differs from baseline')

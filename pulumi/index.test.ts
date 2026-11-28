@@ -224,7 +224,7 @@ describe("сборка модулей", () => {
 
 describe("backend VPS2", () => {
   test("HTTPS микросервисов доступен с приватного адреса gateway", () => {
-    for (const [name, port] of [["identity-mtls", 8444], ["workspace-mtls", 8445]] as const) {
+    for (const [name, port] of [["identity-mtls", 8444], ["workspace-mtls", 8445], ["onlineconf-mtls", 8446]] as const) {
       expect(find("openstack:networking/secGroupRule:SecGroupRule", "backend-" + name).inputs)
         .toMatchObject({ direction: "ingress", protocol: "tcp",
           portRangeMin: port, portRangeMax: port, remoteIpPrefix: "192.168.199.225/32" });

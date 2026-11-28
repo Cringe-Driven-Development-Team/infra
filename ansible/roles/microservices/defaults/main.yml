@@ -7,20 +7,24 @@ microservices_initial_deployment: >-
      or (microservices_clean_start | default(false) | bool) }}
 microservices_order:
   - identity
+  - onlineconf
   - environments
   - workspace
 microservices_ports:
   identity: { http: 8444, grpc: 19090, admin: 19091 }
   workspace: { http: 8445, grpc: 29090, admin: 29091 }
+  onlineconf: { http: 8446, grpc: 49090, admin: 49091 }
   environments: { grpc: 39090, admin: 39091 }
 microservices_limits:
   identity: { memory: 256m, cpu: "0.75" }
   workspace: { memory: 768m, cpu: "1.25" }
   environments: { memory: 512m, cpu: "0.75" }
+  onlineconf: { memory: 192m, cpu: "0.5" }
 microservices_tls:
   identity: { cn: identity.internal.cellestial.ru, san: identity.internal.cellestial.ru, usage: "serverAuth,clientAuth", owner: 10001 }
   workspace: { cn: workspace.internal.cellestial.ru, san: workspace.internal.cellestial.ru, usage: "serverAuth,clientAuth", owner: 10001 }
   environments: { cn: environments.internal.cellestial.ru, san: environments.internal.cellestial.ru, usage: "serverAuth,clientAuth", owner: 10001 }
+  onlineconf: { cn: onlineconf.internal.cellestial.ru, san: onlineconf.internal.cellestial.ru, usage: "serverAuth,clientAuth", owner: 10001 }
   probe: { cn: probe.internal.cellestial.ru, san: probe.internal.cellestial.ru, usage: clientAuth, owner: 0 }
 microservices_runtime_dir: "{{ app_compose_dir }}/runtime-playbook"
 microservices_runtime_secrets_dir: "{{ app_compose_dir }}/runtime-secrets"

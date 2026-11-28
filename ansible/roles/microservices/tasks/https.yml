@@ -20,7 +20,7 @@
       - "{{ service }}.internal.cellestial.ru:{{ microservices_ports[service].http }}:{{ app_backend_address }}"
       - --header
       - "{{ 'X-BFF-Key: ' ~ bff_api_key if item == 401 else 'X-BFF-Key:' }}"
-      - "https://{{ service }}.internal.cellestial.ru:{{ microservices_ports[service].http }}/api/v1/{{ 'users/me' if service == 'identity' else 'notebooks' }}"
+      - "https://{{ service }}.internal.cellestial.ru:{{ microservices_ports[service].http }}/api/v1/{{ {'identity': 'users/me', 'workspace': 'notebooks', 'onlineconf': 'onlineconf/keys'}[service] }}"
   loop:
     - 403
     - 401

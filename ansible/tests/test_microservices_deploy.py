@@ -158,6 +158,44 @@ class PreflightTests(TestCase):
                 'workspace': {'image': 'passed', 'ready': 'failed', 'smoke': 'unknown'},
             })
 
+    def test_first_onlineconf_install_keeps_running_services(self):
+        module = load_driver()
+        before = {service: version(service) for service in module.SERVICES if service != 'onlineconf'}
+        desired = {**before, 'onlineconf': version('onlineconf')}
+        module.validate(['onlineconf'], before, desired, False)
+        with self.assertRaisesRegex(ValueError, 'unselected'):
+            module.validate(['identity'], before, {**desired, 'identity': version('identity', 'd')}, False)
+        with self.assertRaisesRegex(ValueError, 'inventory'):
+            module.validate(['identity', 'onlineconf'], {k: v for k, v in before.items() if k != 'identity'},
+                            desired, False)
+        inputs = {'selected': ['onlineconf'], 'before': before, 'desired': desired,
+                  'cutover': False, 'action': 'deploy'}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'v2-active').touch()
+            (root / 'roles.sql').write_text('fixture role provisioning')
+            deployment = module.Deployment(root, inputs)
+            running = dict(before)
+
+            def compose(*argv):
+                self.assertEqual(argv, ('up', '-d', '--no-deps', '--force-recreate', 'onlineconf'))
+                running['onlineconf'] = desired['onlineconf']
+
+            with (patch.object(deployment, 'pull') as pull, patch.object(deployment, 'migrate') as migrate,
+                  patch.object(deployment, 'psql') as sql,
+                  patch.object(deployment, 'schema_version', return_value=1) as schema,
+                  patch.object(deployment, 'compose', side_effect=compose),
+                  patch.object(deployment, 'observed', side_effect=lambda: dict(running)),
+                  patch.object(module, 'run', return_value=b'')):
+                deployment.deploy()
+                pull.assert_called_once_with('onlineconf')
+                migrate.assert_called_once_with('onlineconf')
+                sql.assert_called_once_with('fixture role provisioning')
+                self.assertNotIn('onlineconf', [call.args[0] for call in schema.call_args_list])
+            self.assertEqual(running, desired)
+            self.assertEqual(deployment.result['checks']['onlineconf'],
+                             {'image': 'passed', 'ready': 'passed', 'smoke': 'unknown'})
+
     def test_compose_uses_private_binds_and_only_environments_gets_runtime_credentials(self):
         command = shlex.split(os.environ.get('COMPOSE_CLI', 'docker compose'))
         if not command or shutil.which(command[0]) is None:
@@ -182,13 +220,14 @@ class PreflightTests(TestCase):
                                        capture_output=True, text=True, timeout=30)
         config = json.loads(completed.stdout)
         services = config['services']
-        self.assertEqual(set(services), {'identity', 'workspace', 'environments', 'metrics'})
+        self.assertEqual(set(services), {'identity', 'onlineconf', 'workspace', 'environments', 'metrics'})
         self.assertEqual(config['networks']['existing']['name'], 'cellestial_app')
         for name, expected in {'identity': {'192.168.199.10', '127.0.0.1'},
                                'workspace': {'192.168.199.10', '127.0.0.1'},
+                               'onlineconf': {'192.168.199.10', '127.0.0.1'},
                                'environments': {'127.0.0.1'}, 'metrics': {'192.168.199.10'}}.items():
             self.assertEqual({port['host_ip'] for port in services[name]['ports']}, expected)
-        for name in ('identity', 'workspace'):
+        for name in ('identity', 'onlineconf', 'workspace'):
             self.assertNotIn('/run/secrets/runtime', {v['target'] for v in services[name]['volumes']})
         self.assertIn('/run/secrets/runtime', {v['target'] for v in services['environments']['volumes']})
 
