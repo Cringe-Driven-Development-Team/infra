@@ -389,6 +389,14 @@
       vars:
         backend_probe_address: "{{ app_backend_address }}"
 
+    # Проверяются сервисы из ports.json последней выкладки: OnlineConf — после его первой установки (infra#203)
+    - name: Read the deployed microservice set
+      when: verify_services_marker.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ app_compose_dir }}/microservices/ports.json"
+      delegate_to: "{{ groups['backend'][0] }}"
+      register: verify_microservice_ports
+
     - name: Microservice readiness LISTEN
       when: verify_services_marker.stat.exists
       ansible.builtin.command:
@@ -400,4 +408,4 @@
           - ready
       delegate_to: "{{ groups['backend'][0] }}"
       changed_when: false
-      loop: [identity, workspace, environments, onlineconf]
+      loop: "{{ (verify_microservice_ports.content | b64decode | from_json).keys() | list if verify_services_marker.stat.exists else [] }}"
