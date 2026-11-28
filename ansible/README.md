@@ -97,6 +97,11 @@ VPS и в контейнеры он не попадает. Выпуск CA, ср
 Go — как `BFF_API_KEY`; 32+ символов `[A-Za-z0-9_-]` (`openssl rand -hex 32`). Без них или в неверном
 формате выкатка останавливается до изменений VPS.
 
+`vault_onlineconf_workspace_key` — S2S-ключ запросов Workspace к продуктовым настройкам OnlineConf
+(`ONLINECONF_WORKSPACE_KEY` обоих сервисов, infra#220): 32+ символов `[A-Za-z0-9_-]`
+(`openssl rand -hex 32`), обязательно отличается от `bff_api_key`. Используется роли `microservices`
+напрямую, без открытого имени в `vars.yml`, как `vault_workspace_cursor_key`.
+
 `vault_totp_encryption_key` — постоянный отдельный ключ шифрования TOTP, standard base64
 ровно 32 байта. Если ключ уже использовался, перенести прежний без изменения. Только при первой
 настройке сгенерировать `openssl rand -base64 32` один раз и записать через

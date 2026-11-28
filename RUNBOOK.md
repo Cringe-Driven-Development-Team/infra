@@ -352,8 +352,8 @@ Caddy нет. Проверка руками после выкатки BFF, в De
 3. Гость видит предложение войти, пользователь без роли `onlineconf_admin` — отказ, при этом его
    продуктовая сессия сохраняется. Запросы админки идут только в `/api/onlineconf/*` BFF, ошибка API
    приходит JSON, а не HTML.
-4. Администратор видит ключи — после включения OnlineConf в выкладке микросервисов (infra#203: сейчас
-   сервис выключен, и `/api/onlineconf/*` с сессией отвечает `502`).
+4. Администратор видит ключи — после выкладки OnlineConf (infra#220, backend#177); до неё
+   `/api/onlineconf/*` с сессией отвечает `502`.
 5. После выкладки OnlineConf и backend#158 — общий smoke: изменить конфиг и флаг в админке и увидеть
    результат в продуктовом UI и API не позднее 60 секунд без релиза.
 
@@ -1424,15 +1424,12 @@ SAN. Проверьте ротацию на стенде полной повто
 с `app_mtls_force=true` и проверьте, что запрос сертификатом другого сервиса
 или клиента без сертификата не проходит.
 
-### OnlineConf (infra#203)
+### OnlineConf (infra#203, infra#220)
 
-**Сейчас OnlineConf выключен:** backend ещё не публикует его образ, поэтому сервис убран из
-`microservices_order`, `SERVICES` в `deploy.py`, валидатора `deploy-microservices.yml`, `verify.yml`,
-Prometheus и preflight BFF. BFF получает `ONLINECONF_API_URL`, но наличие OnlineConf не проверяет.
-Включение — вернуть его во все эти места, когда в release manifest появится `onlineconf`.
-
-OnlineConf — четвёртый сервис того же выпуска. Образ следует общему контракту
-сервисов VPS2, по нему backend#154 собирает `cellestial-onlineconf`:
+OnlineConf — четвёртый сервис того же выпуска (`microservices_order`, `SERVICES` в `deploy.py`,
+валидатор `deploy-microservices.yml`, `verify.yml`, Prometheus). Образ `cellestial-onlineconf`
+публикует backend-релиз (backend#177); выкладка с четырьмя сервисами требует выпуска с ним.
+Образ следует общему контракту сервисов VPS2:
 
 - `ghcr.io/cringe-driven-development-team/cellestial-onlineconf@sha256:…` с метками
   `org.opencontainers.image.revision` (полный SHA) и
@@ -1442,14 +1439,16 @@ OnlineConf — четвёртый сервис того же выпуска. О�
 - Миграции: `./migrate --service onlineconf up` под `onlineconf_owner`, схема `onlineconf`,
   таблица goose `onlineconf.goose_db_version`. Приложение работает под `onlineconf_app` с
   DML только в своей схеме.
-- Порты в контейнере: HTTPS API 8080 (mTLS, `X-BFF-Key`), gRPC 9090 (mTLS, `grpc.health.v1`),
-  admin 9091 (`/readyz`, `/metrics`). Снаружи: 8446 только на приватном адресе VPS2
-  и только с gateway, gRPC 49090 и admin 49091 — на loopback.
+- Порты в контейнере: HTTPS API 8080 (mTLS: клиенты BFF и Workspace, `X-BFF-Key`) и admin 9091
+  (`/readyz`, `/metrics`); gRPC-сервера нет. Снаружи: 8446 только на приватном адресе VPS2
+  и только с gateway, admin 49091 — на loopback. Готовность (`probe.py`) — `/readyz` admin-порта.
 - Переменные: `DATABASE_URL`, `TLS_CA_FILE`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `VERSION`,
-  `WORKERS_PAUSED`, `BFF_API_KEY`, `IDENTITY_GRPC_ADDR=identity.internal.cellestial.ru:9090`.
-  Workspace получает `ONLINECONF_GRPC_ADDR=onlineconf.internal.cellestial.ru:9090`, BFF —
-  `ONLINECONF_API_URL=https://onlineconf.internal.cellestial.ru:8446`.
-- Административный API — `/admin/*` (backend#154). Smoke выкладки и preflight BFF:
+  `WORKERS_PAUSED`, `BFF_API_KEY`, `IDENTITY_GRPC_ADDR=identity.internal.cellestial.ru:9090`,
+  Redis снимков (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` — как у Identity) и
+  `ONLINECONF_WORKSPACE_KEY` (`vault_onlineconf_workspace_key`, отличается от `bff_api_key`).
+  Workspace получает `ONLINECONF_URL=https://onlineconf.internal.cellestial.ru:8080` и тот же
+  `ONLINECONF_WORKSPACE_KEY`, BFF — `ONLINECONF_API_URL=https://onlineconf.internal.cellestial.ru:8446`.
+- Административный API — `/admin/*` (backend#154). Smoke выкладки:
   `GET /admin/access` без `X-BFF-Key` — 403, с ключом без пользователя — 401.
 - Prometheus на VPS4 опрашивает `/onlineconf/metrics`, `verify.yml` проверяет readiness
   OnlineConf вместе с остальными сервисами.
@@ -1463,7 +1462,7 @@ Pulumi (правило 8446 в security group backend) и `site.yml` (ufw VPS2, 
 
 Проверка на стенде: в отчёте `microservices_result_path` у `onlineconf` фактический digest
 в `observed` и `passed` для `image`, `ready`, `smoke`. Повторная выкладка того же выпуска
-сохраняет ключи. `ss -ltn` на VPS2 показывает 49090 и 49091 только на `127.0.0.1`; с gateway
+сохраняет ключи. `ss -ltn` на VPS2 показывает 49091 только на `127.0.0.1`; с gateway
 `curl` на 8446 без клиентского сертификата не проходит TLS. Под `onlineconf_app`
 `INSERT` в `identity`/`workspace` запрещён. Изменение значения в OnlineConf CI/CD не запускает:
 значения хранятся в БД сервиса, а не в inventory.

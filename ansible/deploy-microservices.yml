@@ -4,7 +4,7 @@
   gather_facts: false
   connection: local
   vars:
-    microservices_all: ['environments', 'identity', 'workspace']
+    microservices_all: ['environments', 'identity', 'onlineconf', 'workspace']
   tasks:
     - name: Require exactly one backend and gateway and a local result location
       ansible.builtin.assert:
