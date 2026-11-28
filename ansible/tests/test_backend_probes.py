@@ -214,7 +214,7 @@ class BackendProbes(unittest.TestCase):
         self.assertEqual(len(self.requests), 2)
 
     def test_login_probe_requires_invalid_credentials(self):
-        tasks = self.tasks('probe-bff.yml')
+        tasks = self.tasks('probe-login.yml')
         cases = [(400, VALID_LOGIN, True), (401, VALID_LOGIN, False),
                  (400, {'error': {'code': 'BAD_REQUEST', 'message': 'x'}}, False),
                  (400, {'error': {'code': 'UNAUTHORIZED', 'appCode': 'invalid_credentials', 'message': 'x'}}, False),
@@ -246,6 +246,13 @@ class BackendProbes(unittest.TestCase):
                     self.assertEqual(headers['content-type'], 'application/json')
                     self.assertNotIn('cookie', headers)
                     self.assertNotIn('x-bff-key', headers)
+
+    def test_bff_probe_passes_when_backend_login_returns_502(self):
+        type(self).login = 502, {'error': {'code': 'BAD_GATEWAY'}}
+        result = self.run_tasks(self.tasks('probe-bff.yml'))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('/login', {request[0] for request in self.requests})
+        self.assertNotIn('/api/auth/login', {request[0] for request in self.requests})
 
     def test_hidden_routes_require_non_html_404(self):
         tasks = self.tasks('probe-bff.yml')
@@ -283,7 +290,7 @@ class BackendProbes(unittest.TestCase):
                         f'/releases/{RELEASE}/assets/index-a.js', f'/releases/{RELEASE}/assets/index-b.css'})
 
     def test_socket_timeouts_fail_with_at_most_six_requests(self):
-        for filename, path in [('probe-backend.yml', '/health'), ('probe-bff.yml', '/api/auth/login')]:
+        for filename, path in [('probe-backend.yml', '/health'), ('probe-login.yml', '/api/auth/login')]:
             with self.subTest(probe=filename):
                 type(self).requests = []
                 type(self).timeout_paths = {path}
@@ -302,19 +309,19 @@ class BackendProbes(unittest.TestCase):
 
     def test_failed_internal_probe_does_not_run_external(self):
         type(self).health = 503, {}
-        result = self.run_tasks(self.tasks('probe-backend.yml') + self.tasks('probe-bff.yml'))
+        result = self.run_tasks(self.tasks('probe-backend.yml') + self.tasks('probe-login.yml'))
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
 
     def test_failed_external_probe_preserves_previous_success_in_log(self):
         type(self).login = 500, {}
-        result = self.run_tasks(self.tasks('probe-backend.yml') + self.tasks('probe-bff.yml'))
+        result = self.run_tasks(self.tasks('probe-backend.yml') + self.tasks('probe-login.yml'))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Backend internal mTLS check', result.stdout)
         self.assertIn('ok: [backend-test -> gateway-test', result.stdout)
         self.assertTrue(any(r[0] == '/api/auth/login' for r in self.requests))
 
-    def test_real_backend_post_tasks_read_gateway_release_and_keep_stage_results(self):
+    def test_real_backend_post_tasks_succeed_without_a_bff_release(self):
         # Keep the actual production post_tasks and imported task arguments. Only map external
         # dependencies to local TLS/HTTP fixtures and the existing Docker CLI substitute.
         production = next(play for play in yaml.safe_load((ANSIBLE / 'deploy-backend.yml').read_text())
@@ -328,9 +335,6 @@ class BackendProbes(unittest.TestCase):
         backend = self.root / 'backend'
         for directory in (gateway, backend):
             directory.mkdir(exist_ok=True)
-        gateway_env = gateway / '.env'
-        gateway_env.write_text(f'BFF_RELEASE_SHA={RELEASE}\nBFF_API_KEY=private-fixture-key\n')
-        (backend / '.env').write_text('BFF_RELEASE_SHA=' + 'c' * 40 + '\n')
         binary = self.root / 'bin'
         binary.mkdir(exist_ok=True)
         shutil.copyfile(ANSIBLE / 'tests/docker_stub.py', binary / 'docker')
@@ -343,19 +347,14 @@ class BackendProbes(unittest.TestCase):
                  'backend': {'app_compose_dir': str(backend)}}
         variables = {'backend_image_ref': 'ghcr.io/cringe-driven-development-team/backend@sha256:' + 'd' * 64,
                      'app_backend_address': '{{ ansible_host }}',
-                     # Force the real set_fact and slurp to supply these values.
-                     'bff_probe_release': None}
-        # Extra variables here are play vars, so set_fact must replace the stale address.
-        variables['backend_probe_address'] = '127.0.0.99'
-        for scenario in ('success', 'wrong-image', 'internal-failure', 'external-failure', 'missing-release'):
+                     'backend_probe_address': '127.0.0.99'}
+        type(self).login = 502, {'error': {'code': 'BAD_GATEWAY'}}
+        for scenario in ('success', 'wrong-image', 'internal-failure'):
             with self.subTest(scenario=scenario):
                 type(self).requests = []
                 type(self).health = (200, {'status': 'wrong' if scenario == 'internal-failure' else 'alive'})
-                type(self).login = (500, {}) if scenario == 'external-failure' else (400, VALID_LOGIN)
                 selected_id = 'sha256:' + '2' * 64 if scenario == 'wrong-image' else image_id
                 self.environment['TEST_DOCKER_STATE'] = f'{selected_id} true healthy'
-                gateway_env.write_text(('' if scenario == 'missing-release' else f'BFF_RELEASE_SHA={RELEASE}\n')
-                                       + 'BFF_API_KEY=private-fixture-key\n')
                 result = self.run_tasks(tasks, variables, hosts)
                 output = result.stdout + result.stderr
                 self.assertEqual(result.returncode == 0, scenario == 'success', output)
@@ -368,11 +367,6 @@ class BackendProbes(unittest.TestCase):
                 internal = [r for r in self.requests if r[0] == '/health'
                             and r[2].get('Host') == f'127.0.0.1:{self.http.server_port}']
                 self.assertEqual(len(internal), 6 if scenario == 'internal-failure' else 1)
-                if scenario == 'internal-failure':
-                    self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
-                else:
-                    self.assertRegex(output, r'TASK \[Backend internal mTLS check\][^\n]*\nok: \[backend-test -> gateway-test')
-                    if scenario == 'missing-release':
-                        self.assertFalse(any(r[0] == '/api/auth/login' for r in self.requests))
-                    else:
-                        self.assertTrue(any(r[0] == '/api/auth/login' for r in self.requests))
+                self.assertNotIn('/api/auth/login', {request[0] for request in self.requests})
+                if scenario == 'success':
+                    self.assertIn('backend-test -> gateway-test', output)

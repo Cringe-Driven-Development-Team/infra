@@ -59,6 +59,12 @@
       vars:
         bff_probe_release: "{{ verify_bff_release }}"
       when: verify_bff_release != ''
+      tags: applications
+
+    - name: Проверить вход через BFF и backend
+      ansible.builtin.import_tasks: roles/app/tasks/probe-login.yml
+      when: verify_bff_release != ''
+      tags: applications
 
     - name: Выдать информацию о сертификате
       ansible.builtin.shell:
@@ -107,6 +113,7 @@
       register: verify_vps_environment
       failed_when: false
       no_log: true
+      tags: applications
 
     - name: Запущенный BFF — выкаченный образ по digest и healthy
       ansible.builtin.include_tasks: roles/app/tasks/check-bff-image.yml
@@ -115,6 +122,7 @@
           {{ verify_vps_environment.content | default('') | b64decode
           | regex_findall('(?m)^BFF_IMAGE_REF=(\S+)$') | first | default('') }}
       when: verify_vps_environment.content | default('') | b64decode is search('(?m)^BFF_IMAGE_REF=')
+      tags: applications
 
     # Redis (infra#46) поднимает роль app вместе с бэком (deploy-backend.yml): пока выкатки с Redis
     # не было, нет и его конфига — проверка пропускается
@@ -122,6 +130,7 @@
       ansible.builtin.stat:
         path: "{{ app_compose_dir }}/redis/redis.conf"
       register: verify_redis_conf
+      tags: applications
 
     # Клиент — одноразовый контейнер сервиса redis в сети app, как Go API. Пароль (REDISCLI_AUTH)
     # он берёт из .env Compose: через environment Ansible секрет попал бы в verbose-логи (-vvv)
@@ -136,6 +145,7 @@
       when: >-
         verify_redis_conf.stat.exists
         and inventory_hostname in groups.get('backend', [])
+      tags: applications
 
     - name: Правила ufw
       ansible.builtin.command: ufw status verbose
@@ -336,6 +346,7 @@
         path: "{{ app_compose_dir }}/microservices/v2-active"
       delegate_to: "{{ groups['backend'][0] }}"
       register: verify_services_marker
+      tags: applications
 
     - name: VPS2 — приватный адрес, без публичного IP
       ansible.builtin.assert:
@@ -345,6 +356,7 @@
 
     - name: Проверить S2S-ключ через mTLS
       when: not verify_services_marker.stat.exists
+      tags: applications
       module_defaults:
         ansible.builtin.uri:
           ca_path: "{{ app_mtls_dir }}/ca.crt"
@@ -386,12 +398,14 @@
 
     - name: Go отвечает по mTLS и отвергает клиента без сертификата
       when: not verify_services_marker.stat.exists
+      tags: applications
       ansible.builtin.import_tasks: roles/app/tasks/probe-backend.yml
       vars:
         backend_probe_address: "{{ app_backend_address }}"
 
     - name: Microservice readiness LISTEN
       when: verify_services_marker.stat.exists
+      tags: applications
       ansible.builtin.command:
         argv:
           - python3

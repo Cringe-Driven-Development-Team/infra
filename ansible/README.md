@@ -293,13 +293,15 @@ BFF сам разбирает остальное: маршруты своего 
 
 - ровно один сервер в inventory (проект) — второй VPS больше нет;
 - до первой выкатки BFF `https://<app_domain>/` отвечает `503 BFF is not deployed` с `nosniff`;
-- после неё (в `.env` на VPS есть `BFF_IMAGE_REF`) — те же проверки, что в конце `deploy-bff.yml`:
+- после неё (в `.env` на VPS есть `BFF_IMAGE_REF`) — проверки релиза из `deploy-bff.yml`:
   запущенный контейнер `bff` — образ `BFF_IMAGE_REF` из `.env` (тот же digest и image ID) и
   `healthy` (`roles/app/tasks/check-bff-image.yml`); снаружи (`roles/app/tasks/probe-bff.yml`) —
   гостевой HTML `/login` с ровно одним `<script id="bootstrap">` и `{"user":null}`,
   `<meta name="release">` с полным `BFF_RELEASE_SHA`, `Cache-Control: private, no-store`,
   `nosniff`, HSTS `max-age=31536000` и CSP; `GET /api/users/me` без сессии — `UNAUTHORIZED` (401); `/api/v1/users/me`,
   `/api/unknown` и `/health` — `404` и не HTML;
+- сквозной вход через Caddy, BFF и backend: HTTPS POST `/api/auth/login` со случайным логином
+  должен вернуть HTTP 400, `BAD_REQUEST` и `invalid_credentials`;
 - сертификат от Let's Encrypt;
 - после выкатки бэка с Redis (есть `redis/redis.conf`) Redis отвечает `PONG` на `redis-cli -h redis ping` из сети `app` (одноразовый
   контейнер, пароль — через окружение);
@@ -325,7 +327,11 @@ Workflow `.github/workflows/infra.yml` запускается на измене�
 | Событие | Что делает |
 |---|---|
 | PR | тесты Pulumi (`tsc`, `bun test`), синтаксис плейбуков и `tests/`; затем по проду `pulumi preview --diff` и `site.yml --check --diff` — вывод в сводке запуска (Summary). На проде ничего не меняется |
-| мерж в `main`, ручной запуск из `main` | `pulumi up`, `site.yml`, `verify.yml` |
+| мерж в `main`, ручной запуск workflow из `main` | `pulumi up`, `site.yml`, `auxiliary.yml`, затем `verify.yml --skip-tags applications,auxiliary_releases` |
+
+Выкатка инфраструктуры проверяет inventory, SSH, firewall, публичные порты, TLS, доступность VPS3 и
+снимок резервного копирования. Плейбуки выкатки backend и BFF проверяют свои релизы. Для полной
+проверки стенда, включая сквозной вход, запускай `ansible-playbook verify.yml` без исключения тегов.
 
 Выкатки идут по одной (`concurrency` без отмены). Запуск с `pulumi up` не отменять: прерванная
 запись стейта оставляет пустой `prod.json` (`pulumi/README.md`, «Разбор ошибок»). Шаги, которые
@@ -574,23 +580,10 @@ Docker config. Login/logout не выполняются; сохранённые 
    сертификатом BFF и проверкой серверного по CA и IP SAN, одновременно HTTP 200 и JSON `status: alive`;
    затем запрос без клиентского сертификата должен быть отвергнут. Runner не обращается к VPS2 напрямую.
    Redirects и proxy запрещены; timeout 5 секунд, максимум шесть запросов с интервалом 5 секунд.
-3. `Backend external BFF check`: runner выполняет HTTPS POST `/api/auth/login`, отправляя
-   `Origin`, `X-CSRF: 1`, JSON с новым случайным login из 32 hex-символов и паролем
-   `deploy-probe-invalid-password`. Успех — одновременно HTTP 400, `error.code` `BAD_REQUEST` и
-   `error.appCode` `invalid_credentials`. Login один на все повторы; максимум шесть запросов, timeout 5 секунд,
-   интервал 5 секунд. TLS проверяется, redirects запрещены; существующий S2S-ключ добавляет BFF,
-   для запроса runner ключ не получает.
-
-Сохраняются проверки `/login` и гостевого `GET /api/users/me`. Затем `/api/v1/users/me`, `/api/unknown`
-и `/health` с runner должны вернуть 404 без HTML. Общие HTTP tasks используются также BFF playbook;
-backend-выкатка читает текущий BFF release на gateway, не меняя его образ. Отсутствие BFF release
-или ошибка любой обязательной проверки завершают playbook неуспехом. Уже пройденные задачи остаются
-видны в логе; общий успех нельзя выводить из одного успешного раннего этапа.
-
-`/health` подтверждает живой HTTP-процесс. Отрицательный login дополнительно подтверждает
-HTTPS → BFF → Go → чтение PostgreSQL. Эти проверки не доказывают успешный вход, создание сессии,
-работу Redis или runtime-VPS. Передача результатов в Actions Health Check/Summary — часть backend#42;
-интеграция проверяется после готовности обеих задач. Отдельного JSON-файла отчёта нет.
+Ошибка любой обязательной проверки завершает выкатку неуспехом. Для сквозной проверки
+Caddy → BFF → backend запускай `verify.yml` вручную. Он отправляет HTTPS POST
+`/api/auth/login` со случайным логином и проверяет HTTP 400, `BAD_REQUEST` и
+`invalid_credentials`. Это подтверждает, что запрос дошёл до обработчика входа.
 
 Ручной повтор выкатки прежней версии использует ту же команду с прежним успешным digest этого
 backend package. Цель выбирает workflow backend#42 из GitHub Deployments; отдельное SSH-чтение
