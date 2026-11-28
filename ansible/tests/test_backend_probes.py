@@ -71,6 +71,7 @@ class BackendProbes(unittest.TestCase):
         cls.hidden = (404, 'not found')
         cls.admin = ADMIN_HTML
         cls.asset_type = 'text/javascript'
+        cls.cors = '*'
         cls.sequence = []
         cls.timeout_paths = set()
 
@@ -103,6 +104,8 @@ class BackendProbes(unittest.TestCase):
                 elif self.path.startswith('/releases/'):
                     status, value = 200, 'asset'
                     headers = {'Content-Type': cls.asset_type if self.path.endswith('.js') else 'text/css'}
+                    if cls.cors:
+                        headers['Access-Control-Allow-Origin'] = cls.cors
                 elif self.path in ('/api/users/me', '/api/onlineconf/access'):
                     status, value = 401, {'error': {'code': 'UNAUTHORIZED', 'message': 'Нет сессии'}}
                 else:
@@ -151,6 +154,7 @@ class BackendProbes(unittest.TestCase):
         type(self).hidden = (404, 'not found')
         type(self).admin = ADMIN_HTML
         type(self).asset_type = 'text/javascript'
+        type(self).cors = '*'
         self.environment = dict(os.environ, ANSIBLE_LOCAL_TEMP=str(self.root / 'tmp'),
                                 ANSIBLE_REMOTE_TEMP=str(self.root / 'remote-tmp'),
                                 ANSIBLE_FORCE_COLOR='0')
@@ -260,14 +264,16 @@ class BackendProbes(unittest.TestCase):
         tasks = self.tasks('probe-bff.yml')
         product = ('<html><title>OnlineConf</title><meta name="release" content="' + RELEASE + '">'
                    '<script id="bootstrap" type="application/json">{"user":null}</script></html>')
-        for admin, asset_type, passes in [
-                (ADMIN_HTML, 'text/javascript', True), (ADMIN_HTML, 'text/html', False),
-                (product, 'text/javascript', False),
-                (ADMIN_HTML.replace(RELEASE, 'c' * 40), 'text/javascript', False),
-                (ADMIN_HTML.replace('https://{cdn}', ''), 'text/javascript', False)]:
-            with self.subTest(admin=admin, asset_type=asset_type):
+        site = f'https://localhost:{self.https.server_port}'
+        for admin, asset_type, cors, passes in [
+                (ADMIN_HTML, 'text/javascript', '*', True), (ADMIN_HTML, 'text/javascript', site, True),
+                (ADMIN_HTML, 'text/javascript', '', False), (ADMIN_HTML, 'text/javascript', 'https://evil', False),
+                (ADMIN_HTML, 'text/html', '*', False), (product, 'text/javascript', '*', False),
+                (ADMIN_HTML.replace(RELEASE, 'c' * 40), 'text/javascript', '*', False),
+                (ADMIN_HTML.replace('https://{cdn}', ''), 'text/javascript', '*', False)]:
+            with self.subTest(admin=admin, asset_type=asset_type, cors=cors):
                 type(self).requests = []
-                type(self).admin, type(self).asset_type = admin, asset_type
+                type(self).admin, type(self).asset_type, type(self).cors = admin, asset_type, cors
                 result = self.run_tasks(tasks)
                 self.assertEqual(result.returncode == 0, passes, result.stdout + result.stderr)
                 if passes:

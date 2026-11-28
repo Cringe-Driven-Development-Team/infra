@@ -96,12 +96,13 @@
       - app_probe_admin_html.content is search('<meta name="release" content="' ~ bff_probe_release ~ '"')
       - app_probe_admin_html.cache_control | default('') == 'private, no-store'
       - app_probe_admin_assets | select('search', '\\.js$') | list | length > 0
-      - app_probe_admin_assets | reject('match', 'https://' ~ frontend_cdn_domain ~ '/releases/' ~ bff_probe_release ~ '/') | list | length == 0
+      - app_probe_admin_assets | reject('match', ('https://' ~ frontend_cdn_domain ~ '/releases/' ~ bff_probe_release ~ '/') | regex_escape) | list | length == 0
     fail_msg: >-
       {{ app_domain }}/onlineconf/keys does not serve the admin HTML of release {{ bff_probe_release }}
       with JS and CSS from https://{{ frontend_cdn_domain }}/releases/{{ bff_probe_release }}/.
 
-- name: The admin JS and CSS load from the CDN with their content types
+# JS подключён как <script type="module" crossorigin>: без CORS браузер его не выполнит
+- name: The admin JS and CSS load from the CDN with their content types and JS with CORS
   ansible.builtin.uri:
     url: "{{ item }}"
     headers:
@@ -116,6 +117,8 @@
     app_probe_admin_asset.status != 200
     or (app_probe_admin_asset.content_type | default('')).split(';')[0] | trim | lower
     not in (['text/javascript', 'application/javascript'] if item is search('\\.js$') else ['text/css'])
+    or (item is search('\\.js$')
+        and app_probe_admin_asset.access_control_allow_origin | default('') not in ['*', 'https://' ~ app_domain])
   loop: "{{ app_probe_admin_assets }}"
 
 - name: Protected API routes without a session are UNAUTHORIZED
