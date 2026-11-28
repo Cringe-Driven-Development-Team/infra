@@ -7,5 +7,9 @@ REVOKE INSERT, UPDATE, DELETE ON TABLE {{ service }}.goose_db_version FROM {{ se
 SELECT 'REVOKE ALL ON TABLE identity.refresh_sessions FROM identity_app'
 WHERE to_regclass('identity.refresh_sessions') IS NOT NULL
 \gexec
+-- Identity проверяет при старте, что назначения ролей OnlineConf для приложения только на чтение
+SELECT 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLE identity.onlineconf_admins FROM identity_app'
+WHERE to_regclass('identity.onlineconf_admins') IS NOT NULL
+\gexec
 {% endif %}
 COMMIT;
