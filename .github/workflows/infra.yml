@@ -71,12 +71,13 @@ jobs:
           python -m pip install -r deploy-requirements.txt
           sudo apt-get update && sudo apt-get install -y restic
           ansible-galaxy collection install -r requirements.yml
-      # Синтаксис не расшифровывает vault — пароль не нужен
-      - name: Ansible — синтаксис и тесты
+      # Синтаксис не расшифровывает vault — пароль не нужен.
+      # Python-тесты (unittest discover) приостановлены на хакатон (infra#206), локально:
+      # COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
+      - name: Ansible — синтаксис
         working-directory: ansible
         run: |
           ansible-playbook -i inventory/ci.yml --syntax-check site.yml verify.yml deploy-backend.yml deploy-microservices.yml deploy-bff.yml renew-mtls.yml local-mtls.yml auxiliary.yml deploy-auxiliary.yml initialize-auxiliary-releases.yml monitoring.yml
-          COMPOSE_CLI='docker compose' python -m unittest discover -s tests -v
       # Плейбук runtime-VPS (infra#138) запускает Go API на VPS2; vars — заглушка формата backend без данных сессии
       - name: Ansible — плейбук runtime-VPS
         working-directory: ansible
