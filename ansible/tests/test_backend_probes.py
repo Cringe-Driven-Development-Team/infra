@@ -17,6 +17,9 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[1]
 RELEASE = 'b' * 40
+ADMIN_HTML = ('<html><head><title>OnlineConf · Cellestial</title><meta name="release" content="' + RELEASE + '">'
+              '<script type="module" crossorigin src="https://{cdn}/releases/' + RELEASE + '/assets/index-a.js"></script>'
+              '<link rel="stylesheet" href="https://{cdn}/releases/' + RELEASE + '/assets/index-b.css"></head></html>')
 VALID_LOGIN = {'error': {'code': 'BAD_REQUEST', 'message': 'Неверный логин или пароль', 'appCode': 'invalid_credentials'}}
 
 
@@ -66,6 +69,8 @@ class BackendProbes(unittest.TestCase):
         cls.health = (200, {'status': 'alive'})
         cls.login = (400, VALID_LOGIN)
         cls.hidden = (404, 'not found')
+        cls.admin = ADMIN_HTML
+        cls.asset_type = 'text/javascript'
         cls.sequence = []
         cls.timeout_paths = set()
 
@@ -92,13 +97,20 @@ class BackendProbes(unittest.TestCase):
                     headers = {'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
                                'Strict-Transport-Security': 'max-age=31536000',
                                'Content-Security-Policy-Report-Only': "default-src 'none'"}
-                elif self.path == '/api/users/me':
+                elif self.path == '/onlineconf/keys':
+                    status, value = 200, cls.admin.replace('{cdn}', f'localhost:{cls.https.server_port}')
+                    headers = {'Cache-Control': 'private, no-store'}
+                elif self.path.startswith('/releases/'):
+                    status, value = 200, 'asset'
+                    headers = {'Content-Type': cls.asset_type if self.path.endswith('.js') else 'text/css'}
+                elif self.path in ('/api/users/me', '/api/onlineconf/access'):
                     status, value = 401, {'error': {'code': 'UNAUTHORIZED', 'message': 'Нет сессии'}}
                 else:
                     status, value = cls.hidden
                 data = json.dumps(value).encode() if isinstance(value, dict) else str(value).encode()
                 self.send_response(status)
-                self.send_header('Content-Type', 'application/json' if isinstance(value, dict) else 'text/html')
+                if 'Content-Type' not in headers:
+                    self.send_header('Content-Type', 'application/json' if isinstance(value, dict) else 'text/html')
                 if status in (301, 302, 307, 308):
                     self.send_header('Location', '/login')
                 for k, v in headers.items():
@@ -137,6 +149,8 @@ class BackendProbes(unittest.TestCase):
         type(self).health = (200, {'status': 'alive'})
         type(self).login = (400, VALID_LOGIN)
         type(self).hidden = (404, 'not found')
+        type(self).admin = ADMIN_HTML
+        type(self).asset_type = 'text/javascript'
         self.environment = dict(os.environ, ANSIBLE_LOCAL_TEMP=str(self.root / 'tmp'),
                                 ANSIBLE_REMOTE_TEMP=str(self.root / 'remote-tmp'),
                                 ANSIBLE_FORCE_COLOR='0')
@@ -170,6 +184,7 @@ class BackendProbes(unittest.TestCase):
             'vars': {'ansible_python_interpreter': sys.executable, 'backend_probe_address': '127.0.0.1',
                      'app_mtls_dir': str(self.mtls),
                      'app_domain': f'localhost:{self.https.server_port}', 'bff_probe_release': RELEASE,
+                     'frontend_cdn_domain': f'localhost:{self.https.server_port}',
                      **(variables or {})},
             'module_defaults': {'ansible.builtin.uri': {'ca_path': str(self.cert)}}, 'tasks': tasks}]))
         return subprocess.run(['ansible-playbook', '-i', str(inventory), str(play)], env=self.environment,
@@ -240,6 +255,26 @@ class BackendProbes(unittest.TestCase):
                 if passes:
                     self.assertTrue({'/api/v1/users/me', '/api/unknown', '/health'}.issubset(
                         {r[0] for r in self.requests}))
+
+    def test_admin_spa_requires_its_html_and_cdn_assets(self):
+        tasks = self.tasks('probe-bff.yml')
+        product = ('<html><title>OnlineConf</title><meta name="release" content="' + RELEASE + '">'
+                   '<script id="bootstrap" type="application/json">{"user":null}</script></html>')
+        for admin, asset_type, passes in [
+                (ADMIN_HTML, 'text/javascript', True), (ADMIN_HTML, 'text/html', False),
+                (product, 'text/javascript', False),
+                (ADMIN_HTML.replace(RELEASE, 'c' * 40), 'text/javascript', False),
+                (ADMIN_HTML.replace('https://{cdn}', ''), 'text/javascript', False)]:
+            with self.subTest(admin=admin, asset_type=asset_type):
+                type(self).requests = []
+                type(self).admin, type(self).asset_type = admin, asset_type
+                result = self.run_tasks(tasks)
+                self.assertEqual(result.returncode == 0, passes, result.stdout + result.stderr)
+                if passes:
+                    paths = {r[0] for r in self.requests}
+                    self.assertIn('/api/onlineconf/access', paths)
+                    self.assertTrue({p for p in paths if p.startswith('/releases/')} == {
+                        f'/releases/{RELEASE}/assets/index-a.js', f'/releases/{RELEASE}/assets/index-b.css'})
 
     def test_socket_timeouts_fail_with_at_most_six_requests(self):
         for filename, path in [('probe-backend.yml', '/health'), ('probe-bff.yml', '/api/auth/login')]:

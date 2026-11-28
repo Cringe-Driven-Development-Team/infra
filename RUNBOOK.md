@@ -330,12 +330,34 @@ HTTP API BFF (`/api/auth/*`, `/api/notebooks/*` и др., frontend#254) и пу�
    фронта, frontend#4). Playbook до изменений VPS скачивает образ анонимно и сверяет его метку
    `org.opencontainers.image.revision` с SHA, после запуска — что контейнер работает на этом образе и
    `healthy`, и снаружи — гостевой HTML `/login` с bootstrap и релизом этого SHA, `UNAUTHORIZED` у
-   `users.me` без сессии и `404` на `/api/v1`, `/api/unknown`, `/health`.
+   `users.me` без сессии и `404` на `/api/v1`, `/api/unknown`, `/health`. Для админки OnlineConf
+   (infra#204) — HTML `/onlineconf/keys` с релизом этого SHA (не продуктовый, без bootstrap,
+   `private, no-store`), его JS и CSS с CDN `releases/<sha>/` с типами `text/javascript` и `text/css`,
+   `/api/onlineconf/access` без сессии — `401 UNAUTHORIZED` JSON. Запросы API шлют `X-CSRF: 1`:
+   без него BFF отвечает `403 csrf_invalid` раньше проверки сессии.
 3. Руками — пользовательский путь: вход, защищённый RPC (список блокнотов), прямое открытие
    `/notebooks/<id>`. Затем `verify.yml`.
 4. Откат — шаг 2 с прежними `bff_image_ref` и `bff_release_sha`; после него те же проверки. `SESSION_KEY` не меняется, сессия
    остаётся. Go и БД откат BFF не трогает.
 5. Недоступность Go: API BFF отвечает `BAD_GATEWAY` (502), HTML — `503` без приложения, а не SPA.
+
+### Админка OnlineConf в браузере (infra#204)
+
+Админская SPA приходит в образе BFF и в том же релизе на CDN; отдельного сервиса, домена и маршрута
+Caddy нет. Проверка руками после выкатки BFF, в DevTools (Network, Console):
+
+1. Открыть `https://cellestial.ru/onlineconf/keys` напрямую и обновить страницу: оба раза — админка
+   (заголовок вкладки «OnlineConf · Cellestial»), `/onlineconf` ведёт на `/onlineconf/keys`.
+   `/login` в той же вкладке — продуктовый вход.
+2. JS и CSS — с `cdn.cellestial.ru/releases/<sha>/`, `200`, типы `text/javascript`/`text/css`; в Console
+   нет нарушений CSP.
+3. Гость видит предложение войти, пользователь без роли `onlineconf_admin` — отказ, при этом его
+   продуктовая сессия сохраняется. Запросы админки идут только в `/api/onlineconf/*` BFF, ошибка API
+   приходит JSON, а не HTML.
+4. Администратор видит ключи — после включения OnlineConf в выкладке микросервисов (infra#203: сейчас
+   сервис выключен, и `/api/onlineconf/*` с сессией отвечает `502`).
+5. После выкладки OnlineConf и backend#158 — общий smoke: изменить конфиг и флаг в админке и увидеть
+   результат в продуктовом UI и API не позднее 60 секунд без релиза.
 
 ## Вспомогательная VPS (infra#54)
 
