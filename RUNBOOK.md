@@ -1526,7 +1526,8 @@ goose по каждой схеме и фактические Docker digest. Це
 В окружении Selectel проверьте занятые адреса через `openstack port list --network private-network`
 и доступность флейвора 4 vCPU, 8192 МиБ RAM без локального диска через
 `pulumi/scripts/list-flavors.sh`. Закрепите свободный адрес из `192.168.199.0/24`
-в `infra:monitoringPrivateIp` конфигурации стека. Для prod уже задан
+в `infra:monitoringPrivateIp` конфигурации стека, а точное имя флейвора —
+в `infra:monitoringFlavorName`. Для prod уже задан
 `infra:grafanaDomain: grafana.cellestial.ru`. Выполните `pulumi preview --stack prod --diff`
 и проверьте, что изменение порта VPS1 ограничивается security groups, а действующие VPS
 и диски сохраняются. Сверьте текущие разрешения VPS1 и правила 9100 перед `pulumi up`.

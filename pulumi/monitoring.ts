@@ -45,7 +45,7 @@ export function createMonitoring(
 
   new openstack.compute.Instance("monitoring", {
     name: "pulumi-server-monitoring",
-    flavorId: flavorId({ vcpus: 4, ram: 8192, disk: 0 }, f.os),
+    flavorId: flavorId(monitoring.flavor, f.os),
     keyPair: f.keypair.name,
     availabilityZone: c.zone,
     networks: [{ port: port.id }],

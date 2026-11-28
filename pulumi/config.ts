@@ -48,7 +48,7 @@ export interface InfraConfig {
     backupPool: string;
     backupUserName: string;
   };
-  monitoring?: { privateIp: string; domain: string; volumeSize: number };
+  monitoring?: { privateIp: string; domain: string; flavor: FlavorRule; volumeSize: number };
   runtime?: { flavor: FlavorRule; imageId: string; userName: string; volumeType: string };
   s3: {
     pool: string;
@@ -257,7 +257,12 @@ export function loadConfig(): InfraConfig {
         }
       : undefined,
     monitoring: monitoringPrivateIp && grafanaDomain
-      ? { privateIp: monitoringPrivateIp, domain: grafanaDomain, volumeSize: cfg.getNumber("monitoringVolumeSize") ?? 125 }
+      ? {
+          privateIp: monitoringPrivateIp,
+          domain: grafanaDomain,
+          flavor: readFlavor(cfg, "monitoring"),
+          volumeSize: cfg.getNumber("monitoringVolumeSize") ?? 125,
+        }
       : undefined,
     runtime: runtimeEnabled
       ? {

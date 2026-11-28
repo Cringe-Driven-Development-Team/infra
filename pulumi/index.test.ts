@@ -53,6 +53,7 @@ pulumi.runtime.setAllConfig({
   "infra:auxiliaryFlavorName": "SL1.2-4096",
   "infra:auxiliaryBackupBucket": "backups",
   "infra:monitoringPrivateIp": "192.168.199.40",
+  "infra:monitoringFlavorName": "SL1.4-8192",
   "infra:grafanaDomain": "grafana.example.ru",
   "infra:runtime": "true",
   "infra:runtimeFlavorName": "SL1.1-2048",
@@ -196,7 +197,7 @@ describe("сборка модулей", () => {
     expect(find("openstack:blockstorage/volume:Volume", "monitoring").inputs)
       .toMatchObject({ size: 125, volumeType: "fast.ru-9a", enableOnlineResize: true });
     expect(find("openstack:compute/instance:Instance", "monitoring").inputs)
-      .toMatchObject({ flavorId: "flavor:4-8192-0", blockDevices: [{ bootIndex: 0, deleteOnTermination: false }] });
+      .toMatchObject({ flavorId: "flavor:SL1.4-8192", blockDevices: [{ bootIndex: 0, deleteOnTermination: false }] });
 
     const rule = (name: string) => find("openstack:networking/secGroupRule:SecGroupRule", name).inputs;
     expect(rule("monitoring-ssh")).toMatchObject({ portRangeMin: 22, portRangeMax: 22, remoteIpPrefix: "192.168.199.30/32" });

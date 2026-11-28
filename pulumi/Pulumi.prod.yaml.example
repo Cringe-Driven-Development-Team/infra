@@ -79,5 +79,6 @@ config:
 
   # VPS4 (infra#181). Сначала выберите свободный адрес в private-subnet.
   # infra:monitoringPrivateIp: 192.168.199.40
+  # infra:monitoringFlavorName: SL1.4-8192
   # infra:grafanaDomain: grafana.cellestial.ru
   # infra:monitoringVolumeSize: 125
