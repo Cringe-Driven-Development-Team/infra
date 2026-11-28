@@ -24,7 +24,7 @@ scrape_configs:
       - targets: ["{{ address }}:9100"]
         labels: {environment: "{{ monitoring_environment }}", service: node_exporter, instance: "{{ instance }}", host_role: "{{ group }}"}
 {% endfor %}
-{% for service in ['identity', 'workspace', 'environments', 'onlineconf'] %}
+{% for service in ['identity', 'workspace', 'environments'] %}
   - job_name: {{ service }}
     metrics_path: /{{ service }}/metrics
     static_configs:

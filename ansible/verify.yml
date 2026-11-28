@@ -400,4 +400,4 @@
           - ready
       delegate_to: "{{ groups['backend'][0] }}"
       changed_when: false
-      loop: [identity, workspace, environments, onlineconf]
+      loop: [identity, workspace, environments]

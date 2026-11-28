@@ -160,6 +160,8 @@ class PreflightTests(TestCase):
 
     def test_first_onlineconf_install_keeps_running_services(self):
         module = load_driver()
+        # OnlineConf пока вне состава (infra#203): проверяем путь первой установки добавленного сервиса
+        module.SERVICES = (*module.SERVICES, 'onlineconf')
         before = {service: version(service) for service in module.SERVICES if service != 'onlineconf'}
         desired = {**before, 'onlineconf': version('onlineconf')}
         module.validate(['onlineconf'], before, desired, False)
@@ -220,14 +222,13 @@ class PreflightTests(TestCase):
                                        capture_output=True, text=True, timeout=30)
         config = json.loads(completed.stdout)
         services = config['services']
-        self.assertEqual(set(services), {'identity', 'onlineconf', 'workspace', 'environments', 'metrics'})
+        self.assertEqual(set(services), {'identity', 'workspace', 'environments', 'metrics'})
         self.assertEqual(config['networks']['existing']['name'], 'cellestial_app')
         for name, expected in {'identity': {'192.168.199.10', '127.0.0.1'},
                                'workspace': {'192.168.199.10', '127.0.0.1'},
-                               'onlineconf': {'192.168.199.10', '127.0.0.1'},
                                'environments': {'127.0.0.1'}, 'metrics': {'192.168.199.10'}}.items():
             self.assertEqual({port['host_ip'] for port in services[name]['ports']}, expected)
-        for name in ('identity', 'onlineconf', 'workspace'):
+        for name in ('identity', 'workspace'):
             self.assertNotIn('/run/secrets/runtime', {v['target'] for v in services[name]['volumes']})
         self.assertIn('/run/secrets/runtime', {v['target'] for v in services['environments']['volumes']})
 

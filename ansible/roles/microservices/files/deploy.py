@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 
-SERVICES = ('identity', 'onlineconf', 'environments', 'workspace')
+SERVICES = ('identity', 'environments', 'workspace')
 # Сервис, добавленный после первичного перехода: его первая установка идёт без cutover (infra#203)
 ADDED = {'onlineconf'}
 REGISTRY = 'ghcr.io/cringe-driven-development-team/cellestial-'
