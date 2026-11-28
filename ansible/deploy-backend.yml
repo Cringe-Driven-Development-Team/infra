@@ -1,5 +1,5 @@
 ---
-# Go API приватный: после запуска проверяются образ, внутренний HTTP и путь через BFF.
+# Go API приватный: после запуска проверяются образ и внутренний HTTPS с gateway.
 # Выкатка и ручной откат используют один digest-ref; BFF остаётся на своём образе.
 # Go — на приватной VPS2. Gateway участвует только в делегированных HTTP/SSH-проверках.
 - name: Validate backend deployment inventory
@@ -78,26 +78,3 @@
 
     - name: Check the Go API from the gateway
       ansible.builtin.import_tasks: roles/app/tasks/probe-backend.yml
-
-    - name: Read the BFF release from the gateway
-      ansible.builtin.slurp:
-        src: "{{ hostvars[groups['gateway'][0]].app_compose_dir }}/.env"
-      delegate_to: "{{ groups['gateway'][0] }}"
-      register: app_gateway_environment
-      no_log: true
-
-    - name: Select the deployed BFF release for the public probe
-      ansible.builtin.set_fact:
-        bff_probe_release: >-
-          {{ app_gateway_environment.content | b64decode
-          | regex_findall('(?m)^BFF_RELEASE_SHA=([0-9a-f]{40})$') | first | default('') }}
-      no_log: true
-
-    - name: Require a deployed BFF release
-      ansible.builtin.assert:
-        that:
-          - bff_probe_release is match('^[0-9a-f]{40}\Z')
-        fail_msg: A deployed BFF release is required for the external backend check.
-
-    - name: Check the backend through public Caddy and BFF
-      ansible.builtin.import_tasks: roles/app/tasks/probe-bff.yml
